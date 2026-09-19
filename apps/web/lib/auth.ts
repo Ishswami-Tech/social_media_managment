@@ -1,0 +1,190 @@
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { nextCookies } from "better-auth/next-js";
+import { admin, organization } from "better-auth/plugins";
+import { writeAudit } from "@platform/database";
+import { ac, orgRoles } from "./auth-access";
+import { prisma } from "./db";
+import { getEnv } from "./env";
+import { logger } from "./logger";
+
+/**
+ * better-auth configuration.
+ * - Email/password authentication with 14-day sessions.
+ * - `admin` plugin: users with role "admin" are platform Super Admins; it also
+ *   provides ban/unban and audited impersonation.
+ * - `organization` plugin: tenants, memberships, invitations and the active
+ *   organization stored on the session. Roles use the spec's names.
+ */
+function buildAuth() {
+  const env = getEnv();
+  return betterAuth({
+    appName: "Social AI Platform",
+    baseURL: env.APP_URL,
+    secret: env.AUTH_SECRET,
+    database: prismaAdapter(prisma, { provider: "postgresql" }),
+    trustedOrigins: [env.APP_URL],
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 10,
+      autoSignIn: true,
+    },
+    session: {
+      expiresIn: 60 * 60 * 24 * 14,
+      updateAge: 60 * 60 * 24,
+      cookieCache: { enabled: true, maxAge: 5 * 60 },
+    },
+    rateLimit: { enabled: env.NODE_ENV === "production", window: 60, max: 100 },
+    user: {
+      additionalFields: {
+        status: { type: "string", required: false, defaultValue: "ACTIVE", input: false },
+      },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          after: async (session) => {
+            const impersonatedBy = (session as { impersonatedBy?: string | null }).impersonatedBy;
+            if (impersonatedBy) {
+              await writeAudit(prisma, {
+                actorUserId: impersonatedBy,
+                impersonatorId: impersonatedBy,
+                action: "admin.impersonate.start",
+                resourceType: "User",
+                resourceId: session.userId,
+                ipAddress: session.ipAddress,
+                userAgent: session.userAgent,
+              });
+            }
+          },
+        },
+      },
+      user: {
+        create: {
+          after: async (user) => {
+            await writeAudit(prisma, {
+              actorUserId: user.id,
+              action: "user.register",
+              resourceType: "User",
+              resourceId: user.id,
+            });
+          },
+        },
+      },
+    },
+    plugins: [
+      admin({
+        defaultRole: "user",
+        adminRoles: ["admin"],
+        impersonationSessionDuration: 60 * 60,
+      }),
+      organization({
+        ac,
+        roles: orgRoles,
+        creatorRole: "OWNER",
+        invitationExpiresIn: 60 * 60 * 24 * 7,
+        cancelPendingInvitationsOnReInvite: true,
+        schema: {
+          organization: {
+            additionalFields: {
+              status: { type: "string", required: false, defaultValue: "ACTIVE", input: false },
+              planId: { type: "string", required: false, input: false },
+            },
+          },
+          member: {
+            additionalFields: {
+              status: { type: "string", required: false, defaultValue: "ACTIVE", input: false },
+            },
+          },
+        },
+        organizationHooks: {
+          afterCreateOrganization: async ({ organization: org, user }) => {
+            const freePlan = await prisma.plan.findUnique({ where: { slug: "free" } });
+            await prisma.organization.update({ where: { id: org.id }, data: { planId: freePlan?.id ?? null } });
+            await prisma.organizationSettings.upsert({
+              where: { organizationId: org.id },
+              create: { organizationId: org.id },
+              update: {},
+            });
+            await writeAudit(prisma, {
+              organizationId: org.id,
+              actorUserId: user.id,
+              action: "organization.create",
+              resourceType: "Organization",
+              resourceId: org.id,
+              metadata: { name: org.name, slug: org.slug },
+            });
+          },
+          afterAddMember: async ({ member, user }) => {
+            await writeAudit(prisma, {
+              organizationId: member.organizationId,
+              actorUserId: user.id,
+              action: "member.add",
+              resourceType: "Member",
+              resourceId: member.id,
+              metadata: { role: member.role },
+            });
+          },
+          afterRemoveMember: async ({ member, user }) => {
+            await writeAudit(prisma, {
+              organizationId: member.organizationId,
+              actorUserId: user.id,
+              action: "member.remove",
+              resourceType: "Member",
+              resourceId: member.id,
+            });
+          },
+          afterUpdateMemberRole: async ({ member, previousRole, user }) => {
+            await writeAudit(prisma, {
+              organizationId: member.organizationId,
+              actorUserId: user.id,
+              action: "member.role_change",
+              resourceType: "Member",
+              resourceId: member.id,
+              metadata: { from: previousRole, to: member.role },
+            });
+          },
+        },
+        sendInvitationEmail: async (data) => {
+          // Email delivery is an integration concern; until an email provider is
+          // wired, the accept link is logged so operators can forward it.
+          const link = `${env.APP_URL}/accept-invitation/${data.id}`;
+          logger.info("organization.invitation", {
+            email: data.email,
+            organization: data.organization.name,
+            role: data.role,
+            link,
+          });
+        },
+      }),
+      nextCookies(),
+    ],
+  });
+}
+
+type Auth = ReturnType<typeof buildAuth>;
+
+declare global {
+  var __platformAuth: Auth | undefined;
+}
+
+export function getAuth(): Auth {
+  if (!globalThis.__platformAuth) globalThis.__platformAuth = buildAuth();
+  return globalThis.__platformAuth;
+}
+
+/**
+ * Lazy better-auth instance: construction (which validates the environment)
+ * is deferred to first use so route collection at build time never needs
+ * secrets. All property access is forwarded to the real instance.
+ */
+export const auth: Auth = new Proxy({} as Auth, {
+  get(_target, prop) {
+    const real = getAuth();
+    const value = Reflect.get(real, prop, real);
+    return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(real) : value;
+  },
+});
+
+export type Session = Auth["$Infer"]["Session"];
+export type AuthUser = Session["user"];

@@ -1,0 +1,104 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LinkedInProvider } from "../src/index";
+
+const provider = new LinkedInProvider({ clientId: "cid", clientSecret: "sec" });
+
+afterEach(() => vi.unstubAllGlobals());
+
+function mockFetch(routes: Record<string, (init?: RequestInit) => Response>) {
+  const fn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    for (const [prefix, handler] of Object.entries(routes)) if (url.startsWith(prefix)) return handler(init);
+    return new Response(JSON.stringify({ message: `unmocked ${url}` }), { status: 500 });
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+describe("LinkedInProvider", () => {
+  it("builds an authorization URL with state and scopes", async () => {
+    const { url } = await provider.getAuthorizationUrl("https://app/cb", "st4te");
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe("https://www.linkedin.com/oauth/v2/authorization");
+    expect(u.searchParams.get("state")).toBe("st4te");
+    expect(u.searchParams.get("client_id")).toBe("cid");
+    expect(u.searchParams.get("scope")).toContain("w_member_social");
+  });
+
+  it("exchanges the code and discovers the member profile", async () => {
+    mockFetch({
+      "https://www.linkedin.com/oauth/v2/accessToken": () =>
+        new Response(
+          JSON.stringify({
+            access_token: "tok",
+            expires_in: 3600,
+            refresh_token: "ref",
+            refresh_token_expires_in: 86400,
+          }),
+        ),
+      "https://api.linkedin.com/v2/userinfo": () =>
+        new Response(JSON.stringify({ sub: "abc", name: "Ada", picture: "https://p" })),
+    });
+    const [acct] = await provider.handleCallback({ code: "c", state: "s", redirectUri: "https://app/cb" });
+    expect(acct?.externalAccountId).toBe("abc");
+    expect(acct?.accountType).toBe("PROFILE");
+    expect(acct?.credential.accessToken).toBe("tok");
+    expect(acct?.credential.refreshToken).toBe("ref");
+    expect(acct?.credential.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("publishes a text post and reads the id from the x-restli-id header", async () => {
+    const fetchMock = mockFetch({
+      "https://api.linkedin.com/rest/posts": (init) => {
+        const body = JSON.parse(String(init?.body));
+        expect(body.author).toBe("urn:li:person:abc");
+        expect(body.commentary).toBe("Hello");
+        return new Response("", { status: 201, headers: { "x-restli-id": "urn:li:share:123" } });
+      },
+    });
+    const res = await provider.publish(
+      { idempotencyKey: "k", text: "Hello", media: [] },
+      { credential: { accessToken: "tok", scopes: [] }, externalAccountId: "abc", accountType: "PROFILE" },
+    );
+    expect(res.externalPostId).toBe("urn:li:share:123");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers["linkedin-version"]).toBeDefined();
+  });
+
+  it("maps a 401 to a non-retryable AUTH_EXPIRED error", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/posts": () =>
+        new Response(JSON.stringify({ message: "expired" }), { status: 401 }),
+    });
+    await expect(
+      provider.publish(
+        { idempotencyKey: "k", text: "x", media: [] },
+        { credential: { accessToken: "t", scopes: [] }, externalAccountId: "a", accountType: "PROFILE" },
+      ),
+    ).rejects.toMatchObject({ code: "AUTH_EXPIRED", retryable: false });
+  });
+
+  it("refuses to refresh without a refresh token", async () => {
+    await expect(
+      provider.refreshToken({
+        credential: { accessToken: "t", scopes: [] },
+        externalAccountId: "a",
+        accountType: "PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "AUTH_EXPIRED" });
+  });
+
+  it("validates LinkedIn-specific document rules", async () => {
+    const r = await provider.validatePost({
+      idempotencyKey: "k",
+      text: "x",
+      media: [
+        { id: "d", kind: "DOCUMENT", mimeType: "application/pdf", size: 10, url: "u" },
+        { id: "i", kind: "IMAGE", mimeType: "image/png", size: 10, url: "u" },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.issues.map((i) => i.code)).toContain("DOCUMENT_ALONE");
+  });
+});
