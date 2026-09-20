@@ -12,3 +12,4 @@ packages/database/src/generated/
 .DS_Store
 .data/
 *.tsbuildinfo
+dump.rdb
