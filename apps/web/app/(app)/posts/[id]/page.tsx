@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
+import { PostPreview } from "@/components/preview/post-preview";
 import { PostActions } from "@/components/forms/post-actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -72,20 +73,16 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
-                <p className="text-sm whitespace-pre-wrap">{v.text}</p>
-                {v.media.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {v.media.map((m) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={m.id}
-                        src={mediaUrls[m.mediaAsset.id]}
-                        alt={m.mediaAsset.altText ?? m.mediaAsset.fileName}
-                        className="size-20 rounded-md border object-cover"
-                      />
-                    ))}
-                  </div>
-                )}
+                <PostPreview
+                  platform={v.platform}
+                  account={{ displayName: v.socialAccount.displayName, avatarUrl: v.socialAccount.avatarUrl }}
+                  text={v.text}
+                  media={v.media.map((m) => ({
+                    id: m.mediaAsset.id,
+                    url: mediaUrls[m.mediaAsset.id]!,
+                    alt: m.mediaAsset.altText,
+                  }))}
+                />
                 {v.lastError && <p className="text-xs text-destructive">{v.lastError}</p>}
                 {v.publishJobs[0]?.attempts.length ? (
                   <div className="text-xs text-muted-foreground">
@@ -110,6 +107,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
               scheduledAt: post.scheduledAt?.toISOString() ?? null,
               timezone: post.timezone,
               createdById: post.createdById,
+              autoPublishOnApproval: post.autoPublishOnApproval,
             }}
             needsApproval={needsApproval}
             permissions={{

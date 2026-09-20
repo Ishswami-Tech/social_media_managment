@@ -118,3 +118,37 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Tiptap editor content (Tailwind's preflight removes list styles) */
+.tiptap {
+  min-height: 9rem;
+}
+.tiptap p {
+  margin: 0 0 0.75rem;
+}
+.tiptap p:last-child {
+  margin-bottom: 0;
+}
+.tiptap ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+.tiptap ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+.tiptap li > p {
+  margin: 0;
+}
+.tiptap strong {
+  font-weight: 700;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

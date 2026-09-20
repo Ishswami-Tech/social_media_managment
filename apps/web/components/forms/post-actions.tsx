@@ -17,6 +17,7 @@ interface Props {
     scheduledAt: string | null;
     timezone: string;
     createdById: string;
+    autoPublishOnApproval: boolean;
   };
   needsApproval: boolean;
   permissions: { canPublish: boolean; canApprove: boolean; canEdit: boolean; isOwnPost: boolean; isAdmin: boolean };
@@ -73,6 +74,13 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
         )}
         {canReview && (
           <div className="grid gap-2">
+            <p className="text-xs text-muted-foreground">
+              {post.autoPublishOnApproval
+                ? post.scheduledAt
+                  ? `Approving publishes this post automatically at ${new Date(post.scheduledAt).toLocaleString()}.`
+                  : "Approving publishes this post immediately."
+                : "Approving marks the post ready; someone with publish rights schedules it."}
+            </p>
             <Textarea
               placeholder="Optional comment for the author"
               value={comment}

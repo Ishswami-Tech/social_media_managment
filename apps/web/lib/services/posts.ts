@@ -20,6 +20,8 @@ export const createPostInput = z.object({
   variants: z.array(variantInput).min(1).max(20),
   scheduledAt: z.string().datetime({ offset: true }).optional(),
   timezone: z.string().max(64).optional(),
+  /** Approving the post schedules it automatically (at scheduledAt, or immediately when unset). */
+  autoPublishOnApproval: z.boolean().default(false),
   tags: z.array(z.string().max(40)).max(20).default([]),
   sourceRef: z.string().max(200).optional(),
 });
@@ -87,6 +89,7 @@ export async function createPost(ctx: OrgContext, input: CreatePostInput) {
       masterText: input.masterText,
       scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
       timezone: input.timezone ?? ctx.settings.timezone,
+      autoPublishOnApproval: input.autoPublishOnApproval,
       tags: input.tags,
       sourceRef: input.sourceRef,
       approvalStatus: "NOT_REQUIRED",
@@ -139,6 +142,7 @@ export async function updatePost(ctx: OrgContext, postId: string, input: z.infer
       masterText: input.masterText,
       scheduledAt: input.scheduledAt === undefined ? undefined : input.scheduledAt ? new Date(input.scheduledAt) : null,
       timezone: input.timezone,
+      autoPublishOnApproval: input.autoPublishOnApproval,
       tags: input.tags,
       // Any edit invalidates a previous approval.
       status: post.status === "IN_REVIEW" ? "DRAFT" : post.status,
@@ -194,6 +198,14 @@ export async function reviewPost(ctx: OrgContext, postId: string, decision: "APP
       ? await setStatus(postId, "APPROVED", { approvalStatus: "APPROVED" })
       : await setStatus(postId, "DRAFT", { approvalStatus: "REJECTED" });
   await audit(ctx, decision === "APPROVED" ? "post.approve" : "post.reject", "Post", postId, { comment });
+  if (decision === "APPROVED" && post.autoPublishOnApproval) {
+    // The author asked for automatic publishing once approved; the approval is the
+    // authorisation, so this runs regardless of the approver's own publish grant.
+    const when = post.scheduledAt && post.scheduledAt.getTime() > Date.now() ? post.scheduledAt : new Date();
+    const scheduled = await schedulePost(ctx, postId, when.toISOString(), post.timezone);
+    await audit(ctx, "post.auto_schedule", "Post", postId, { scheduledAt: when.toISOString() });
+    return scheduled;
+  }
   return updated;
 }
 

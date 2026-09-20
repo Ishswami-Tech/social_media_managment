@@ -63,6 +63,20 @@ check "invalid transition (submit again) -> 409" 409 "$(req POST /api/posts/$POS
 check "validation error -> 400" 400 "$(req POST /api/posts '{"masterText":"x","variants":[]}')"
 check "cross-tenant account -> 400" 400 "$(req POST /api/posts '{"masterText":"x","variants":[{"socialAccountId":"not-mine"}]}')"
 
+echo "== auto-publish on approval"
+check "create auto-publish post" 201 "$(req POST /api/posts "{\"masterText\":\"𝗕𝗼𝗹𝗱 launch • bullet #coffee\",\"autoPublishOnApproval\":true,\"variants\":[{\"socialAccountId\":\"$ACCOUNT_ID\"}]}")"
+AUTO_ID=$(jq_ 'j=>j.post.id')
+check "submit auto-publish post" 200 "$(req POST /api/posts/$AUTO_ID/submit)"
+check "approve -> queued automatically" 200 "$(req POST /api/posts/$AUTO_ID/review '{"decision":"APPROVED"}')"
+# The worker may pick the job up before the response is built, so any post-approval pipeline state counts.
+check "status left review after approval" 1 "$(jq_ 'j=>["QUEUED","PUBLISHING","RETRYING","FAILED","PUBLISHED"].includes(j.post.status)?1:0')"
+check "create scheduled auto-publish post" 201 "$(req POST /api/posts "{\"masterText\":\"Later #coffee\",\"autoPublishOnApproval\":true,\"scheduledAt\":\"2030-01-01T10:00:00Z\",\"variants\":[{\"socialAccountId\":\"$ACCOUNT_ID\"}]}")"
+SCHED_ID=$(jq_ 'j=>j.post.id')
+req POST /api/posts/$SCHED_ID/submit >/dev/null
+check "approve scheduled -> queued for 2030" 200 "$(req POST /api/posts/$SCHED_ID/review '{"decision":"APPROVED"}')"
+check "scheduledAt kept" 2030-01-01T10:00:00.000Z "$(jq_ 'j=>j.post.scheduledAt')"
+check "status QUEUED (delayed job)" QUEUED "$(jq_ 'j=>j.post.status')"
+
 echo "== webhook (signed WhatsApp inbound)"
 BODY='{"object":"whatsapp_business_account","entry":[{"id":"WABA1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"15550001111","phone_number_id":"'$PNID'"},"contacts":[{"profile":{"name":"Grace"},"wa_id":"44770'$RUN'"}],"messages":[{"from":"44770'$RUN'","id":"wamid.'$RUN'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"Hi, is the store open today?"}}]}}]}]}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "test-meta-app-secret" | awk '{print $2}')

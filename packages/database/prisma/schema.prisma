@@ -407,6 +407,8 @@ model Post {
   approvalStatus ApprovalStatus @default(NOT_REQUIRED)
   scheduledAt    DateTime?
   timezone       String         @default("UTC")
+  /// When true, approving the post schedules it automatically (at scheduledAt, or immediately).
+  autoPublishOnApproval Boolean @default(false)
   publishedAt    DateTime?
   /// Free-form labels for calendar filtering
   tags           String[]       @default([])
