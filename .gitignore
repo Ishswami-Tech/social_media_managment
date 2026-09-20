@@ -13,3 +13,6 @@ packages/database/src/generated/
 .data/
 *.tsbuildinfo
 dump.rdb
+apps/web/next-env.d.ts
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
