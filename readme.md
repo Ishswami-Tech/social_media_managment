@@ -65,7 +65,19 @@ First run: register at `/register`, create an organization, then promote yoursel
 SEED_ADMIN_EMAIL=you@example.com pnpm db:seed
 ```
 
-Or use `docker compose up --build` for Postgres + Redis + web + worker.
+### Quickest way to try the UI (Docker)
+
+```bash
+cp .env.example .env
+# set AUTH_SECRET and ENCRYPTION_KEY in .env (see "Generate secrets" above); APP_URL=http://localhost:3000
+docker compose up --build
+```
+
+This starts Postgres, Redis, the web app and the worker. The worker applies migrations and the seed on
+start, so once `web` is healthy open http://localhost:3000/register. Everything else is optional:
+without LinkedIn/Meta app credentials the connect buttons will report the provider as not configured,
+and without AI keys the AI Studio explains which key is missing. To promote your account to Super Admin
+set `SEED_ADMIN_EMAIL=you@example.com` in `.env` and restart the worker (`docker compose restart worker`).
 
 ## Environment variables
 

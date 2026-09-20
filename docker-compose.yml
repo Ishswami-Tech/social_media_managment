@@ -36,6 +36,7 @@ services:
       dockerfile: docker/Dockerfile.web
     env_file: .env
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/social_ai?schema=public
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -53,6 +54,7 @@ services:
       dockerfile: docker/Dockerfile.worker
     env_file: .env
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/social_ai?schema=public
       REDIS_URL: redis://redis:6379
     depends_on:

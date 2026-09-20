@@ -15,5 +15,5 @@ RUN pnpm --filter @platform/database generate
 ENV NODE_ENV=production
 RUN groupadd -r app && useradd -r -g app app && chown -R app:app /app
 USER app
-# Runs migrations then the BullMQ workers (spec §15).
-CMD ["sh", "-c", "pnpm --filter @platform/database migrate:deploy && pnpm --filter web worker"]
+# Runs migrations, the idempotent seed (plans, AI catalogue, flags), then the BullMQ workers (spec §15).
+CMD ["sh", "-c", "pnpm --filter @platform/database migrate:deploy && pnpm --filter @platform/database seed && pnpm --filter web worker"]
