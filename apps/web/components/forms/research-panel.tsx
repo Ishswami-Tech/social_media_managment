@@ -58,12 +58,21 @@ export function seedComposer(router: ReturnType<typeof useRouter>, text: string,
   router.push("/create?seed=1");
 }
 
-export function ResearchPanel({ onUse, compact = false }: { onUse?: (text: string) => void; compact?: boolean }) {
+export function ResearchPanel({
+  onUse,
+  compact = false,
+  initialSkill,
+}: {
+  onUse?: (text: string) => void;
+  compact?: boolean;
+  /** Skill preselected when the panel opens (e.g. from the composer's "+" menu). */
+  initialSkill?: string;
+}) {
   const router = useRouter();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [history, setHistory] = useState<BriefRow[]>([]);
-  const [skillId, setSkillId] = useState("topic-research");
+  const [skillId, setSkillId] = useState(initialSkill ?? "topic-research");
   const [input, setInput] = useState("");
   const [platforms, setPlatforms] = useState<string[]>(["LINKEDIN", "INSTAGRAM", "FACEBOOK"]);
   const [busy, setBusy] = useState(false);

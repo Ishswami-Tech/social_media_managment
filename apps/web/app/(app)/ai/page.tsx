@@ -1,6 +1,6 @@
 import { requireCapability } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { resolveAuth } from "@/lib/ai";
+import { resolveAuth, selectableModels } from "@/lib/ai";
 import { PageHeader } from "@/components/app/page-header";
 import { AIStudio } from "@/components/forms/ai-studio";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,7 +11,7 @@ export default async function AIStudioPage() {
   const ctx = await requireCapability("ai:generate");
   const [{ available }, models, brands] = await Promise.all([
     resolveAuth(ctx.organization.id),
-    prisma.aIProviderConfig.findMany({ where: { active: true }, orderBy: [{ provider: "asc" }, { priority: "asc" }] }),
+    selectableModels(ctx.organization.id),
     prisma.brand.findMany({
       where: { organizationId: ctx.organization.id },
       select: { id: true, name: true, isDefault: true },
@@ -31,18 +31,7 @@ export default async function AIStudioPage() {
           </AlertDescription>
         </Alert>
       )}
-      <AIStudio
-        models={models
-          .filter((m) => available.includes(m.provider))
-          .map((m) => ({
-            provider: m.provider,
-            model: m.model,
-            displayName: m.displayName,
-            capabilities: m.capabilities,
-          }))}
-        brands={brands}
-        canImage={ctx.can("ai:image")}
-      />
+      <AIStudio models={models} brands={brands} canImage={ctx.can("ai:image")} />
     </>
   );
 }

@@ -70,6 +70,7 @@ SEED_ADMIN_EMAIL=you@example.com pnpm db:seed
 ```bash
 cp .env.example .env
 # set AUTH_SECRET and ENCRYPTION_KEY in .env (see "Generate secrets" above); APP_URL=http://localhost:3000
+# optional: AI_MOCK=1 makes every AI feature work offline (deterministic mock model, placeholder images)
 docker compose up --build
 ```
 
@@ -78,6 +79,13 @@ start, so once `web` is healthy open http://localhost:3000/register. Everything 
 without LinkedIn/Meta app credentials the connect buttons will report the provider as not configured,
 and without AI keys the AI Studio explains which key is missing. To promote your account to Super Admin
 set `SEED_ADMIN_EMAIL=you@example.com` in `.env` and restart the worker (`docker compose restart worker`).
+
+### Testing AI features without keys
+
+Set `AI_MOCK=1` (ignored in production) and every provider in the model catalogue is served by an offline mock:
+generation, rewrite/shorten/expand, hashtags, hooks, calendars, quality checks, reply suggestions, image
+generation (placeholder PNGs through the real media pipeline) and research skills (mock search connector).
+Routing, metering, per-model selection and approvals all run exactly as with real keys.
 
 ## Environment variables
 

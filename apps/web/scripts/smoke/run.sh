@@ -81,8 +81,13 @@ echo "== research skills & connectors"
 check "list skills + connectors" 200 "$(req GET /api/ai/research)"
 check "five built-in skills" 5 "$(jq_ 'j=>j.skills.length')"
 check "connector status listed" 2 "$(jq_ 'j=>j.connectors.length')"
-check "search skill without connector -> 409" 409 "$(req POST /api/ai/research '{"skillId":"topic-research","input":"coffee trends","platforms":["LINKEDIN"]}')"
-check "url skill without AI keys -> 400 ai" 400 "$(req POST /api/ai/research '{"skillId":"url-to-posts","input":"https://example.com","platforms":["LINKEDIN"]}')"
+if grep -qE '^AI_MOCK=(1|true)' $ROOT/apps/web/.env 2>/dev/null; then
+  check "search skill runs with mock connector" 201 "$(req POST /api/ai/research '{"skillId":"topic-research","input":"coffee trends","platforms":["LINKEDIN"]}')"
+  check "url skill runs with mock model" 201 "$(req POST /api/ai/research '{"skillId":"url-to-posts","input":"https://example.com","platforms":["LINKEDIN"]}')"
+else
+  check "search skill without connector -> 409" 409 "$(req POST /api/ai/research '{"skillId":"topic-research","input":"coffee trends","platforms":["LINKEDIN"]}')"
+  check "url skill without AI keys -> 400 ai" 400 "$(req POST /api/ai/research '{"skillId":"url-to-posts","input":"https://example.com","platforms":["LINKEDIN"]}')"
+fi
 check "unknown skill -> 404" 404 "$(req POST /api/ai/research '{"skillId":"nope","input":"some topic","platforms":["LINKEDIN"]}')"
 check "connector settings listed" 200 "$(req GET /api/organizations/connectors)"
 check "bad connector key rejected" 400 "$(req POST /api/organizations/connectors '{"connector":"TAVILY","apiKey":"definitely-not-a-key"}')"
@@ -114,9 +119,22 @@ check "key traversal rejected" 404 "$(curl -s -o /dev/null -w '%{http_code}' -b 
 check "anon media GET rejected" 401 "$(curl -s -o /dev/null -w '%{http_code}' "$UPLOAD_URL")"
 check "complete upload" 200 "$(req POST /api/media/$ASSET_ID/complete)"
 
-echo "== AI without keys"
-check "ai generate -> 400 clear error" 400 "$(req POST /api/ai/generate '{"idea":"Launch of our new espresso machine","platforms":["LINKEDIN"]}')"
-check "ai error code" ai "$(jq_ 'j=>j.error')"
+if grep -qE '^AI_MOCK=(1|true)' $ROOT/apps/web/.env 2>/dev/null; then
+  echo "== AI with offline mock provider (AI_MOCK=1)"
+  check "ai generate -> 200" 200 "$(req POST /api/ai/generate '{"idea":"Launch of our new espresso machine","platforms":["LINKEDIN","INSTAGRAM"]}')"
+  check "variants for both platforms" 2 "$(jq_ 'j=>j.variants.length')"
+  check "explicit model honoured" claude-haiku-4-5-20251001 "$(req POST /api/ai/transform '{"text":"We just launched our blend.","operation":"REWRITE","provider":"ANTHROPIC","model":"claude-haiku-4-5-20251001"}' >/dev/null; jq_ 'j=>j.model')"
+  check "rewrite changes the text" 1 "$(jq_ 'j=>j.text !== "We just launched our blend." ? 1 : 0')"
+  check "hashtags suggested" 1 "$(req POST /api/ai/hashtags '{"text":"Fresh Ethiopian roast just landed","platform":"LINKEDIN"}' >/dev/null; jq_ 'j=>j.hashtags.length > 0 ? 1 : 0')"
+  check "image generated and stored" 201 "$(req POST /api/ai/image '{"prompt":"Coffee beans on a wooden table"}')"
+  check "image asset url" 1 "$(jq_ 'j=>j.assets[0].url ? 1 : 0')"
+  check "research skill runs with mock search" 201 "$(req POST /api/ai/research '{"skillId":"topic-research","input":"specialty coffee trends","platforms":["LINKEDIN"]}')"
+  check "brief has post ideas" 1 "$(jq_ 'j=>j.brief.postIdeas.length > 0 ? 1 : 0')"
+else
+  echo "== AI without keys"
+  check "ai generate -> 400 clear error" 400 "$(req POST /api/ai/generate '{"idea":"Launch of our new espresso machine","platforms":["LINKEDIN"]}')"
+  check "ai error code" ai "$(jq_ 'j=>j.error')"
+fi
 
 echo "== waiting for worker (publish, webhook, media)"
 sleep 8

@@ -1,6 +1,7 @@
 import {
   AIExecutor,
   ContentOperations,
+  MockProvider,
   ModelRouter,
   type AIProvider,
   type ImageRequest,
@@ -15,14 +16,25 @@ import type { AICapability, AIProviderName } from "@platform/types";
 import { keyring, prisma } from "./db";
 import { getEnv } from "./env";
 
-const providerImpls = new Map<AIProviderName, AIProvider>([
+const realProviders = new Map<AIProviderName, AIProvider>([
   ["OPENAI", new OpenAIProvider()],
   ["ANTHROPIC", new AnthropicProvider()],
   ["GOOGLE", new GoogleProvider()],
 ]);
+const mockProviders = new Map<AIProviderName, AIProvider>(
+  [...realProviders.keys()].map((name) => [name, new MockProvider(name)]),
+);
+
+/** With AI_MOCK=1 every provider is served by the offline mock (local UI testing without keys). */
+export function aiMockEnabled(): boolean {
+  return getEnv().AI_MOCK && getEnv().NODE_ENV !== "production";
+}
+function providerImpls(): Map<AIProviderName, AIProvider> {
+  return aiMockEnabled() ? mockProviders : realProviders;
+}
 
 export function aiProvider(name: AIProviderName): AIProvider {
-  return providerImpls.get(name)!;
+  return providerImpls().get(name)!;
 }
 
 export async function modelCatalogue(): Promise<ModelInfo[]> {
@@ -35,6 +47,35 @@ export async function modelCatalogue(): Promise<ModelInfo[]> {
     outputCostPerM: r.outputCostPerM,
     imageCost: r.imageCost,
   }));
+}
+
+export interface SelectableModel {
+  provider: AIProviderName;
+  model: string;
+  displayName: string;
+  capabilities: AICapability[];
+}
+
+/**
+ * Models a member of this organization can pick explicitly: the active
+ * catalogue restricted to providers that have a usable key (BYO or platform).
+ */
+export async function selectableModels(organizationId: string): Promise<SelectableModel[]> {
+  const [{ available }, rows] = await Promise.all([
+    resolveAuth(organizationId),
+    prisma.aIProviderConfig.findMany({
+      where: { active: true },
+      orderBy: [{ provider: "asc" }, { priority: "asc" }],
+    }),
+  ]);
+  return rows
+    .filter((m) => available.includes(m.provider))
+    .map((m) => ({
+      provider: m.provider,
+      model: m.model,
+      displayName: m.displayName,
+      capabilities: m.capabilities as AICapability[],
+    }));
 }
 
 export async function platformDefault(
@@ -64,9 +105,11 @@ export async function resolveAuth(
   const available = new Set<AIProviderName>();
   for (const k of orgKeys) available.add(k.provider);
   for (const [p, v] of Object.entries(platformKeys)) if (v) available.add(p as AIProviderName);
+  if (aiMockEnabled()) for (const p of realProviders.keys()) available.add(p);
   return {
     available: [...available],
     resolver: async (provider) => {
+      if (aiMockEnabled()) return { apiKey: "mock" };
       const own = orgKeys.find((k) => k.provider === provider);
       if (own) return { apiKey: keyring().decrypt(own.keyEncrypted, `ai-key:${organizationId}:${provider}`) };
       const platform = platformKeys[provider];
@@ -103,7 +146,8 @@ export async function aiRuntime(
     prisma.organizationSettings.findUnique({ where: { organizationId } }),
   ]);
   const router = new ModelRouter(catalogue);
-  const executor = new AIExecutor(providerImpls, router, resolver, {
+  const impls = providerImpls();
+  const executor = new AIExecutor(impls, router, resolver, {
     onUsage: async (e) => {
       await prisma.aIUsage.create({
         data: {
@@ -155,7 +199,7 @@ export async function aiRuntime(
       const attempts = [{ provider: decision.provider, model: decision.model }, ...decision.fallbacks];
       let lastError: unknown;
       for (const a of attempts) {
-        const impl = providerImpls.get(a.provider);
+        const impl = impls.get(a.provider);
         const auth = await resolver(a.provider);
         if (!impl?.generateImage || !auth) continue;
         const started = Date.now();

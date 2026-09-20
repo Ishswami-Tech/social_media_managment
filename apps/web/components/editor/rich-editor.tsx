@@ -44,6 +44,27 @@ export interface RichEditorProps {
   extraToolbar?: React.ReactNode;
   /** External replacement of the whole document (e.g. AI rewrite). Increment `version` to apply. */
   replaceWith?: { version: number; doc: RichNode } | null;
+  /** Receives the Tiptap editor so the parent can read or replace the current selection. */
+  editorRef?: React.MutableRefObject<Editor | null>;
+}
+
+/** Plain text (paragraphs separated by blank lines) → HTML the editor can insert. */
+export function plainTextToHtml(text: string): string {
+  const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .trim()
+    .split(/\n{2,}/)
+    .map((p) => `<p>${escape(p).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+/** The currently selected plain text and its range, or null when nothing is selected. */
+export function currentSelection(editor: Editor | null): { from: number; to: number; text: string } | null {
+  if (!editor) return null;
+  const { from, to } = editor.state.selection;
+  if (from === to) return null;
+  const text = editor.state.doc.textBetween(from, to, "\n").trim();
+  return text ? { from, to, text } : null;
 }
 
 function ToolbarButton({
@@ -86,6 +107,7 @@ export function RichEditor({
   onChange,
   extraToolbar,
   replaceWith,
+  editorRef,
 }: RichEditorProps) {
   const lastVersion = useRef(0);
   const editor = useEditor({
@@ -117,6 +139,10 @@ export function RichEditor({
       onChange(richDocToPlainText(doc), doc);
     },
   });
+
+  useEffect(() => {
+    if (editorRef) editorRef.current = editor;
+  }, [editor, editorRef]);
 
   useEffect(() => {
     if (!editor || !replaceWith || replaceWith.version === lastVersion.current) return;

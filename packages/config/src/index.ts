@@ -34,6 +34,11 @@ export const envSchema = z.object({
   OPENAI_API_KEY: optionalString,
   ANTHROPIC_API_KEY: optionalString,
   GOOGLE_AI_API_KEY: optionalString,
+  /** Serve every AI provider and search connector from offline mocks (local testing without keys). */
+  AI_MOCK: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
 
   TAVILY_API_KEY: optionalString,
   BRAVE_SEARCH_API_KEY: optionalString,

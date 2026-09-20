@@ -22,5 +22,6 @@ export const POST = (req: Request) =>
     const brand = await brandContext(ctx.organization.id, body.brandId);
     const routing = await ai.routing("text", { provider: body.provider, model: body.model });
     const text = await ai.ops.transform(routing, { ...body, brand });
-    return json({ text });
+    const decision = ai.router.route({ ...routing, requiredCapability: "text" });
+    return json({ text, provider: decision.provider, model: decision.model });
   });

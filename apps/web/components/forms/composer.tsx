@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Hash, ImagePlus, Rocket, Search, Sparkles, Wand2, X } from "lucide-react";
+import { Cpu, Hash, ImagePlus, Plug, Plus, Rocket, Search, Sparkles, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { countCharacters, plainTextToRichDoc, type RichNode } from "@platform/social-core";
 import { uploadMediaFile } from "@/lib/client/upload";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
-import { RichEditor } from "@/components/editor/rich-editor";
+import { RichEditor, currentSelection, plainTextToHtml, type Editor } from "@/components/editor/rich-editor";
 import { PostPreview } from "@/components/preview/post-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { COMPOSER_SEED_KEY, ResearchPanel } from "@/components/forms/research-panel";
 import { StatusBadge } from "@/components/app/status-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +46,17 @@ export interface ComposerMedia {
   url: string;
   thumbnailUrl: string;
 }
+export interface ComposerModel {
+  provider: string;
+  model: string;
+  displayName: string;
+  capabilities: string[];
+}
+export interface ComposerSkill {
+  id: string;
+  name: string;
+  description: string;
+}
 interface Props {
   accounts: ComposerAccount[];
   media: ComposerMedia[];
@@ -45,6 +64,10 @@ interface Props {
   canPublish: boolean;
   requireApproval: boolean;
   aiEnabled: boolean;
+  /** Models the member may pick explicitly for AI actions (empty → automatic routing only). */
+  models?: ComposerModel[];
+  /** Research skills offered in the "+" menu. */
+  skills?: ComposerSkill[];
   existing: {
     id: string;
     title: string;
@@ -63,6 +86,10 @@ type VariantState = {
   replace: { version: number; doc: RichNode } | null;
 };
 type AfterApproval = "immediately" | "scheduled" | "hold";
+const AUTO_MODEL = "__auto__";
+const modelKey = (m: { provider: string; model: string }) => `${m.provider}::${m.model}`;
+const modelParams = (sel: string) =>
+  sel === AUTO_MODEL ? {} : { provider: sel.split("::")[0], model: sel.split("::")[1] };
 
 const toLocal = (iso: string | null) => {
   if (!iso) return "";
@@ -78,6 +105,8 @@ export function Composer({
   canPublish,
   requireApproval,
   aiEnabled,
+  models = [],
+  skills = [],
   existing,
 }: Props) {
   const router = useRouter();
@@ -114,6 +143,14 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement>(null);
   const version = useRef(1);
   const [researchOpen, setResearchOpen] = useState(false);
+  const [researchSkill, setResearchSkill] = useState<string | undefined>(undefined);
+  const [textModel, setTextModel] = useState(AUTO_MODEL);
+  const [imageModel, setImageModel] = useState(AUTO_MODEL);
+  const editorRef = useRef<Editor | null>(null);
+  const textModels = models.filter((m) => m.capabilities.includes("text"));
+  const imageModels = models.filter((m) => m.capabilities.includes("image"));
+  const modelLabel = (sel: string) =>
+    sel === AUTO_MODEL ? "automatic routing" : (models.find((m) => modelKey(m) === sel)?.displayName ?? sel);
   const [adaptWithAI, setAdaptWithAI] = useState(true);
   const [imageBusy, setImageBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<{
@@ -238,7 +275,7 @@ export function Composer({
     if (!masterText.trim()) return toast.error("Write an idea or draft first");
     if (selectedAccounts.length === 0) return toast.error("Select at least one account");
     const platforms = [...new Set(selectedAccounts.map((a) => a.platform))];
-    const data = await ai("/api/ai/generate", { idea: masterText, platforms, brandId });
+    const data = await ai("/api/ai/generate", { idea: masterText, platforms, brandId, ...modelParams(textModel) });
     if (!data) return;
     setVariants((v) => {
       const next = { ...v };
@@ -258,15 +295,40 @@ export function Composer({
       }
       return next;
     });
-    toast.success("Platform variants generated");
+    toast.success(`Platform variants generated (${modelLabel(textModel)})`);
   }
 
+  /**
+   * Rewrite / shorten / expand. When text is selected in the editor only the
+   * selection is sent and replaced in place; otherwise the whole post is.
+   */
   async function transform(op: "REWRITE" | "SHORTEN" | "EXPAND") {
-    if (!masterText.trim()) return;
-    const data = await ai("/api/ai/transform", { text: masterText, operation: op, brandId });
+    const selection = currentSelection(editorRef.current);
+    const source = selection?.text ?? masterText;
+    if (!source.trim()) return toast.error("Write something first");
+    const data = await ai("/api/ai/transform", {
+      text: source,
+      operation: op,
+      brandId,
+      ...modelParams(textModel),
+    });
     if (!data) return;
+    const verb = { REWRITE: "rewritten", SHORTEN: "shortened", EXPAND: "expanded" }[op];
+    if (selection && editorRef.current) {
+      // Inline selections stay inline; multi-paragraph results become paragraphs.
+      const html = data.text.includes("\n") ? plainTextToHtml(data.text) : plainTextToHtml(data.text).slice(3, -4);
+      editorRef.current.chain().focus().insertContentAt({ from: selection.from, to: selection.to }, html).run();
+      toast.success(`Selection ${verb} with ${modelLabel(textModel)}`);
+      return;
+    }
     setMasterText(data.text);
     setMasterReplace({ version: ++version.current, doc: plainTextToRichDoc(data.text) });
+    toast.success(`Post ${verb} with ${modelLabel(textModel)}`);
+  }
+
+  function openSkill(skillId?: string) {
+    setResearchSkill(skillId);
+    setResearchOpen(true);
   }
 
   function insertResearch(text: string) {
@@ -283,6 +345,7 @@ export function Composer({
     const data = await ai("/api/ai/image", {
       prompt: `Social media image for this post, no text overlay, photographic, brand-safe: ${masterText.slice(0, 600)}`,
       size: "1024x1024",
+      ...modelParams(imageModel),
     });
     setImageBusy(false);
     if (!data) return;
@@ -306,7 +369,7 @@ export function Composer({
     if (adaptWithAI && aiEnabled) {
       const platforms = [...new Set(selectedAccounts.filter((a) => !variants[a.id]?.custom).map((a) => a.platform))];
       if (platforms.length) {
-        const data = await ai("/api/ai/generate", { idea: masterText, platforms, brandId });
+        const data = await ai("/api/ai/generate", { idea: masterText, platforms, brandId, ...modelParams(textModel) });
         if (data) {
           for (const a of selectedAccounts) {
             const gen = data.variants.find((x: { platform: string }) => x.platform === a.platform);
@@ -393,6 +456,7 @@ export function Composer({
       text: masterText,
       platform: previewAccount?.platform ?? "LINKEDIN",
       count: 6,
+      ...modelParams(textModel),
     });
     if (!data) return;
     const existingTags = new Set(masterText.match(/#[\p{L}\p{N}_]+/gu) ?? []);
@@ -502,6 +566,21 @@ export function Composer({
               <Sparkles /> {imageBusy ? "Generating…" : "Generate image"}
             </Button>
           )}
+          {aiEnabled && !accountId && imageModels.length > 0 && (
+            <Select value={imageModel} onValueChange={setImageModel}>
+              <SelectTrigger size="sm" className="h-8 max-w-44 text-xs" aria-label="Image model">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_MODEL}>Auto image model</SelectItem>
+                {imageModels.map((m) => (
+                  <SelectItem key={modelKey(m)} value={modelKey(m)}>
+                    {m.displayName} · {m.provider}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {uploadPct !== null && <Progress value={uploadPct} className="w-32" />}
           <span className="text-xs text-muted-foreground">{chosen.length} selected</span>
         </div>
@@ -560,9 +639,78 @@ export function Composer({
               placeholder="What do you want to share? Paste an idea, a blog excerpt or write the post…"
               onChange={onMasterChange}
               replaceWith={masterReplace}
+              editorRef={editorRef}
               extraToolbar={
                 aiEnabled ? (
                   <>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="size-7 rounded-full"
+                          title="Add skills, plugins and connectors"
+                          aria-label="Add skills, plugins and connectors"
+                        >
+                          <Plus />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-72">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Skills</DropdownMenuLabel>
+                        {skills.map((sk) => (
+                          <DropdownMenuItem key={sk.id} onSelect={() => openSkill(sk.id)}>
+                            <Search />
+                            <span className="grid">
+                              <span>{sk.name}</span>
+                              <span className="text-xs text-muted-foreground">{sk.description}</span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                        {skills.length === 0 && (
+                          <DropdownMenuItem onSelect={() => openSkill()}>
+                            <Search /> Research with AI
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Plugins</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => generateImage()} disabled={imageBusy || !masterText.trim()}>
+                          <Sparkles /> Generate image from this post
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => suggestHashtags()} disabled={aiBusy || !masterText.trim()}>
+                          <Hash /> Suggest hashtags
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => fileInput.current?.click()}>
+                          <ImagePlus /> Upload image
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Connectors</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => router.push("/settings#connectors")}>
+                          <Plug /> Web search, feeds and AI keys…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {textModels.length > 0 && (
+                      <Select value={textModel} onValueChange={setTextModel}>
+                        <SelectTrigger
+                          size="sm"
+                          className="h-7 max-w-44 text-xs"
+                          title="Model used for rewrite, variants and hashtags"
+                          aria-label="AI model"
+                        >
+                          <Cpu className="size-3.5" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={AUTO_MODEL}>Auto (cheapest capable)</SelectItem>
+                          {textModels.map((m) => (
+                            <SelectItem key={modelKey(m)} value={modelKey(m)}>
+                              {m.displayName} · {m.provider}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     {brands.length > 0 && (
                       <Select value={brandId} onValueChange={setBrandId}>
                         <SelectTrigger size="sm" className="h-7 text-xs">
@@ -583,7 +731,7 @@ export function Composer({
                       variant="ghost"
                       onClick={() => transform("REWRITE")}
                       disabled={aiBusy}
-                      title="Rewrite with AI"
+                      title="Rewrite with AI (select text to rewrite only that part)"
                     >
                       <Wand2 /> Rewrite
                     </Button>
@@ -619,7 +767,7 @@ export function Composer({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => setResearchOpen(true)}
+                      onClick={() => openSkill()}
                       title="Research with AI (web search, URLs, feeds)"
                     >
                       <Search /> Research
@@ -879,7 +1027,7 @@ export function Composer({
               Search the web, read a URL or a feed, and drop the findings straight into your post.
             </DialogDescription>
           </DialogHeader>
-          <ResearchPanel compact onUse={insertResearch} />
+          <ResearchPanel key={researchSkill ?? "default"} compact initialSkill={researchSkill} onUse={insertResearch} />
         </DialogContent>
       </Dialog>
 

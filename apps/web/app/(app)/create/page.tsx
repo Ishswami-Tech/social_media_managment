@@ -1,6 +1,8 @@
 import { requireCapability } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { mediaUrl } from "@/lib/services/media";
+import { selectableModels } from "@/lib/ai";
+import { SKILLS } from "@platform/research";
 import { PageHeader } from "@/components/app/page-header";
 import { Composer } from "@/components/forms/composer";
 
@@ -9,7 +11,8 @@ export const metadata = { title: "Create post" };
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const ctx = await requireCapability("content:create");
   const { edit } = await searchParams;
-  const [accounts, media, brands, existing] = await Promise.all([
+  const aiEnabled = ctx.can("ai:generate");
+  const [accounts, media, brands, existing, models] = await Promise.all([
     prisma.socialAccount.findMany({
       where: { organizationId: ctx.organization.id, status: "CONNECTED" },
       select: { id: true, platform: true, displayName: true, username: true, avatarUrl: true, capabilities: true },
@@ -30,6 +33,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
           include: { variants: { include: { media: true } } },
         })
       : null,
+    aiEnabled ? selectableModels(ctx.organization.id) : [],
   ]);
   const mediaWithUrls = await Promise.all(
     media.map(async (m) => ({
@@ -59,7 +63,9 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         brands={brands}
         canPublish={ctx.can("content:publish")}
         requireApproval={ctx.settings.requireApproval}
-        aiEnabled={ctx.can("ai:generate")}
+        aiEnabled={aiEnabled}
+        models={models}
+        skills={SKILLS.map((s) => ({ id: s.id, name: s.name, description: s.description }))}
         existing={
           existing
             ? {
