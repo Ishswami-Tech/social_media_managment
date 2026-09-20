@@ -32,7 +32,8 @@ function buildAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 14,
       updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
+      // Short cache so role changes, bans and org suspensions propagate within a minute.
+      cookieCache: { enabled: true, maxAge: 60 },
     },
     rateLimit: { enabled: env.NODE_ENV === "production", window: 60, max: 100 },
     user: {
@@ -180,6 +181,17 @@ export function getAuth(): Auth {
  */
 export const auth: Auth = new Proxy({} as Auth, {
   get(_target, prop) {
+    // Framework/runtime probes (thenable checks, React element checks, serialisation)
+    // must not instantiate the real client.
+    if (
+      typeof prop === "symbol" ||
+      prop === "then" ||
+      prop === "toJSON" ||
+      prop === "$$typeof" ||
+      prop === "__esModule" ||
+      prop === "default"
+    )
+      return undefined;
     const real = getAuth();
     const value = Reflect.get(real, prop, real);
     return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(real) : value;

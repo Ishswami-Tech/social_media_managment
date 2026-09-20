@@ -23,6 +23,7 @@ export const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: optionalString,
   R2_BUCKET: optionalString,
   R2_PUBLIC_BASE_URL: optionalString,
+  MEDIA_LOCAL_DIR: optionalString,
 
   LINKEDIN_CLIENT_ID: optionalString,
   LINKEDIN_CLIENT_SECRET: optionalString,

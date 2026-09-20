@@ -1,7 +1,7 @@
 import { generateCodeVerifier, generateState, type ConnectedAccount } from "@platform/social-core";
 import { saveSocialCredential } from "@platform/database";
 import type { ProviderFamily } from "@platform/types";
-import { ApiError, badRequest } from "../api";
+import { ApiError, badRequest } from "../errors";
 import { audit } from "../audit";
 import { keyring, prisma } from "../db";
 import { getEnv } from "../env";

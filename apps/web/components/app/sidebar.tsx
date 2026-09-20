@@ -2,9 +2,45 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, Sparkles } from "lucide-react";
+import {
+  BarChart3,
+  Calendar,
+  FileText,
+  Image,
+  LayoutDashboard,
+  LayoutTemplate,
+  Megaphone,
+  MessageSquare,
+  Palette,
+  PenSquare,
+  Plug,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Users2,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { NavItem } from "./nav";
+import type { NavIcon, NavItem } from "./nav";
+
+const ICONS: Record<NavIcon, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  create: PenSquare,
+  posts: FileText,
+  calendar: Calendar,
+  media: Image,
+  ai: Sparkles,
+  analytics: BarChart3,
+  inbox: MessageSquare,
+  contacts: Users2,
+  templates: LayoutTemplate,
+  campaigns: Megaphone,
+  accounts: Plug,
+  brand: Palette,
+  team: Users,
+  settings: Settings,
+};
 
 interface Props {
   main: NavItem[];
@@ -23,6 +59,7 @@ function Section({ title, items, pathname }: { title?: string; items: NavItem[];
       )}
       {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const Icon = ICONS[item.icon];
         return (
           <Link
             key={item.href}
@@ -34,7 +71,7 @@ function Section({ title, items, pathname }: { title?: string; items: NavItem[];
                 : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             )}
           >
-            <item.icon className="size-4" />
+            <Icon className="size-4" />
             {item.label}
           </Link>
         );

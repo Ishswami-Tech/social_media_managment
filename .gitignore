@@ -10,3 +10,5 @@ coverage/
 !.env.example
 packages/database/src/generated/
 .DS_Store
+.data/
+*.tsbuildinfo

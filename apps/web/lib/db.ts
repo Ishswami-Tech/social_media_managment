@@ -22,6 +22,17 @@ export function getDb(): Db {
  */
 export const db: Db = new Proxy({} as Db, {
   get(_target, prop) {
+    // Framework/runtime probes (thenable checks, React element checks, serialisation)
+    // must not instantiate the real client.
+    if (
+      typeof prop === "symbol" ||
+      prop === "then" ||
+      prop === "toJSON" ||
+      prop === "$$typeof" ||
+      prop === "__esModule" ||
+      prop === "default"
+    )
+      return undefined;
     const client = getDb();
     const value = Reflect.get(client, prop, client);
     return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(client) : value;

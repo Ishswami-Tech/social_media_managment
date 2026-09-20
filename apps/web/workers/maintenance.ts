@@ -73,7 +73,7 @@ async function requeueStuckJobs() {
     include: { postVariant: { include: { post: { select: { organizationId: true } } } } },
   });
   for (const job of stale) {
-    const existing = await queues().get("publish").getJob(job.idempotencyKey);
+    const existing = await queues().getJob("publish", job.idempotencyKey);
     if (existing) continue;
     await queues().enqueue("publish", `${job.idempotencyKey}:requeue${Date.now()}`, {
       publishJobId: job.id,

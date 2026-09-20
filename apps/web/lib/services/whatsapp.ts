@@ -9,7 +9,7 @@ import {
   type TemplateStatusUpdate,
 } from "@platform/whatsapp";
 import type { Prisma } from "@platform/database";
-import { ApiError, badRequest, conflict, notFound } from "../api";
+import { ApiError, badRequest, conflict, notFound } from "../errors";
 import { audit } from "../audit";
 import { keyring, prisma } from "../db";
 import { logger, errorInfo } from "../logger";

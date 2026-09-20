@@ -120,3 +120,74 @@ export class MemoryStorage implements ObjectStorage {
     return `${this.baseUrl}/${key}`;
   }
 }
+
+/**
+ * Local-disk storage for development and single-node deployments without R2.
+ * Objects live under `rootDir/<key>`; both the web and worker processes see
+ * the same files. Signed URLs point at the app's dev media route.
+ */
+export class DiskStorage implements ObjectStorage {
+  constructor(
+    private readonly rootDir: string,
+    private readonly baseUrl: string,
+  ) {}
+
+  private async fsp() {
+    return import("node:fs/promises");
+  }
+
+  private pathFor(key: string): string {
+    const safe = key.replace(/\.\.+/g, "").replace(/^\/+/, "");
+    return `${this.rootDir}/${safe}`;
+  }
+
+  async signedUploadUrl(key: string) {
+    return `${this.baseUrl}?key=${encodeURIComponent(key)}`;
+  }
+
+  async signedDownloadUrl(key: string) {
+    return `${this.baseUrl}?key=${encodeURIComponent(key)}`;
+  }
+
+  async putObject(key: string, body: Uint8Array | Buffer, mimeType: string) {
+    const fs = await this.fsp();
+    const file = this.pathFor(key);
+    await fs.mkdir(file.slice(0, file.lastIndexOf("/")), { recursive: true });
+    await fs.writeFile(file, body);
+    await fs.writeFile(`${file}.meta`, JSON.stringify({ mimeType }));
+  }
+
+  async getObject(key: string) {
+    const fs = await this.fsp();
+    return fs.readFile(this.pathFor(key));
+  }
+
+  async getMimeType(key: string): Promise<string | undefined> {
+    const fs = await this.fsp();
+    try {
+      return (JSON.parse(await fs.readFile(`${this.pathFor(key)}.meta`, "utf8")) as { mimeType?: string }).mimeType;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async head(key: string) {
+    const fs = await this.fsp();
+    try {
+      const stat = await fs.stat(this.pathFor(key));
+      return { size: stat.size, mimeType: await this.getMimeType(key) };
+    } catch {
+      return null;
+    }
+  }
+
+  async delete(key: string) {
+    const fs = await this.fsp();
+    await fs.rm(this.pathFor(key), { force: true });
+    await fs.rm(`${this.pathFor(key)}.meta`, { force: true });
+  }
+
+  publicUrl(key: string) {
+    return `${this.baseUrl}?key=${encodeURIComponent(key)}`;
+  }
+}

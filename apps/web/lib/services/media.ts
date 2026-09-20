@@ -9,7 +9,7 @@ import {
   validateUpload,
 } from "@platform/media";
 import { PLATFORMS } from "@platform/types";
-import { badRequest, notFound } from "../api";
+import { badRequest, notFound } from "../errors";
 import { audit } from "../audit";
 import { prisma } from "../db";
 import { logger, errorInfo } from "../logger";

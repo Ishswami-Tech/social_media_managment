@@ -25,9 +25,8 @@ export function MediaUploader() {
       return toast.error(data.message ?? "Upload rejected");
     }
     setProgress(20);
-    const isMemory = String(data.uploadUrl).includes("/upload/");
-    const target = isMemory ? `/api/media/dev?key=${encodeURIComponent(data.storageKey)}` : data.uploadUrl;
-    const put = await fetch(target, { method: "PUT", headers: { "content-type": file.type }, body: file });
+    // The signed URL is either the R2 bucket or the local-disk dev route; both accept a plain PUT.
+    const put = await fetch(data.uploadUrl, { method: "PUT", headers: { "content-type": file.type }, body: file });
     if (!put.ok) {
       setProgress(null);
       return toast.error("Storage upload failed");

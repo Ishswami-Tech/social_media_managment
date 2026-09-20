@@ -14,6 +14,14 @@ export function redisConnection(url: string): ConnectionOptions {
   };
 }
 
+/**
+ * BullMQ forbids ":" in custom job ids (it is the Redis key separator). Our
+ * logical keys use ":" for readability, so every id passes through here.
+ */
+export function toJobId(logicalKey: string): string {
+  return logicalKey.replace(/:/g, "__");
+}
+
 const DEFAULT_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: { age: 24 * 3600, count: 5000 },
   removeOnFail: { age: 7 * 24 * 3600 },
@@ -45,11 +53,15 @@ export class QueueRegistry {
     opts: { delayMs?: number; priority?: number } = {},
   ) {
     const q = this.get(name) as Queue;
-    return q.add(name, data, { jobId, delay: opts.delayMs, priority: opts.priority });
+    return q.add(name, data, { jobId: toJobId(jobId), delay: opts.delayMs, priority: opts.priority });
+  }
+
+  async getJob(name: QueueName, jobId: string) {
+    return this.get(name).getJob(toJobId(jobId));
   }
 
   async remove(name: QueueName, jobId: string): Promise<boolean> {
-    const job = await this.get(name).getJob(jobId);
+    const job = await this.get(name).getJob(toJobId(jobId));
     if (!job) return false;
     const state = await job.getState();
     if (state === "active") return false;

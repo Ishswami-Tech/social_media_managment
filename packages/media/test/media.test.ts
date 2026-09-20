@@ -47,3 +47,20 @@ describe("keys & renditions", () => {
     expect(await s.head("nope")).toBeNull();
   });
 });
+
+describe("DiskStorage", () => {
+  it("round-trips objects on disk with mime metadata", async () => {
+    const { DiskStorage } = await import("../src/storage");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(`${tmpdir()}/media-`);
+    const s = new DiskStorage(dir, "http://localhost/api/media/dev");
+    await s.putObject("org/a/media/x.png", Buffer.from("png"), "image/png");
+    expect((await s.getObject("org/a/media/x.png")).toString()).toBe("png");
+    expect(await s.head("org/a/media/x.png")).toEqual({ size: 3, mimeType: "image/png" });
+    expect(await s.head("nope")).toBeNull();
+    expect(await s.signedUploadUrl("k")).toContain("key=k");
+    await s.delete("org/a/media/x.png");
+    expect(await s.head("org/a/media/x.png")).toBeNull();
+  });
+});

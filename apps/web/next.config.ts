@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -29,6 +30,8 @@ const nextConfig: NextConfig = {
     "@aws-sdk/client-s3",
   ],
   output: "standalone",
+  // Monorepo: trace files from the workspace root so standalone output includes packages/*.
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },
   },

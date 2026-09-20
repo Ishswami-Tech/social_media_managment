@@ -9,21 +9,8 @@ import { logger, errorInfo } from "./logger";
 import { assertCapability, getOrgContext, getSession, isSuperAdmin, type OrgContext } from "./session";
 import type { Session } from "./auth";
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code = "error",
-    public readonly details?: unknown,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-export const notFound = (what = "Resource") => new ApiError(404, `${what} not found`, "not_found");
-export const badRequest = (message: string, details?: unknown) => new ApiError(400, message, "bad_request", details);
-export const conflict = (message: string) => new ApiError(409, message, "conflict");
+export { ApiError, badRequest, conflict, notFound } from "./errors";
+import { ApiError, badRequest } from "./errors";
 
 export function json<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);

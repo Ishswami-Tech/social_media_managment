@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backoffMs, decideRetry, redisConnection } from "../src/index";
+import { backoffMs, decideRetry, redisConnection, toJobId } from "../src/index";
 
 describe("backoffMs", () => {
   it("grows exponentially and caps", () => {
@@ -36,5 +36,13 @@ describe("redisConnection", () => {
       db: 2,
     });
     expect((redisConnection("rediss://h") as { tls?: object }).tls).toBeDefined();
+  });
+});
+
+describe("toJobId", () => {
+  it("strips the colon separator BullMQ rejects and stays stable", () => {
+    expect(toJobId("variant_1:2030-01-01T10:00:00.000Z")).not.toContain(":");
+    expect(toJobId("a:b")).toBe(toJobId("a:b"));
+    expect(toJobId("plain")).toBe("plain");
   });
 });

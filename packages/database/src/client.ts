@@ -11,7 +11,7 @@ function createClient(): PrismaClient {
   const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    log: process.env.NODE_ENV === "development" ? ["warn"] : [],
   });
 }
 
@@ -28,6 +28,17 @@ export function getPrisma(): PrismaClient {
  */
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, prop) {
+    // Framework/runtime probes (thenable checks, React element checks, serialisation)
+    // must not instantiate the real client.
+    if (
+      typeof prop === "symbol" ||
+      prop === "then" ||
+      prop === "toJSON" ||
+      prop === "$$typeof" ||
+      prop === "__esModule" ||
+      prop === "default"
+    )
+      return undefined;
     const client = getPrisma();
     const value = Reflect.get(client, prop, client);
     return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(client) : value;
