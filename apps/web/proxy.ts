@@ -8,6 +8,7 @@ const PUBLIC = [
   "/api/auth",
   "/api/webhooks",
   "/api/health",
+  "/api/internal", // cron/worker endpoints authenticate with their own bearer secret
   "/api/oauth/linkedin/callback",
   "/api/oauth/meta/callback",
 ];

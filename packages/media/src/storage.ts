@@ -18,7 +18,11 @@ export interface StorageConfig {
   endpoint?: string;
 }
 
+export type StorageKind = "r2" | "memory" | "disk";
+
 export interface ObjectStorage {
+  /** Backend identifier; compare this rather than using instanceof (module identity can differ under hot reload). */
+  readonly kind: StorageKind;
   signedUploadUrl(key: string, mimeType: string, expiresInSeconds?: number): Promise<string>;
   signedDownloadUrl(key: string, expiresInSeconds?: number): Promise<string>;
   putObject(key: string, body: Uint8Array | Buffer, mimeType: string): Promise<void>;
@@ -30,6 +34,7 @@ export interface ObjectStorage {
 
 /** Cloudflare R2 (S3-compatible) storage client. */
 export class R2Storage implements ObjectStorage {
+  readonly kind = "r2" as const;
   private readonly client: S3Client;
 
   constructor(private readonly cfg: StorageConfig) {
@@ -93,6 +98,7 @@ export class R2Storage implements ObjectStorage {
 
 /** In-memory storage for tests and local development without R2 credentials. */
 export class MemoryStorage implements ObjectStorage {
+  readonly kind = "memory" as const;
   readonly objects = new Map<string, { body: Buffer; mimeType: string }>();
   constructor(private readonly baseUrl = "memory://bucket") {}
   async signedUploadUrl(key: string) {
@@ -127,6 +133,7 @@ export class MemoryStorage implements ObjectStorage {
  * the same files. Signed URLs point at the app's dev media route.
  */
 export class DiskStorage implements ObjectStorage {
+  readonly kind = "disk" as const;
   constructor(
     private readonly rootDir: string,
     private readonly baseUrl: string,

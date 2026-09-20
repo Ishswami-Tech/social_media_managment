@@ -119,6 +119,28 @@ Provider console settings:
   audited impersonation), AI model catalogue + health checks, social integration status, queues & webhooks,
   feature flags, audit logs.
 
+## Deploying
+
+### Vercel (web app + cron-driven worker)
+
+The app is a standard Next.js project; `apps/web/vercel.json` holds the monorepo build commands and a cron that calls
+`/api/internal/drain` every minute to process queued jobs for ~50 s (BullMQ workers run in short bursts because Vercel
+has no long-lived processes). Per-minute crons need the Pro plan; on Hobby, run the worker elsewhere (see below).
+
+1. Import the repository in Vercel with **Root Directory = `apps/web`** (framework: Next.js).
+2. Provision Postgres (Neon, Supabase, Vercel Postgres) and Redis (Upstash, Redis Cloud). Use a TLS `rediss://` URL.
+3. Set environment variables: `DATABASE_URL`, `REDIS_URL`, `AUTH_SECRET`, `ENCRYPTION_KEY`, `APP_URL`
+   (`https://<your-domain>`), `CRON_SECRET` (Vercel sends it as `Authorization: Bearer`), the `R2_*` block
+   (required: Vercel's filesystem is ephemeral), plus any provider/AI/search keys.
+4. Run migrations once against the production database: `DATABASE_URL=... pnpm db:deploy && pnpm db:seed`.
+5. Deploy. Then register your email, create an organization, and promote yourself with
+   `SEED_ADMIN_EMAIL=you@example.com pnpm db:seed` against the production database.
+
+### Docker / Coolify / any VM
+
+`docker compose up --build` runs Postgres, Redis, the web app and a persistent worker (`docker/Dockerfile.worker`
+applies migrations on start). Point Cloudflare at the web service and set the same environment variables.
+
 ## Smoke test
 
 `apps/web/scripts/smoke/run.sh` drives a running production build (`next start` on :3000 plus the worker) through

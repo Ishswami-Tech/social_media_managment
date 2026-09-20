@@ -41,6 +41,7 @@ export const envSchema = z.object({
   RESEND_API_KEY: optionalString,
   EMAIL_FROM: optionalString,
 
+  CRON_SECRET: optionalString,
   SENTRY_DSN: optionalString,
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

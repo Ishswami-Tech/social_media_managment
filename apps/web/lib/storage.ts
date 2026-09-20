@@ -25,8 +25,17 @@ export function storage(): ObjectStorage {
       publicBaseUrl: env.R2_PUBLIC_BASE_URL,
     });
   } else {
-    const dir = getEnv().MEDIA_LOCAL_DIR ?? path.join(process.cwd(), ".data", "media");
-    if (env.NODE_ENV === "production") logger.warn("R2 is not configured; using local-disk media storage", { dir });
+    const serverless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const dir =
+      getEnv().MEDIA_LOCAL_DIR ??
+      (serverless ? path.join("/tmp", "social-ai-media") : path.join(process.cwd(), ".data", "media"));
+    if (env.NODE_ENV === "production")
+      logger.warn(
+        serverless
+          ? "R2 is not configured; media is stored in /tmp and will NOT persist between invocations. Configure R2_* for production."
+          : "R2 is not configured; using local-disk media storage",
+        { dir },
+      );
     globalThis.__platformStorage = new DiskStorage(dir, `${env.APP_URL}/api/media/dev`);
   }
   return globalThis.__platformStorage;
@@ -34,5 +43,5 @@ export function storage(): ObjectStorage {
 
 export function localStorageBackend(): DiskStorage | null {
   const s = storage();
-  return s instanceof DiskStorage ? s : null;
+  return s.kind === "disk" ? (s as DiskStorage) : null;
 }

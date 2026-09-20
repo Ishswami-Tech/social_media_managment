@@ -87,6 +87,14 @@ check "unknown skill -> 404" 404 "$(req POST /api/ai/research '{"skillId":"nope"
 check "connector settings listed" 200 "$(req GET /api/organizations/connectors)"
 check "bad connector key rejected" 400 "$(req POST /api/organizations/connectors '{"connector":"TAVILY","apiKey":"definitely-not-a-key"}')"
 
+echo "== serverless worker drain"
+check "drain without token -> 401" 401 "$(curl -s -o /dev/null -w '%{http_code}' $BASE/api/internal/drain)"
+CRON=$(grep -E '^CRON_SECRET=' "$ROOT/apps/web/.env" | cut -d= -f2-)
+if [ -n "$CRON" ]; then
+  check "drain with token -> 200" 200 "$(curl -s -o $WORK/body -w '%{http_code}' -H "authorization: Bearer $CRON" "$BASE/api/internal/drain?ms=1500")"
+  check "drain reports ok" true "$(jq_ 'j=>j.ok')"
+fi
+
 echo "== webhook (signed WhatsApp inbound)"
 BODY='{"object":"whatsapp_business_account","entry":[{"id":"WABA1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"15550001111","phone_number_id":"'$PNID'"},"contacts":[{"profile":{"name":"Grace"},"wa_id":"44770'$RUN'"}],"messages":[{"from":"44770'$RUN'","id":"wamid.'$RUN'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"Hi, is the store open today?"}}]}}]}]}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "test-meta-app-secret" | awk '{print $2}')
