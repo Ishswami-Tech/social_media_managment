@@ -49,12 +49,16 @@ export class AnthropicProvider implements AIProvider {
     const body: Record<string, unknown> = { model: req.model, max_tokens: req.maxTokens ?? 2048, messages };
     if (system) body.system = system;
     if (req.temperature !== undefined) body.temperature = req.temperature;
-    if (req.json) {
+    const usingTools = !!req.tools?.length;
+    if (usingTools)
+      body.tools = req.tools!.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+    const prefill = req.json && !usingTools;
+    if (prefill) {
       // Prefill the assistant turn so the model starts directly with the JSON object.
       (body.messages as unknown[]).push({ role: "assistant", content: "{" });
     }
     const data = await postJson<{
-      content: { type: string; text?: string }[];
+      content: { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
       stop_reason?: string;
       usage?: { input_tokens: number; output_tokens: number };
     }>(

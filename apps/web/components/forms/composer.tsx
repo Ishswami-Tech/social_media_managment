@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Hash, ImagePlus, Sparkles, Wand2, X } from "lucide-react";
+import { Hash, ImagePlus, Rocket, Search, Sparkles, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { countCharacters, plainTextToRichDoc, type RichNode } from "@platform/social-core";
 import { uploadMediaFile } from "@/lib/client/upload";
@@ -17,6 +17,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { COMPOSER_SEED_KEY, ResearchPanel } from "@/components/forms/research-panel";
+import { StatusBadge } from "@/components/app/status-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -110,6 +113,37 @@ export function Composer({
   const [collapsedPreview, setCollapsedPreview] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const version = useRef(1);
+  const [researchOpen, setResearchOpen] = useState(false);
+  const [adaptWithAI, setAdaptWithAI] = useState(true);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [publishResult, setPublishResult] = useState<{
+    postId: string;
+    variants: {
+      platform: string;
+      account: string;
+      status: string;
+      externalUrl: string | null;
+      lastError: string | null;
+    }[];
+  } | null>(null);
+
+  // Seed from the research panel (sessionStorage) when arriving via /create?seed=1
+  useEffect(() => {
+    if (existing) return;
+    try {
+      const raw = sessionStorage.getItem(COMPOSER_SEED_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(COMPOSER_SEED_KEY);
+      const seed = JSON.parse(raw) as { text: string; title?: string };
+      // One-time hand-off from the research panel; runs only on mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (seed.title) setTitle(seed.title);
+      setMasterText(seed.text);
+      setMasterReplace({ version: ++version.current, doc: plainTextToRichDoc(seed.text) });
+    } catch {
+      /* ignore */
+    }
+  }, [existing]);
 
   const selectedAccounts = useMemo(() => accounts.filter((a) => selected.includes(a.id)), [accounts, selected]);
   const previewAccount = selectedAccounts.find((a) => a.id === previewAccountId) ?? selectedAccounts[0] ?? accounts[0];
@@ -235,6 +269,124 @@ export function Composer({
     setMasterReplace({ version: ++version.current, doc: plainTextToRichDoc(data.text) });
   }
 
+  function insertResearch(text: string) {
+    const next = masterText.trim() ? `${masterText.trimEnd()}\n\n${text}` : text;
+    setMasterText(next);
+    setMasterReplace({ version: ++version.current, doc: plainTextToRichDoc(next) });
+    setResearchOpen(false);
+    toast.success("Added to the post");
+  }
+
+  async function generateImage() {
+    if (!masterText.trim()) return toast.error("Write the post first so the image matches it");
+    setImageBusy(true);
+    const data = await ai("/api/ai/image", {
+      prompt: `Social media image for this post, no text overlay, photographic, brand-safe: ${masterText.slice(0, 600)}`,
+      size: "1024x1024",
+    });
+    setImageBusy(false);
+    if (!data) return;
+    for (const a of data.assets as { id: string; fileName: string; url: string }[]) {
+      setMedia((m) => [{ id: a.id, fileName: a.fileName, url: a.url, thumbnailUrl: a.url }, ...m]);
+      setSharedMedia((sm) => [...sm, a.id]);
+    }
+    toast.success(`Image generated with ${data.model}`);
+  }
+
+  /**
+   * One click: adapt the copy per platform with AI (optional), create the post
+   * for every selected account and publish it immediately. Per-account
+   * outcomes are shown when the worker reports back.
+   */
+  async function publishEverywhere() {
+    if (!masterText.trim()) return toast.error("Post text is required");
+    if (selectedAccounts.length === 0) return toast.error("Select at least one account");
+    setBusy(true);
+    const variantText: Record<string, string> = {};
+    if (adaptWithAI && aiEnabled) {
+      const platforms = [...new Set(selectedAccounts.filter((a) => !variants[a.id]?.custom).map((a) => a.platform))];
+      if (platforms.length) {
+        const data = await ai("/api/ai/generate", { idea: masterText, platforms, brandId });
+        if (data) {
+          for (const a of selectedAccounts) {
+            const gen = data.variants.find((x: { platform: string }) => x.platform === a.platform);
+            if (gen && !variants[a.id]?.custom)
+              variantText[a.id] =
+                `${gen.text}${gen.hashtags?.length && !gen.text.includes("#") ? `\n\n${gen.hashtags.join(" ")}` : ""}`;
+          }
+        }
+      }
+    }
+    for (const a of selectedAccounts) {
+      if (a.mediaRequired && mediaFor(a.id).length === 0) {
+        setBusy(false);
+        return toast.error(`${a.displayName} needs an image. Add one or click "Generate image".`);
+      }
+    }
+    const payload = {
+      title: title || undefined,
+      masterText,
+      variants: selectedAccounts.map((a) => ({
+        socialAccountId: a.id,
+        text: variantText[a.id] ?? textFor(a.id),
+        mediaAssetIds: mediaFor(a.id),
+      })),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      autoPublishOnApproval: false,
+    };
+    const res = await fetch(existing ? `/api/posts/${existing.id}` : "/api/posts", {
+      method: existing ? "PATCH" : "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setBusy(false);
+      return toast.error(data.message ?? "Save failed");
+    }
+    const id = data.post.id as string;
+    const pub = await fetch(`/api/posts/${id}/publish`, { method: "POST" });
+    const pd = await pub.json();
+    if (!pub.ok) {
+      setBusy(false);
+      toast.error(pd.message ?? "Publish failed");
+      router.push(`/posts/${id}`);
+      return;
+    }
+    const snapshot = (p: {
+      variants: {
+        platform: string;
+        status: string;
+        externalUrl: string | null;
+        lastError: string | null;
+        socialAccount: { displayName: string };
+      }[];
+    }) =>
+      p.variants.map((v) => ({
+        platform: v.platform,
+        account: v.socialAccount.displayName,
+        status: v.status,
+        externalUrl: v.externalUrl,
+        lastError: v.lastError,
+      }));
+    setPublishResult({ postId: id, variants: snapshot(pd.post) });
+    setBusy(false);
+    // Poll for a few seconds so the dialog reflects the worker's outcome per platform.
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const r = await fetch(`/api/posts/${id}`);
+      if (!r.ok) break;
+      const { post } = await r.json();
+      setPublishResult({ postId: id, variants: snapshot(post) });
+      if (
+        post.variants.every((v: { status: string }) =>
+          ["PUBLISHED", "FAILED", "DISCONNECTED_ACCOUNT"].includes(v.status),
+        )
+      )
+        break;
+    }
+  }
+
   async function suggestHashtags() {
     if (!masterText.trim()) return;
     const data = await ai("/api/ai/hashtags", {
@@ -339,6 +491,17 @@ export function Composer({
           >
             <ImagePlus /> Add image
           </Button>
+          {aiEnabled && !accountId && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={generateImage}
+              disabled={imageBusy || !masterText.trim()}
+            >
+              <Sparkles /> {imageBusy ? "Generating…" : "Generate image"}
+            </Button>
+          )}
           {uploadPct !== null && <Progress value={uploadPct} className="w-32" />}
           <span className="text-xs text-muted-foreground">{chosen.length} selected</span>
         </div>
@@ -451,6 +614,15 @@ export function Composer({
                       title="Suggest hashtags"
                     >
                       <Hash /> Hashtags
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setResearchOpen(true)}
+                      title="Research with AI (web search, URLs, feeds)"
+                    >
+                      <Search /> Research
                     </Button>
                   </>
                 ) : null
@@ -671,11 +843,20 @@ export function Composer({
             )}
             {canPublish && !requireApproval && (
               <>
-                <Button onClick={() => save("schedule")} disabled={busy || !schedule}>
-                  Schedule
+                {aiEnabled && (
+                  <label className="flex items-center gap-2 text-xs">
+                    <Checkbox checked={adaptWithAI} onCheckedChange={(c) => setAdaptWithAI(!!c)} /> Adapt copy per
+                    platform with AI before publishing
+                  </label>
+                )}
+                <Button onClick={publishEverywhere} disabled={busy || selectedAccounts.length === 0}>
+                  <Rocket />{" "}
+                  {busy
+                    ? "Publishing…"
+                    : `Publish to ${selectedAccounts.length || "all"} platform${selectedAccounts.length === 1 ? "" : "s"} now`}
                 </Button>
-                <Button variant="secondary" onClick={() => save("publish")} disabled={busy}>
-                  Publish now
+                <Button variant="outline" onClick={() => save("schedule")} disabled={busy || !schedule}>
+                  Schedule instead
                 </Button>
               </>
             )}
@@ -689,6 +870,56 @@ export function Composer({
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={researchOpen} onOpenChange={setResearchOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Research with AI</DialogTitle>
+            <DialogDescription>
+              Search the web, read a URL or a feed, and drop the findings straight into your post.
+            </DialogDescription>
+          </DialogHeader>
+          <ResearchPanel compact onUse={insertResearch} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!publishResult}
+        onOpenChange={(o) => !o && publishResult && router.push(`/posts/${publishResult.postId}`)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Publishing to {publishResult?.variants.length} platform(s)</DialogTitle>
+            <DialogDescription>
+              Each platform publishes independently; failures never block the others.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {publishResult?.variants.map((v) => (
+              <div
+                key={`${v.platform}-${v.account}`}
+                className="flex items-center justify-between rounded-md border p-2 text-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <PlatformIcon platform={v.platform} /> {v.account}
+                </span>
+                <span className="flex items-center gap-2">
+                  {v.externalUrl && (
+                    <a href={v.externalUrl} target="_blank" rel="noreferrer" className="text-xs underline">
+                      View
+                    </a>
+                  )}
+                  <StatusBadge status={v.status} />
+                </span>
+              </div>
+            ))}
+            {publishResult?.variants.some((v) => v.lastError) && (
+              <p className="text-xs text-destructive">{publishResult.variants.find((v) => v.lastError)?.lastError}</p>
+            )}
+          </div>
+          <Button onClick={() => publishResult && router.push(`/posts/${publishResult.postId}`)}>Open post</Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

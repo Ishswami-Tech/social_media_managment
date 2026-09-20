@@ -3,6 +3,9 @@ import { prisma } from "@/lib/db";
 import { DEFAULT_OVERRIDES, ROLE_MATRIX, CAPABILITIES } from "@platform/rbac";
 import { PageHeader } from "@/components/app/page-header";
 import { SettingsForm } from "@/components/forms/settings-form";
+import { ConnectorSettings } from "@/components/forms/connector-settings";
+import { connectorStatus } from "@/lib/research";
+import { CONNECTOR_INFO } from "@platform/research";
 
 export const metadata = { title: "Settings" };
 
@@ -20,6 +23,7 @@ export default async function SettingsPage() {
       select: { provider: true, label: true, active: true },
     }),
   ]);
+  const connectors = (await connectorStatus(ctx.organization.id)).map((c) => ({ ...c, ...CONNECTOR_INFO[c.id] }));
   const configurable = Object.fromEntries(
     (Object.keys(ROLE_MATRIX) as (keyof typeof ROLE_MATRIX)[]).map((role) => [
       role,
@@ -51,6 +55,9 @@ export default async function SettingsPage() {
         keys={keys}
         configurable={configurable}
       />
+      <div className="mt-4">
+        <ConnectorSettings connectors={connectors} />
+      </div>
     </>
   );
 }

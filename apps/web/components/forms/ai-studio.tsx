@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ResearchPanel } from "@/components/forms/research-panel";
 
 interface Model {
   provider: string;
@@ -128,13 +129,17 @@ export function AIStudio({ models, brands, canImage }: Props) {
           </div>
         )}
       </div>
-      <Tabs defaultValue="generate">
+      <Tabs defaultValue="research">
         <TabsList>
+          <TabsTrigger value="research">Research</TabsTrigger>
           <TabsTrigger value="generate">Copy</TabsTrigger>
           {canImage && <TabsTrigger value="image">Images</TabsTrigger>}
           <TabsTrigger value="hooks">Hooks & hashtags</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
         </TabsList>
+        <TabsContent value="research">
+          <ResearchPanel />
+        </TabsContent>
         <TabsContent value="generate">
           <Card>
             <CardHeader>

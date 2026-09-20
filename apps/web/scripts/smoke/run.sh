@@ -77,6 +77,16 @@ check "approve scheduled -> queued for 2030" 200 "$(req POST /api/posts/$SCHED_I
 check "scheduledAt kept" 2030-01-01T10:00:00.000Z "$(jq_ 'j=>j.post.scheduledAt')"
 check "status QUEUED (delayed job)" QUEUED "$(jq_ 'j=>j.post.status')"
 
+echo "== research skills & connectors"
+check "list skills + connectors" 200 "$(req GET /api/ai/research)"
+check "five built-in skills" 5 "$(jq_ 'j=>j.skills.length')"
+check "connector status listed" 2 "$(jq_ 'j=>j.connectors.length')"
+check "search skill without connector -> 409" 409 "$(req POST /api/ai/research '{"skillId":"topic-research","input":"coffee trends","platforms":["LINKEDIN"]}')"
+check "url skill without AI keys -> 400 ai" 400 "$(req POST /api/ai/research '{"skillId":"url-to-posts","input":"https://example.com","platforms":["LINKEDIN"]}')"
+check "unknown skill -> 404" 404 "$(req POST /api/ai/research '{"skillId":"nope","input":"some topic","platforms":["LINKEDIN"]}')"
+check "connector settings listed" 200 "$(req GET /api/organizations/connectors)"
+check "bad connector key rejected" 400 "$(req POST /api/organizations/connectors '{"connector":"TAVILY","apiKey":"definitely-not-a-key"}')"
+
 echo "== webhook (signed WhatsApp inbound)"
 BODY='{"object":"whatsapp_business_account","entry":[{"id":"WABA1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"15550001111","phone_number_id":"'$PNID'"},"contacts":[{"profile":{"name":"Grace"},"wa_id":"44770'$RUN'"}],"messages":[{"from":"44770'$RUN'","id":"wamid.'$RUN'","timestamp":"'$(date +%s)'","type":"text","text":{"body":"Hi, is the store open today?"}}]}}]}]}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "test-meta-app-secret" | awk '{print $2}')

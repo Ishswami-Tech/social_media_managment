@@ -32,6 +32,14 @@ function toOpenAIMessages(messages: ChatMessage[]) {
   }));
 }
 
+function safeJson(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    return { _raw: text };
+  }
+}
+
 export class OpenAIProvider implements AIProvider {
   readonly name = "OPENAI" as const;
 
@@ -50,7 +58,13 @@ export class OpenAIProvider implements AIProvider {
       };
     else if (req.json) body.response_format = { type: "json_object" };
     const data = await postJson<{
-      choices: { message: { content: string | null }; finish_reason?: string }[];
+      choices: {
+        message: {
+          content: string | null;
+          tool_calls?: { id: string; function: { name: string; arguments: string } }[];
+        };
+        finish_reason?: string;
+      }[];
       usage?: { prompt_tokens: number; completion_tokens: number };
     }>(
       "OPENAI",
@@ -61,8 +75,14 @@ export class OpenAIProvider implements AIProvider {
     );
     const choice = data.choices[0];
     if (!choice) throw new AIError("OpenAI returned no choices", "PROVIDER_UNAVAILABLE", true, "OPENAI");
+    const toolCalls = choice.message.tool_calls?.map((c) => ({
+      id: c.id,
+      name: c.function.name,
+      arguments: safeJson(c.function.arguments),
+    }));
     return {
       text: choice.message.content ?? "",
+      toolCalls: toolCalls?.length ? toolCalls : undefined,
       usage: { inputTokens: data.usage?.prompt_tokens ?? 0, outputTokens: data.usage?.completion_tokens ?? 0 },
       model: req.model,
       provider: "OPENAI",

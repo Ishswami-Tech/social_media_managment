@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     "@platform/media",
     "@platform/queue",
     "@platform/rbac",
+    "@platform/research",
     "@platform/social-core",
     "@platform/social-linkedin",
     "@platform/social-meta",

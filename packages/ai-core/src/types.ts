@@ -11,9 +11,27 @@ export interface ModelInfo {
   imageCost?: number;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+/** JSON-schema described function the model may call (a "plugin"). */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string | ContentPart[];
+  /** Assistant turn that requested tool calls */
+  toolCalls?: ToolCall[];
+  /** Tool turn: which call this answers */
+  toolCallId?: string;
+  name?: string;
 }
 export type ContentPart =
   { type: "text"; text: string } | { type: "image"; url?: string; base64?: string; mimeType?: string };
@@ -29,6 +47,8 @@ export interface TextRequest {
   /** Free-form tag for usage metering (e.g. "GENERATE") */
   operation?: AIOperation;
   abortSignal?: AbortSignal;
+  /** Tools the model may call; when present the response may carry toolCalls instead of text. */
+  tools?: ToolDefinition[];
 }
 
 export interface Usage {
@@ -38,6 +58,8 @@ export interface Usage {
 
 export interface TextResponse {
   text: string;
+  /** Present when the model decided to call tools */
+  toolCalls?: ToolCall[];
   usage: Usage;
   model: string;
   provider: AIProviderName;

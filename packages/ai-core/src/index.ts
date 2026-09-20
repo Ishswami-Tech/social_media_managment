@@ -4,3 +4,4 @@ export * from "./prompts";
 export * from "./operations";
 export * from "./errors";
 export * from "./http";
+export * from "./agent";

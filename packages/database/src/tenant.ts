@@ -13,6 +13,8 @@ export const TENANT_MODELS = new Set<string>([
   "Post",
   "AIUsage",
   "OrganizationAIKey",
+  "OrganizationConnector",
+  "ResearchBrief",
   "Brand",
   "Contact",
   "Conversation",

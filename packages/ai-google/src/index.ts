@@ -55,8 +55,25 @@ export class GoogleProvider implements AIProvider {
       },
     };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
+    if (req.tools?.length) {
+      body.tools = [
+        {
+          functionDeclarations: req.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          })),
+        },
+      ];
+      // JSON mode and function calling are mutually exclusive on the Gemini API.
+      delete (body.generationConfig as Record<string, unknown>).responseMimeType;
+      delete (body.generationConfig as Record<string, unknown>).responseSchema;
+    }
     const data = await postJson<{
-      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+      candidates?: {
+        content?: { parts?: { text?: string; functionCall?: { name: string; args?: Record<string, unknown> } }[] };
+        finishReason?: string;
+      }[];
       usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       promptFeedback?: { blockReason?: string };
     }>(
@@ -75,9 +92,18 @@ export class GoogleProvider implements AIProvider {
       );
     const cand = data.candidates?.[0];
     const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-    if (!text) throw new AIError("Gemini returned no text", "PROVIDER_UNAVAILABLE", true, "GOOGLE", undefined, data);
+    const toolCalls = (cand?.content?.parts ?? [])
+      .filter((p) => p.functionCall)
+      .map((p, i) => ({
+        id: `call_${Date.now()}_${i}`,
+        name: p.functionCall!.name,
+        arguments: p.functionCall!.args ?? {},
+      }));
+    if (!text && toolCalls.length === 0)
+      throw new AIError("Gemini returned no text", "PROVIDER_UNAVAILABLE", true, "GOOGLE", undefined, data);
     return {
       text,
+      toolCalls: toolCalls.length ? toolCalls : undefined,
       usage: {
         inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
