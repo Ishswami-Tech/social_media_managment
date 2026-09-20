@@ -42,7 +42,10 @@ export interface AnalyticsJobData {
 }
 
 export type MaintenanceJobData =
-  { task: "refresh-tokens" } | { task: "expire-oauth-states" } | { task: "retry-stuck-jobs" };
+  | { task: "refresh-tokens" }
+  | { task: "expire-oauth-states" }
+  | { task: "retry-stuck-jobs" }
+  | { task: "collect-analytics" };
 
 export interface JobDataMap {
   publish: PublishJobData;

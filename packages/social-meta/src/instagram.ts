@@ -6,6 +6,7 @@ import {
   type AuthorizationRequest,
   type CallbackContext,
   type ConnectedAccount,
+  type MetricsResult,
   type NormalizedMedia,
   type NormalizedPost,
   type OAuthCredential,
@@ -175,6 +176,38 @@ export class InstagramProvider implements SocialProvider {
       /* permalink is best-effort */
     }
     return { externalPostId: pub.id, externalUrl: permalink, publishedAt: new Date(), raw: pub };
+  }
+
+  async getPostMetrics(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null> {
+    const r = await graphGet<{ data?: { name: string; values?: { value?: number }[] }[] }>(
+      ctx.credential,
+      `/${externalPostId}/insights`,
+      {
+        metric: "views,reach,likes,comments,shares,saved",
+      },
+    );
+    const v = (name: string) => r.data?.find((d) => d.name === name)?.values?.[0]?.value;
+    return {
+      metrics: {
+        impressions: v("views"),
+        reach: v("reach"),
+        likes: v("likes"),
+        comments: v("comments"),
+        shares: v("shares"),
+        saves: v("saved"),
+      },
+      raw: r,
+      capturedAt: new Date(),
+    };
+  }
+
+  async getAccountMetrics(ctx: ProviderContext): Promise<MetricsResult | null> {
+    const r = await graphGet<{ followers_count?: number; media_count?: number }>(
+      ctx.credential,
+      `/${ctx.externalAccountId}`,
+      { fields: "followers_count,media_count" },
+    );
+    return { metrics: { followers: r.followers_count }, raw: r, capturedAt: new Date() };
   }
 
   async getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus> {

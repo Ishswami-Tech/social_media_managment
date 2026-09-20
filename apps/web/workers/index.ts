@@ -14,6 +14,7 @@ import { runPublishJob } from "@/lib/services/publishing";
 import { processWebhookEvent } from "@/lib/services/webhooks";
 import { deliverOutbound } from "@/lib/services/whatsapp";
 import { processMedia } from "@/lib/services/media";
+import { collectAccountMetrics, collectPostMetrics } from "@/lib/services/analytics";
 import { runCampaign } from "./campaigns";
 import { runMaintenance, scheduleMaintenance } from "./maintenance";
 
@@ -32,6 +33,15 @@ async function main() {
     }),
     createWorker("media", connection, async (job) => processMedia(job.data.mediaAssetId), { concurrency: 2 }),
     createWorker("campaigns", connection, async (job) => runCampaign(job.data.campaignId), { concurrency: 2 }),
+    createWorker(
+      "analytics",
+      connection,
+      async (job) => {
+        if (job.data.postVariantId) await collectPostMetrics(job.data.postVariantId);
+        else if (job.data.socialAccountId) await collectAccountMetrics(job.data.socialAccountId);
+      },
+      { concurrency: 3, limiter: { max: 20, duration: 1000 } },
+    ),
     createWorker("maintenance", connection, async (job) => runMaintenance(job.data), { concurrency: 1 }),
   ];
 

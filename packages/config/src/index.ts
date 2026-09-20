@@ -35,6 +35,9 @@ export const envSchema = z.object({
   ANTHROPIC_API_KEY: optionalString,
   GOOGLE_AI_API_KEY: optionalString,
 
+  RESEND_API_KEY: optionalString,
+  EMAIL_FROM: optionalString,
+
   SENTRY_DSN: optionalString,
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

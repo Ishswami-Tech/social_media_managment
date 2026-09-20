@@ -6,7 +6,7 @@ import { writeAudit } from "@platform/database";
 import { ac, orgRoles } from "./auth-access";
 import { prisma } from "./db";
 import { getEnv } from "./env";
-import { logger } from "./logger";
+import { sendEmail } from "./email";
 
 /**
  * better-auth configuration.
@@ -147,14 +147,14 @@ function buildAuth() {
           },
         },
         sendInvitationEmail: async (data) => {
-          // Email delivery is an integration concern; until an email provider is
-          // wired, the accept link is logged so operators can forward it.
           const link = `${env.APP_URL}/accept-invitation/${data.id}`;
-          logger.info("organization.invitation", {
-            email: data.email,
-            organization: data.organization.name,
-            role: data.role,
-            link,
+          const inviter = data.inviter.user.name;
+          const org = data.organization.name;
+          await sendEmail({
+            to: data.email,
+            subject: `You're invited to ${org}`,
+            text: `${inviter} invited you to join ${org} as ${data.role}.\n\nAccept the invitation: ${link}\n\nThis link expires in 7 days.`,
+            html: `<p>${inviter} invited you to join <strong>${org}</strong> as ${data.role}.</p><p><a href="${link}">Accept the invitation</a></p><p>This link expires in 7 days.</p>`,
           });
         },
       }),

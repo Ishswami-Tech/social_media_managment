@@ -132,3 +132,52 @@ describe("InstagramProvider", () => {
     expect(calls.filter((c) => c.includes("/c1?"))).toHaveLength(2);
   });
 });
+
+describe("metrics", () => {
+  const ctx = { credential: { accessToken: "t", scopes: [] }, externalAccountId: "p1", accountType: "PAGE" as const };
+  it("normalises Facebook post metrics from fields + insights", async () => {
+    mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            likes: { summary: { total_count: 12 } },
+            comments: { summary: { total_count: 3 } },
+            shares: { count: 2 },
+            insights: {
+              data: [
+                { name: "post_impressions", values: [{ value: 500 }] },
+                { name: "post_impressions_unique", values: [{ value: 420 }] },
+                { name: "post_clicks", values: [{ value: 9 }] },
+              ],
+            },
+          }),
+        ),
+    );
+    const fb = new FacebookProvider({ clientId: "a", clientSecret: "b" });
+    const m = await fb.getPostMetrics("p1_1", ctx);
+    expect(m?.metrics).toEqual({ likes: 12, comments: 3, shares: 2, impressions: 500, reach: 420, clicks: 9 });
+  });
+  it("normalises Instagram insights and maps views to impressions", async () => {
+    mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { name: "views", values: [{ value: 1000 }] },
+              { name: "reach", values: [{ value: 800 }] },
+              { name: "saved", values: [{ value: 7 }] },
+            ],
+          }),
+        ),
+    );
+    const ig = new InstagramProvider({ clientId: "a", clientSecret: "b" });
+    const m = await ig.getPostMetrics("m1", { ...ctx, accountType: "BUSINESS" });
+    expect(m?.metrics).toMatchObject({ impressions: 1000, reach: 800, saves: 7 });
+    expect(m?.metrics.likes).toBeUndefined();
+  });
+  it("reads account followers", async () => {
+    mockFetch(() => new Response(JSON.stringify({ followers_count: 4321 })));
+    const fb = new FacebookProvider({ clientId: "a", clientSecret: "b" });
+    expect((await fb.getAccountMetrics(ctx))?.metrics.followers).toBe(4321);
+  });
+});

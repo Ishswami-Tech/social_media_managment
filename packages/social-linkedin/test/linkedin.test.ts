@@ -102,3 +102,42 @@ describe("LinkedInProvider", () => {
     expect(r.issues.map((i) => i.code)).toContain("DOCUMENT_ALONE");
   });
 });
+
+describe("metrics", () => {
+  it("returns null for member profiles (LinkedIn exposes no member stats)", async () => {
+    expect(
+      await provider.getPostMetrics("urn:li:share:1", {
+        credential: { accessToken: "t", scopes: [] },
+        externalAccountId: "abc",
+        accountType: "PROFILE",
+      }),
+    ).toBeNull();
+  });
+  it("normalises organization share statistics", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/organizationalEntityShareStatistics": () =>
+        new Response(
+          JSON.stringify({
+            elements: [
+              {
+                totalShareStatistics: {
+                  impressionCount: 900,
+                  uniqueImpressionsCount: 700,
+                  likeCount: 30,
+                  commentCount: 4,
+                  shareCount: 6,
+                  clickCount: 55,
+                },
+              },
+            ],
+          }),
+        ),
+    });
+    const m = await provider.getPostMetrics("urn:li:share:1", {
+      credential: { accessToken: "t", scopes: [] },
+      externalAccountId: "42",
+      accountType: "ORGANIZATION",
+    });
+    expect(m?.metrics).toEqual({ impressions: 900, reach: 700, likes: 30, comments: 4, shares: 6, clicks: 55 });
+  });
+});

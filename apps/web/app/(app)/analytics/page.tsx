@@ -3,7 +3,9 @@ import { prisma } from "@/lib/db";
 import { organizationSummary } from "@/lib/services/analytics";
 import { PLATFORM_LABELS } from "@/lib/providers";
 import { formatDate } from "@/lib/utils";
+import { featureEnabled } from "@/lib/flags";
 import { PageHeader } from "@/components/app/page-header";
+import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/app/stat-card";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
@@ -36,12 +38,19 @@ export default async function AnalyticsPage() {
     }),
   ]);
   const e = summary.engagement30d;
+  const canExport = await featureEnabled("analytics_export", ctx.organization.id);
   return (
     <>
       <PageHeader
         title="Analytics"
-        description="Publishing outcomes, normalised engagement and AI spend for the last 30 days."
-      />
+        description="Publishing outcomes, normalised engagement and AI spend for the last 30 days. Provider metrics are refreshed every 6 hours."
+      >
+        {canExport && (
+          <Button asChild variant="outline">
+            <a href="/api/analytics/export?days=30">Export CSV</a>
+          </Button>
+        )}
+      </PageHeader>
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <StatCard title="Published" value={summary.published30d} />
         <StatCard title="Failed jobs" value={summary.posts.FAILED ?? 0} />

@@ -73,6 +73,29 @@ export interface PublishResult {
 
 export type PublishStatus = "PUBLISHED" | "PROCESSING" | "FAILED" | "DELETED" | "UNKNOWN";
 
+/**
+ * Normalised metric subset shared by all platforms (spec §20). Platform-specific
+ * numbers stay in `raw`. Every field is optional because no two providers
+ * expose the same set.
+ */
+export interface NormalizedMetrics {
+  impressions?: number;
+  reach?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  clicks?: number;
+  saves?: number;
+  videoViews?: number;
+  followers?: number;
+}
+
+export interface MetricsResult {
+  metrics: NormalizedMetrics;
+  raw?: unknown;
+  capturedAt: Date;
+}
+
 export interface AuthorizationRequest {
   url: string;
   state: string;
@@ -116,6 +139,10 @@ export interface SocialProvider {
   uploadMedia(media: NormalizedMedia, ctx: ProviderContext): Promise<RemoteMedia>;
   publish(post: NormalizedPost, ctx: ProviderContext): Promise<PublishResult>;
   getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus>;
+  /** Post-level metrics; resolves to null when the platform/account type does not expose them. */
+  getPostMetrics?(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null>;
+  /** Account-level metrics (followers etc.); null when unsupported. */
+  getAccountMetrics?(ctx: ProviderContext): Promise<MetricsResult | null>;
 }
 
 export interface ProviderConfig {

@@ -5,6 +5,7 @@ import {
   type AuthorizationRequest,
   type CallbackContext,
   type ConnectedAccount,
+  type MetricsResult,
   type NormalizedMedia,
   type NormalizedPost,
   type OAuthCredential,
@@ -120,6 +121,40 @@ export class FacebookProvider implements SocialProvider {
     );
     const id = r.post_id ?? r.id;
     return { externalPostId: id, externalUrl: `https://www.facebook.com/${id}`, publishedAt: new Date(), raw: r };
+  }
+
+  async getPostMetrics(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null> {
+    const r = await graphGet<{
+      likes?: { summary?: { total_count?: number } };
+      comments?: { summary?: { total_count?: number } };
+      shares?: { count?: number };
+      insights?: { data?: { name: string; values?: { value?: number }[] }[] };
+    }>(ctx.credential, `/${externalPostId}`, {
+      fields:
+        "likes.summary(true).limit(0),comments.summary(true).limit(0),shares,insights.metric(post_impressions,post_impressions_unique,post_clicks)",
+    });
+    const insight = (name: string) => r.insights?.data?.find((d) => d.name === name)?.values?.[0]?.value;
+    return {
+      metrics: {
+        likes: r.likes?.summary?.total_count,
+        comments: r.comments?.summary?.total_count,
+        shares: r.shares?.count,
+        impressions: insight("post_impressions"),
+        reach: insight("post_impressions_unique"),
+        clicks: insight("post_clicks"),
+      },
+      raw: r,
+      capturedAt: new Date(),
+    };
+  }
+
+  async getAccountMetrics(ctx: ProviderContext): Promise<MetricsResult | null> {
+    const r = await graphGet<{ followers_count?: number; fan_count?: number }>(
+      ctx.credential,
+      `/${ctx.externalAccountId}`,
+      { fields: "followers_count,fan_count" },
+    );
+    return { metrics: { followers: r.followers_count ?? r.fan_count }, raw: r, capturedAt: new Date() };
   }
 
   async getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus> {

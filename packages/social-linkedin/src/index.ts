@@ -9,6 +9,7 @@ import {
   type AuthorizationRequest,
   type CallbackContext,
   type ConnectedAccount,
+  type MetricsResult,
   type NormalizedMedia,
   type NormalizedPost,
   type OAuthCredential,
@@ -258,6 +259,61 @@ export class LinkedInProvider implements SocialProvider {
       if (e instanceof ProviderError && e.code === "NOT_FOUND") return "DELETED";
       throw e;
     }
+  }
+
+  /**
+   * Share statistics are only available for organization pages via the
+   * Community Management API; member profiles expose nothing, so null.
+   */
+  async getPostMetrics(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null> {
+    if (ctx.accountType !== "ORGANIZATION") return null;
+    const org = `urn:li:organization:${ctx.externalAccountId}`;
+    const res = await this.api<{ elements?: { totalShareStatistics?: Record<string, number> }[] }>(
+      ctx.credential,
+      `/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(org)}&shares=List(${encodeURIComponent(externalPostId)})`,
+    );
+    const t = res.elements?.[0]?.totalShareStatistics;
+    if (!t) return null;
+    return {
+      metrics: {
+        impressions: t.impressionCount,
+        reach: t.uniqueImpressionsCount,
+        likes: t.likeCount,
+        comments: t.commentCount,
+        shares: t.shareCount,
+        clicks: t.clickCount,
+      },
+      raw: t,
+      capturedAt: new Date(),
+    };
+  }
+
+  async getAccountMetrics(ctx: ProviderContext): Promise<MetricsResult | null> {
+    if (ctx.accountType !== "ORGANIZATION") return null;
+    const org = `urn:li:organization:${ctx.externalAccountId}`;
+    const [size, stats] = await Promise.all([
+      this.api<{ firstDegreeSize?: number }>(
+        ctx.credential,
+        `/rest/networkSizes/${encodeURIComponent(org)}?edgeType=CompanyFollowedByMember`,
+      ),
+      this.api<{ elements?: { totalShareStatistics?: Record<string, number> }[] }>(
+        ctx.credential,
+        `/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(org)}`,
+      ).catch(() => ({ elements: [] })),
+    ]);
+    const t = stats.elements?.[0]?.totalShareStatistics ?? {};
+    return {
+      metrics: {
+        followers: size.firstDegreeSize,
+        impressions: t.impressionCount,
+        likes: t.likeCount,
+        comments: t.commentCount,
+        shares: t.shareCount,
+        clicks: t.clickCount,
+      },
+      raw: { networkSize: size, stats: t },
+      capturedAt: new Date(),
+    };
   }
 
   // ---- internals ----

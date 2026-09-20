@@ -5,6 +5,7 @@ import { keyring, prisma } from "@/lib/db";
 import { logger, errorInfo } from "@/lib/logger";
 import { providers } from "@/lib/providers";
 import { queues } from "@/lib/queue";
+import { scheduleAnalyticsCollection } from "@/lib/services/analytics";
 
 /** Register repeatable housekeeping jobs (idempotent: BullMQ dedupes by repeat key). */
 export async function scheduleMaintenance() {
@@ -24,6 +25,11 @@ export async function scheduleMaintenance() {
     { every: 5 * 60_000 },
     { name: "maintenance", data: { task: "retry-stuck-jobs" } },
   );
+  await q.upsertJobScheduler(
+    "collect-analytics",
+    { every: 6 * 60 * 60_000 },
+    { name: "maintenance", data: { task: "collect-analytics" } },
+  );
 }
 
 export async function runMaintenance(data: MaintenanceJobData) {
@@ -35,6 +41,11 @@ export async function runMaintenance(data: MaintenanceJobData) {
       return;
     case "retry-stuck-jobs":
       return requeueStuckJobs();
+    case "collect-analytics": {
+      const n = await scheduleAnalyticsCollection();
+      logger.info("analytics collection scheduled", n);
+      return;
+    }
   }
 }
 

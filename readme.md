@@ -71,7 +71,7 @@ Or use `docker compose up --build` for Postgres + Redis + web + worker.
 
 See `.env.example`. Required: `DATABASE_URL`, `REDIS_URL`, `AUTH_SECRET`, `ENCRYPTION_KEY`, `APP_URL`.
 Optional integrations: `LINKEDIN_CLIENT_ID/SECRET`, `META_APP_ID/SECRET`, `META_WEBHOOK_VERIFY_TOKEN`,
-`R2_*`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_AI_API_KEY`, `SENTRY_DSN`. Without R2 the app falls back
+`R2_*`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_AI_API_KEY`, `RESEND_API_KEY`/`EMAIL_FROM`, `SENTRY_DSN`. Without R2 the app falls back
 to in-memory media storage for development.
 
 Provider console settings:
@@ -109,9 +109,22 @@ Provider console settings:
   keyword automations and template campaigns.
 - **Media (§19).** Signed upload → `MediaAsset` → media worker (checksum de-dup, EXIF stripping, thumbnail,
   Instagram/LinkedIn/Facebook renditions).
+- **Analytics (§20).** Adapters expose `getPostMetrics` / `getAccountMetrics` (LinkedIn organization pages,
+  Facebook Pages, Instagram). A maintenance job fans out an analytics job per connected account and per post
+  published in the last 30 days every 6 hours; results land in `AnalyticsSnapshot` (normalised subset + raw).
+  CSV export at `/api/analytics/export` is gated by the `analytics_export` feature flag.
+- **Email.** Invitations are sent through Resend when `RESEND_API_KEY` is set; otherwise the message (with the
+  accept link) is logged.
 - **Super Admin console (§22).** `/admin`: overview, organizations (suspend/plan), users (promote, ban,
   audited impersonation), AI model catalogue + health checks, social integration status, queues & webhooks,
   feature flags, audit logs.
+
+## Smoke test
+
+`apps/web/scripts/smoke/run.sh` drives a running production build (`next start` on :3000 plus the worker) through
+sign-up, organizations, RBAC, the post lifecycle into the worker, signed webhooks, media processing, and the admin
+console. It needs `META_APP_SECRET=test-meta-app-secret` and `META_WEBHOOK_VERIFY_TOKEN=verify-me` in `apps/web/.env`
+and is re-runnable without a database reset.
 
 ## Scripts
 
@@ -125,7 +138,6 @@ pnpm --filter web build
 
 ## Roadmap status
 
-Phases 0–6 of the roadmap are implemented end to end (foundation, RBAC + Super Admin, LinkedIn, Meta, AI Studio,
-scheduler, WhatsApp). Phase 7 has the data model, normalised metrics and dashboards; provider metric collection
-jobs are the next step. Phase 8 providers (X, TikTok, YouTube, Threads, Pinterest) plug into the existing
+Phases 0–7 of the roadmap are implemented end to end (foundation, RBAC + Super Admin, LinkedIn, Meta, AI Studio,
+scheduler, WhatsApp, analytics collection + export). Phase 8 providers (X, TikTok, YouTube, Threads, Pinterest) plug into the existing
 `SocialProvider` contract and registry. Phase 9 has plans, quotas and feature flags modelled; billing is not wired.
