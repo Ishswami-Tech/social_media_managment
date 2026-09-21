@@ -3,3 +3,4 @@ export * from "./platforms";
 export * from "./posts";
 export * from "./whatsapp";
 export * from "./ai";
+export * from "./agent";

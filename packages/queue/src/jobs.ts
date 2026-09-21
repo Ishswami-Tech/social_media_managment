@@ -7,6 +7,8 @@ export const QUEUES = {
   campaigns: "campaigns",
   analytics: "analytics",
   maintenance: "maintenance",
+  agentRun: "agent-run",
+  deadLetter: "dead-letter",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -47,6 +49,23 @@ export type MaintenanceJobData =
   | { task: "retry-stuck-jobs" }
   | { task: "collect-analytics" };
 
+export interface AgentRunJobData {
+  runId: string;
+  organizationId: string;
+  /** Set when a human resumed/retried the run so the worker re-validates state first */
+  resume?: boolean;
+}
+
+/** A job that exhausted its retries on any queue, parked for admin inspection. */
+export interface DeadLetterJobData {
+  queue: QueueName;
+  originalJobId: string;
+  data: unknown;
+  error: string;
+  attempts: number;
+  failedAt: string;
+}
+
 export interface JobDataMap {
   publish: PublishJobData;
   webhooks: WebhookJobData;
@@ -55,4 +74,6 @@ export interface JobDataMap {
   campaigns: CampaignJobData;
   analytics: AnalyticsJobData;
   maintenance: MaintenanceJobData;
+  "agent-run": AgentRunJobData;
+  "dead-letter": DeadLetterJobData;
 }

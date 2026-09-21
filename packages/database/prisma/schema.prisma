@@ -142,6 +142,9 @@ model Organization {
   connectors      OrganizationConnector[]
   skills          OrganizationSkill[]
   plugins         OrganizationPlugin[]
+  agentRuns       AgentRun[]
+  accountProfiles AccountProfile[]
+  budgetReservations BudgetReservation[]
   researchBriefs  ResearchBrief[]
   brands          Brand[]
   contacts        Contact[]
@@ -205,6 +208,14 @@ model OrganizationSettings {
   aiImageModel                String?
   aiRetainPrompts             Boolean      @default(true)
   whatsappRequireHumanApproval Boolean     @default(true)
+  /// Agent Council (autonomous campaigns)
+  agentPublishMode            AgentPublishMode @default(APPROVAL_REQUIRED)
+  agentAssurance              AgentAssurance   @default(JUDGE_ONLY)
+  agentRunMaxCents            Int          @default(200)
+  agentMonthlyBudgetCents     Int          @default(5000)
+  agentMaxActiveRuns          Int          @default(5)
+  /// Allow-list of "PROVIDER::model" strings; null = any model the organization can reach
+  agentAllowedModels          Json?
   updatedAt                   DateTime     @updatedAt
 }
 
@@ -279,6 +290,8 @@ model SocialAccount {
   /// Provider-specific, non-secret metadata (page category, org URN...)
   metadata          Json?
   requireApproval   Boolean?            // null = inherit organization setting
+  /// Campaigns may publish to this account without a human when the organization mode is AUTOMATIC
+  agentAutoPublish  Boolean             @default(false)
   connectedById     String?
   lastSyncedAt      DateTime?
   lastError         String?
@@ -288,6 +301,8 @@ model SocialAccount {
   credential    SocialCredential?
   postVariants  PostVariant[]
   snapshots     AnalyticsSnapshot[]
+  profile       AccountProfile?
+  agentRunAccounts AgentRunAccount[]
 
   @@unique([organizationId, platform, externalAccountId])
   @@index([organizationId, status])
@@ -451,6 +466,7 @@ model PostVariant {
   media       PostMedia[]
   publishJobs PublishJob[]
   snapshots   AnalyticsSnapshot[]
+  features    PostFeatures?
 
   @@unique([postId, socialAccountId])
   @@index([socialAccountId, status])
@@ -681,6 +697,332 @@ model OrganizationPlugin {
 
   @@unique([organizationId, slug])
   @@index([organizationId, enabled])
+}
+
+// -----------------------------------------------------------------------------
+// Agent Council: autonomous research -> strategy -> writers -> checks -> blind
+// judge -> synthesis -> adaptation -> human/policy approval -> existing publisher.
+// The AI layer only ever produces recommendations; publishing stays deterministic.
+// -----------------------------------------------------------------------------
+
+enum AgentRunStatus {
+  QUEUED
+  RESEARCHING
+  STRATEGIZING
+  DRAFTING
+  REVIEWING
+  JUDGING
+  ADAPTING
+  AWAITING_APPROVAL
+  APPROVED
+  PUBLISHING
+  COMPLETED
+  FAILED
+  PAUSED
+  BLOCKED
+  CANCELLED
+}
+
+enum AgentAssurance {
+  JUDGE_ONLY
+  HIGH_ASSURANCE
+}
+
+enum AgentPublishMode {
+  MANUAL
+  APPROVAL_REQUIRED
+  AUTOMATIC
+}
+
+enum AgentDraftRole {
+  WRITER
+  REVISION
+  SYNTHESIS
+  ADAPTATION
+}
+
+enum AgentEventStatus {
+  STARTED
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum AgentAccountDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ClaimStatus {
+  SUPPORTED
+  UNSUPPORTED
+  UNVERIFIED
+}
+
+enum BudgetReservationStatus {
+  RESERVED
+  SETTLED
+  RELEASED
+}
+
+enum CircuitState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById    String
+  /// Campaign brief
+  topic          String
+  goal           String
+  audience       String?
+  notes          String?
+  platforms      Platform[]
+  status         AgentRunStatus @default(QUEUED)
+  assurance      AgentAssurance @default(JUDGE_ONLY)
+  publishMode    AgentPublishMode @default(APPROVAL_REQUIRED)
+  scheduledAt    DateTime?
+  timezone       String         @default("UTC")
+  maxCents       Int            @default(200)
+  spentCents     Float          @default(0)
+  /// Pipeline bookkeeping
+  currentStep    String?
+  /// Status the run was in before PAUSED/BLOCKED so it can resume
+  resumeStatus   AgentRunStatus?
+  blockedReason  String?
+  error          String?
+  attempt        Int            @default(0)
+  researchBriefId String?
+  research       Json?
+  promptVersions Json?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  accounts       AgentRunAccount[]
+  drafts         AgentDraft[]
+  events         AgentRunEvent[]
+  approvalTokens AgentApprovalToken[]
+  claims         Claim[]
+  reservations   BudgetReservation[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+model AgentRunAccount {
+  id              String        @id @default(cuid())
+  runId           String
+  run             AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id])
+  platform        Platform
+  /// Strategy the model chose for this account (angle, hook type, format, CTA, rationale)
+  strategy        Json?
+  winnerDraftId   String?
+  finalText       String?
+  finalHashtags   String[]      @default([])
+  mediaConcept    String?
+  mediaAssetIds   String[]      @default([])
+  decision        AgentAccountDecision @default(PENDING)
+  decidedById     String?
+  decidedAt       DateTime?
+  decisionComment String?
+  /// Text as edited by the approver (learning signal), when it differs from finalText
+  editedText      String?
+  /// Post created from the approved recommendation (existing deterministic publisher path)
+  postId          String?
+  error           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  drafts AgentDraft[]
+
+  @@unique([runId, socialAccountId])
+  @@index([socialAccountId])
+}
+
+model AgentDraft {
+  id            String         @id @default(cuid())
+  runId         String
+  run           AgentRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runAccountId  String
+  runAccount    AgentRunAccount @relation(fields: [runAccountId], references: [id], onDelete: Cascade)
+  role          AgentDraftRole
+  /// Blind label the judge sees (A, B, C); never the provider or model
+  label         String
+  provider      String
+  model         String
+  promptKey     String
+  promptVersion Int
+  promptHash    String
+  text          String
+  hashtags      String[]       @default([])
+  claimIds      String[]       @default([])
+  checks        Json?
+  judgeScore    Float?
+  judgeRationale String?
+  costCents     Float          @default(0)
+  inputTokens   Int            @default(0)
+  outputTokens  Int            @default(0)
+  latencyMs     Int            @default(0)
+  createdAt     DateTime       @default(now())
+
+  @@index([runAccountId])
+}
+
+model AgentRunEvent {
+  id            String           @id @default(cuid())
+  runId         String
+  run           AgentRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step          String
+  status        AgentEventStatus
+  provider      String?
+  model         String?
+  promptKey     String?
+  promptVersion Int?
+  promptHash    String?
+  input         Json?
+  output        Json?
+  validation    Json?
+  costCents     Float            @default(0)
+  latencyMs     Int              @default(0)
+  error         String?
+  createdAt     DateTime         @default(now())
+
+  @@index([runId, createdAt])
+}
+
+/// Signed, single-use approval links (email). Consumed on POST only, never on GET.
+model AgentApprovalToken {
+  id             String    @id @default(cuid())
+  runId          String
+  run            AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  organizationId String
+  userId         String
+  tokenHash      String    @unique
+  accountIds     String[]  @default([])
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([runId])
+}
+
+/// Claim ledger: every factual statement a draft may make, tied to a source and evidence.
+model Claim {
+  id             String      @id @default(cuid())
+  runId          String
+  run            AgentRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  organizationId String
+  statement      String
+  sourceUrl      String?
+  sourceTitle    String?
+  evidence       String?
+  confidence     Float       @default(0)
+  status         ClaimStatus @default(UNVERIFIED)
+  createdAt      DateTime    @default(now())
+
+  @@index([runId])
+}
+
+/// Account Brain: everything the council knows about one connected account.
+model AccountProfile {
+  id              String        @id @default(cuid())
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  socialAccountId String        @unique
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  identity        Json?
+  audience        Json?
+  voice           Json?
+  content         Json?
+  /// Learned from analytics with sample-size and confidence gating
+  performance     Json?
+  /// Weighted preferences derived from human edits, rejections and approval comments
+  humanFeedback   Json?
+  sampleSize      Int           @default(0)
+  learnedAt       DateTime?
+  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime      @default(now())
+
+  @@index([organizationId])
+}
+
+/// Structured features of a published post, joined with its metrics for learning.
+model PostFeatures {
+  id              String      @id @default(cuid())
+  organizationId  String
+  socialAccountId String
+  postVariantId   String      @unique
+  postVariant     PostVariant @relation(fields: [postVariantId], references: [id], onDelete: Cascade)
+  hookType        String?
+  format          String?
+  ctaType         String?
+  topic           String?
+  length          Int         @default(0)
+  hashtagCount    Int         @default(0)
+  hasMedia        Boolean     @default(false)
+  postedHourUtc   Int?
+  postedWeekday   Int?
+  impressions     Int?
+  engagements     Int?
+  engagementRate  Float?
+  publishedAt     DateTime?
+  capturedAt      DateTime?
+  learnedAt       DateTime?
+  createdAt       DateTime    @default(now())
+
+  @@index([socialAccountId, publishedAt])
+}
+
+/// Immutable prompt versions so any run can be reproduced exactly.
+model PromptVersion {
+  id        String   @id @default(cuid())
+  key       String
+  version   Int
+  hash      String   @unique
+  template  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([key, version])
+}
+
+/// Budget reservations prevent concurrent runs from overspending a monthly budget.
+model BudgetReservation {
+  id             String                  @id @default(cuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runId          String?
+  run            AgentRun?               @relation(fields: [runId], references: [id], onDelete: SetNull)
+  cents          Int
+  actualCents    Float?
+  status         BudgetReservationStatus @default(RESERVED)
+  createdAt      DateTime                @default(now())
+  settledAt      DateTime?
+
+  @@index([organizationId, status, createdAt])
+}
+
+/// Circuit breaker state per AI provider, shared by all workers.
+model ProviderHealth {
+  id            String       @id @default(cuid())
+  provider      String       @unique
+  state         CircuitState @default(CLOSED)
+  failureCount  Int          @default(0)
+  successCount  Int          @default(0)
+  avgLatencyMs  Int          @default(0)
+  lastFailureAt DateTime?
+  lastError     String?
+  openedUntil   DateTime?
+  updatedAt     DateTime     @updatedAt
 }
 
 model ResearchBrief {
