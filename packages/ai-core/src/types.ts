@@ -117,6 +117,8 @@ export interface AIProvider {
   embed?(req: EmbeddingRequest, auth: ProviderAuth): Promise<EmbeddingResponse>;
   /** Cheap liveness/credential check used by the admin console. */
   healthCheck?(auth: ProviderAuth): Promise<{ ok: boolean; message?: string }>;
+  /** Fetch available models from the provider API. */
+  listModels?(auth: ProviderAuth): Promise<{ id: string; displayName: string; capabilities: string[] }[]>;
 }
 
 export interface ProviderAuth {

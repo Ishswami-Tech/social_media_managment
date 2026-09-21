@@ -25,7 +25,6 @@ const mockProviders = new Map<AIProviderName, AIProvider>(
   [...realProviders.keys()].map((name) => [name, new MockProvider(name)]),
 );
 
-/** With AI_MOCK=1 every provider is served by the offline mock (local UI testing without keys). */
 export function aiMockEnabled(): boolean {
   return getEnv().AI_MOCK && getEnv().NODE_ENV !== "production";
 }
@@ -58,24 +57,51 @@ export interface SelectableModel {
 
 /**
  * Models a member of this organization can pick explicitly: the active
- * catalogue restricted to providers that have a usable key (BYO or platform).
+ * catalogue restricted to providers that have a usable key (BYO, connection, or platform).
+ * Connections with custom model lists are also included (mapped to OPENAI for routing).
  */
 export async function selectableModels(organizationId: string): Promise<SelectableModel[]> {
-  const [{ available }, rows] = await Promise.all([
+  const [{ available }, rows, connections] = await Promise.all([
     resolveAuth(organizationId),
     prisma.aIProviderConfig.findMany({
       where: { active: true },
       orderBy: [{ provider: "asc" }, { priority: "asc" }],
     }),
+    prisma.organizationAIConnection.findMany({
+      where: { organizationId, isActive: true },
+      select: { provider: true, models: true, name: true },
+    }),
   ]);
-  return rows
-    .filter((m) => available.includes(m.provider))
-    .map((m) => ({
-      provider: m.provider,
-      model: m.model,
-      displayName: m.displayName,
-      capabilities: m.capabilities as AICapability[],
-    }));
+
+  // Add models from connections (custom model lists) — route through OPENAI
+  const connModels: SelectableModel[] = [];
+  for (const c of connections) {
+    if (c.models) {
+      try {
+        const modelIds = JSON.parse(c.models) as string[];
+        for (const id of modelIds) {
+          connModels.push({
+            provider: "OPENAI",
+            model: id,
+            displayName: `${id} (${c.name})`,
+            capabilities: ["text", "vision", "json"],
+          });
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  return [
+    ...rows
+      .filter((m) => available.includes(m.provider))
+      .map((m) => ({
+        provider: m.provider,
+        model: m.model,
+        displayName: m.displayName,
+        capabilities: m.capabilities as AICapability[],
+      })),
+    ...connModels,
+  ];
 }
 
 export async function platformDefault(
@@ -89,31 +115,55 @@ export async function platformDefault(
 }
 
 /**
- * Resolves the API key for a provider: the organization's own key (BYO) wins,
- * otherwise the platform key from the environment. Keys never leave the server.
+ * Resolves the API key for a provider: connections (custom URLs) take priority,
+ * then the organization's own key (BYO), then the platform key from the environment.
+ * Keys never leave the server.
  */
 export async function resolveAuth(
   organizationId: string,
-): Promise<{ resolver: (p: AIProviderName) => Promise<ProviderAuth | undefined>; available: AIProviderName[] }> {
+): Promise<{
+  resolver: (p: AIProviderName) => Promise<ProviderAuth | undefined>;
+  available: AIProviderName[];
+}> {
   const env = getEnv();
   const orgKeys = await prisma.organizationAIKey.findMany({ where: { organizationId, active: true } });
+  const connections = await prisma.organizationAIConnection.findMany({
+    where: { organizationId, isActive: true },
+  });
   const platformKeys: Partial<Record<AIProviderName, string>> = {
     OPENAI: env.OPENAI_API_KEY,
     ANTHROPIC: env.ANTHROPIC_API_KEY,
     GOOGLE: env.GOOGLE_AI_API_KEY,
   };
+  const anthropicBaseUrl = env.ANTHROPIC_BASE_URL;
   const available = new Set<AIProviderName>();
   for (const k of orgKeys) available.add(k.provider);
   for (const [p, v] of Object.entries(platformKeys)) if (v) available.add(p as AIProviderName);
   if (aiMockEnabled()) for (const p of realProviders.keys()) available.add(p);
+
   return {
     available: [...available],
     resolver: async (provider) => {
       if (aiMockEnabled()) return { apiKey: "mock" };
-      const own = orgKeys.find((k) => k.provider === provider);
-      if (own) return { apiKey: keyring().decrypt(own.keyEncrypted, `ai-key:${organizationId}:${provider}`) };
-      const platform = platformKeys[provider];
-      return platform ? { apiKey: platform } : undefined;
+      // Connection wins (custom base URL) — for any provider type
+      const conn = connections.find((c) => c.provider === provider || c.provider === "CUSTOM");
+      if (conn) {
+        return {
+          apiKey: keyring().decrypt(conn.apiKeyEncrypted, `ai-conn:${organizationId}:${conn.name}`),
+          baseUrl: conn.baseUrl,
+        };
+      }
+      // Then BYO key (only for known providers)
+      if (["OPENAI", "ANTHROPIC", "GOOGLE"].includes(provider as AIProviderName)) {
+        const own = orgKeys.find((k) => k.provider === provider);
+        if (own) return { apiKey: keyring().decrypt(own.keyEncrypted, `ai-key:${organizationId}:${provider}`) };
+        const platform = platformKeys[provider];
+        if (!platform) return undefined;
+        const auth: ProviderAuth = { apiKey: platform };
+        if (provider === "ANTHROPIC" && anthropicBaseUrl) auth.baseUrl = anthropicBaseUrl;
+        return auth;
+      }
+      return undefined;
     },
   };
 }
@@ -228,12 +278,13 @@ export async function aiRuntime(
               provider: a.provider,
               model: a.model,
               operation: "IMAGE",
-              success: false,
-              errorCode: (e as { code?: string }).code ?? "UNKNOWN",
+              imageCount: 0,
+              estimatedCost: 0,
               latencyMs: Date.now() - started,
+              success: false,
+              errorCode: e instanceof Error ? e.message : "UNKNOWN",
             },
           });
-          if ((e as { retryable?: boolean }).retryable === false) throw e;
         }
       }
       throw lastError ?? new Error("No image provider available");

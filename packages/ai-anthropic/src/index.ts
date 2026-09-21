@@ -95,4 +95,15 @@ export class AnthropicProvider implements AIProvider {
       return { ok: false, message: (e as Error).message };
     }
   }
+
+  async listModels(auth: ProviderAuth) {
+    const { data } = await getJson<{ data: { id: string; display_name: string; type?: string }[] }>(
+      "ANTHROPIC",
+      `${auth.baseUrl ?? DEFAULT_BASE}/models`,
+      { "x-api-key": auth.apiKey, "anthropic-version": API_VERSION },
+    );
+    return data
+      .filter((m) => m.type !== "embedding")
+      .map((m) => ({ id: m.id, displayName: m.display_name, capabilities: ["text", "vision", "json"] }));
+  }
 }

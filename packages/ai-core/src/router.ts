@@ -54,7 +54,6 @@ export class ModelRouter {
 
   private fallbacksFor(chosen: ModelInfo, candidates: ModelInfo[], ctx: RoutingContext) {
     if (!ctx.allowFallback) return [];
-    // Prefer a different provider first (an outage is usually provider-wide), then same provider.
     const others = candidates.filter((c) => c !== chosen);
     const different = others.filter((c) => c.provider !== chosen.provider);
     const same = others.filter((c) => c.provider === chosen.provider);
@@ -146,7 +145,7 @@ export class AIExecutor {
           success: false,
           errorCode: code,
         });
-        if (e instanceof AIError && !e.retryable) throw e; // auth/content errors should not fail over silently
+        if (e instanceof AIError && !e.retryable) throw e;
       }
     }
     throw lastError ?? new AIError("No provider could handle the request", "PROVIDER_UNAVAILABLE", true);

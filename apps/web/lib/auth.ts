@@ -57,6 +57,30 @@ function buildAuth() {
                 userAgent: session.userAgent,
               });
             }
+            // If no active organization, create a default one for the user.
+            const current = (session as { activeOrganizationId?: string | null }).activeOrganizationId;
+            if (!current) {
+              const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { name: true, id: true } });
+              if (user) {
+                const slug = `org-${user.id.slice(0, 8)}`;
+                const org = await prisma.organization.create({
+                  data: {
+                    name: `${user.name ?? "My"} Organization`,
+                    slug,
+                    status: "ACTIVE",
+                    members: { create: { userId: user.id, role: "OWNER", status: "ACTIVE" } },
+                  },
+                  select: { id: true },
+                });
+                await prisma.organizationSettings.create({
+                  data: { organizationId: org.id },
+                });
+                await prisma.session.update({
+                  where: { id: session.id },
+                  data: { activeOrganizationId: org.id },
+                });
+              }
+            }
           },
         },
       },

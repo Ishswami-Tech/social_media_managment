@@ -11,7 +11,7 @@ export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const ctx = await requireCapability("org:settings");
-  const [settings, models, keys] = await Promise.all([
+  const [settings, models, keys, rawConnections] = await Promise.all([
     prisma.organizationSettings.findUnique({ where: { organizationId: ctx.organization.id } }),
     prisma.aIProviderConfig.findMany({
       where: { active: true },
@@ -22,7 +22,15 @@ export default async function SettingsPage() {
       where: { organizationId: ctx.organization.id },
       select: { provider: true, label: true, active: true },
     }),
+    prisma.organizationAIConnection.findMany({
+      where: { organizationId: ctx.organization.id },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
+  const connections = rawConnections.map((c) => ({
+    ...c,
+    lastTestedAt: c.lastTestedAt?.toISOString() ?? null,
+  }));
   const connectors = (await connectorStatus(ctx.organization.id)).map((c) => ({ ...c, ...CONNECTOR_INFO[c.id] }));
   const configurable = Object.fromEntries(
     (Object.keys(ROLE_MATRIX) as (keyof typeof ROLE_MATRIX)[]).map((role) => [
@@ -53,6 +61,7 @@ export default async function SettingsPage() {
         }}
         models={models}
         keys={keys}
+        connections={connections}
         configurable={configurable}
       />
       <div className="mt-4">

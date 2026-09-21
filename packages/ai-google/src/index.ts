@@ -163,4 +163,20 @@ export class GoogleProvider implements AIProvider {
       return { ok: false, message: (e as Error).message };
     }
   }
+
+  async listModels(auth: ProviderAuth) {
+    const base = auth.baseUrl ?? DEFAULT_BASE;
+    const { models } = await getJson<{ models: { name: string; displayName?: string; supportedGenerationMethods?: string[] }[] }>(
+      "GOOGLE",
+      `${base}/models?pageSize=100`,
+      { "x-goog-api-key": auth.apiKey },
+    );
+    return models
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => ({
+        id: m.name.replace(/^models\//, ""),
+        displayName: m.displayName ?? m.name.replace(/^models\//, ""),
+        capabilities: ["text", "vision", "json"],
+      }));
+  }
 }

@@ -14,6 +14,67 @@ export const GET = (req: Request) =>
     return json({ models, platformKeys: keys });
   });
 
+/** Refresh AI models from provider APIs (live model lists). */
+export const PATCH = (req: Request) =>
+  withSuperAdmin(req, async () => {
+    const env = getEnv();
+    let totalAdded = 0;
+
+    if (env.ANTHROPIC_API_KEY) {
+      try {
+        const impl = aiProvider("ANTHROPIC");
+        const models = await impl.listModels!({ apiKey: env.ANTHROPIC_API_KEY, baseUrl: env.ANTHROPIC_BASE_URL });
+        const existing = await prisma.aIProviderConfig.findMany({ where: { provider: "ANTHROPIC" } });
+        const existingSet = new Set(existing.map((m) => m.model));
+        for (const m of models) {
+          if (existingSet.has(m.id)) continue;
+          await prisma.aIProviderConfig.create({
+            data: { provider: "ANTHROPIC", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+          });
+          totalAdded++;
+        }
+      } catch (e) {
+        return json({ ok: false, message: `Anthropic: ${(e as Error).message}` }, { status: 500 });
+      }
+    }
+
+    if (env.OPENAI_API_KEY) {
+      try {
+        const impl = aiProvider("OPENAI");
+        const models = await impl.listModels!({ apiKey: env.OPENAI_API_KEY });
+        const existing = await prisma.aIProviderConfig.findMany({ where: { provider: "OPENAI" } });
+        const existingSet = new Set(existing.map((m) => m.model));
+        const textLike = ["gpt", "o1", "o3", "o4"];
+        for (const m of models) {
+          if (existingSet.has(m.id)) continue;
+          if (!textLike.some((p) => m.id.toLowerCase().startsWith(p))) continue;
+          await prisma.aIProviderConfig.create({
+            data: { provider: "OPENAI", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+          });
+          totalAdded++;
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    if (env.GOOGLE_AI_API_KEY) {
+      try {
+        const impl = aiProvider("GOOGLE");
+        const models = await impl.listModels!({ apiKey: env.GOOGLE_AI_API_KEY });
+        const existing = await prisma.aIProviderConfig.findMany({ where: { provider: "GOOGLE" } });
+        const existingSet = new Set(existing.map((m) => m.model));
+        for (const m of models) {
+          if (existingSet.has(m.id)) continue;
+          await prisma.aIProviderConfig.create({
+            data: { provider: "GOOGLE", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+          });
+          totalAdded++;
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    return json({ ok: true, added: totalAdded });
+  });
+
 const upsert = z.object({
   provider: z.enum(AI_PROVIDERS),
   model: z.string().min(1).max(100),

@@ -144,4 +144,13 @@ export class OpenAIProvider implements AIProvider {
       return { ok: false, message: (e as Error).message };
     }
   }
+
+  async listModels(auth: ProviderAuth) {
+    const { data } = await getJson<{ data: { id: string; created: number }[] }>(
+      "OPENAI",
+      `${auth.baseUrl ?? DEFAULT_BASE}/models`,
+      { authorization: `Bearer ${auth.apiKey}` },
+    );
+    return data.map((m) => ({ id: m.id, displayName: m.id, capabilities: ["text"] }));
+  }
 }

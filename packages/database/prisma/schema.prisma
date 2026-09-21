@@ -138,6 +138,7 @@ model Organization {
   posts           Post[]
   aiUsage         AIUsage[]
   aiKeys          OrganizationAIKey[]
+  aiConnections   OrganizationAIConnection[]
   connectors      OrganizationConnector[]
   researchBriefs  ResearchBrief[]
   brands          Brand[]
@@ -567,6 +568,25 @@ model OrganizationAIKey {
   updatedAt      DateTime       @updatedAt
 
   @@unique([organizationId, provider])
+}
+
+/// Custom AI connection: any proxy, endpoint, or provider the org wants to use.
+model OrganizationAIConnection {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String   // user-facing label, e.g. "My OpenAI Proxy"
+  provider       String   // "OPENAI" | "ANTHROPIC" | "GOOGLE" | "CUSTOM"
+  baseUrl        String   // API base URL, e.g. https://claude.opuscode.pro/api
+  apiKeyEncrypted String
+  models         String?  // JSON array of model IDs this connection supports
+  isActive       Boolean  @default(true)
+  lastTestedAt   DateTime?
+  lastTestStatus String?  // "ok" | "error"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 model AIUsage {

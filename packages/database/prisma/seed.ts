@@ -113,57 +113,57 @@ async function main() {
       inputCostPerM: 0.02,
       priority: 10,
     },
-    {
-      provider: "ANTHROPIC",
-      model: "claude-sonnet-5",
-      displayName: "Claude Sonnet 5",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 3,
-      outputCostPerM: 15,
-      priority: 10,
-    },
-    {
-      provider: "ANTHROPIC",
-      model: "claude-haiku-4-5-20251001",
-      displayName: "Claude Haiku 4.5",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 1,
-      outputCostPerM: 5,
-      priority: 20,
-    },
-    {
-      provider: "GOOGLE",
-      model: "gemini-2.5-pro",
-      displayName: "Gemini 2.5 Pro",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 1.25,
-      outputCostPerM: 10,
-      priority: 10,
-    },
-    {
-      provider: "GOOGLE",
-      model: "gemini-2.5-flash",
-      displayName: "Gemini 2.5 Flash",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 0.3,
-      outputCostPerM: 2.5,
-      priority: 20,
-    },
-    {
-      provider: "GOOGLE",
-      model: "imagen-4.0-generate-001",
-      displayName: "Imagen 4",
-      capabilities: ["image"],
-      imageCost: 0.04,
-      priority: 20,
-    },
-  ] as const;
+  ];
+
+  // Seed AI models: start with the static list, then overlay any dynamic models from the Anthropic proxy.
+  const existingModels = await prisma.aIProviderConfig.findMany();
+  const existingSet = new Set(existingModels.map((m) => `${m.provider}::${m.model}`));
+  const seen = new Set<string>();
   for (const m of models) {
+    seen.add(`${m.provider}::${m.model}`);
     await prisma.aIProviderConfig.upsert({
       where: { provider_model: { provider: m.provider, model: m.model } },
       create: { ...m, capabilities: [...m.capabilities] },
       update: { displayName: m.displayName, capabilities: [...m.capabilities] },
     });
+  }
+  // Fetch live models from the Anthropic proxy endpoint.
+  try {
+    const proxyBase = process.env.ANTHROPIC_BASE_URL?.replace(/\/$/, "") ?? "https://claude.opuscode.pro/api";
+    const proxyKey = process.env.ANTHROPIC_API_KEY;
+    if (proxyKey) {
+      const res = await fetch(`${proxyBase}/models`, {
+        headers: { "x-api-key": proxyKey, "anthropic-version": "2023-06-01" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) {
+        const { data } = await res.json<{ data: { id: string; display_name: string; type?: string }[] }>();
+        for (const m of data) {
+          const key = `ANTHROPIC::${m.id}`;
+          if (!seen.has(key) && m.type !== "embedding") {
+            seen.add(key);
+            await prisma.aIProviderConfig.upsert({
+              where: { provider_model: { provider: "ANTHROPIC", model: m.id } },
+              create: {
+                provider: "ANTHROPIC",
+                model: m.id,
+                displayName: m.display_name,
+                capabilities: ["text", "vision", "json"],
+                inputCostPerM: 0,
+                outputCostPerM: 0,
+                priority: 100,
+              },
+              update: { displayName: m.display_name },
+            });
+          }
+        }
+        console.log(`Synced ${data.length} models from proxy (${proxyBase})`);
+      } else {
+        console.warn(`Proxy returned ${res.status} when fetching models`);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not sync models from proxy:", (e as Error).message);
   }
 
   const flags = [
