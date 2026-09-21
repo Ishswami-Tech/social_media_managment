@@ -1,15 +1,16 @@
 import { z } from "zod";
 import { AI_PROVIDERS, PLATFORMS } from "@platform/types";
-import { SKILLS } from "@platform/research";
 import { json, paginationSchema, parseBody, parseQuery, withOrg } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { connectorStatus, runResearchSkill } from "@/lib/research";
+import { listSkillSummaries } from "@/lib/skills";
+import { enforceAiRateLimit } from "@/lib/rate-limit";
 
 export const GET = (req: Request) =>
   withOrg(req, "ai:generate", async (ctx) => {
     const q = parseQuery(req, paginationSchema);
-    const [items, total, connectors] = await Promise.all([
+    const [items, total, connectors, skills] = await Promise.all([
       prisma.researchBrief.findMany({
         where: { organizationId: ctx.organization.id },
         orderBy: { createdAt: "desc" },
@@ -29,24 +30,19 @@ export const GET = (req: Request) =>
       }),
       prisma.researchBrief.count({ where: { organizationId: ctx.organization.id } }),
       connectorStatus(ctx.organization.id),
+      listSkillSummaries(ctx.organization.id),
     ]);
     return json({
       items,
       total,
-      skills: SKILLS.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        inputLabel: s.inputLabel,
-        inputPlaceholder: s.inputPlaceholder,
-        needsSearch: s.needsSearch,
-      })),
+      skills,
       connectors,
     });
   });
 
 export const POST = (req: Request) =>
   withOrg(req, "ai:generate", async (ctx) => {
+    await enforceAiRateLimit(ctx, "research");
     const body = await parseBody(
       req,
       z.object({

@@ -10,6 +10,7 @@ export const POST_STATUSES = [
   "RETRYING",
   "CANCELLED",
   "DISCONNECTED_ACCOUNT",
+  "DELETED",
 ] as const;
 export type PostStatus = (typeof POST_STATUSES)[number];
 
@@ -33,8 +34,10 @@ export const POST_TRANSITIONS: Record<PostStatus, readonly PostStatus[]> = {
   RETRYING: ["PUBLISHING", "FAILED", "CANCELLED"],
   FAILED: ["SCHEDULED", "QUEUED", "DRAFT", "CANCELLED"],
   DISCONNECTED_ACCOUNT: ["SCHEDULED", "DRAFT", "CANCELLED"],
-  PUBLISHED: [],
+  /** Removed from the platform by the organization after publishing. */
+  PUBLISHED: ["DELETED"],
   CANCELLED: ["DRAFT"],
+  DELETED: [],
 };
 
 export function canTransition(from: PostStatus, to: PostStatus): boolean {

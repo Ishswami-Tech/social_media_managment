@@ -18,7 +18,10 @@ export function json<T>(data: T, init?: ResponseInit) {
 
 export function errorResponse(e: unknown): NextResponse {
   if (e instanceof ApiError)
-    return NextResponse.json({ error: e.code, message: e.message, details: e.details }, { status: e.status });
+    return NextResponse.json(
+      { error: e.code, message: e.message, details: e.details },
+      { status: e.status, headers: e.headers },
+    );
   if (e instanceof ZodError)
     return NextResponse.json(
       { error: "validation", message: "Invalid request", details: z.treeifyError(e) },

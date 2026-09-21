@@ -1,11 +1,13 @@
 import { requireCapability } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { selectableModels } from "@/lib/ai";
 import { DEFAULT_OVERRIDES, ROLE_MATRIX, CAPABILITIES } from "@platform/rbac";
 import { PageHeader } from "@/components/app/page-header";
 import { SettingsForm } from "@/components/forms/settings-form";
-import { ConnectorSettings } from "@/components/forms/connector-settings";
-import { connectorStatus } from "@/lib/research";
-import { CONNECTOR_INFO } from "@platform/research";
+import { SkillsManager } from "@/components/forms/skills-manager";
+import { PluginsManager } from "@/components/forms/plugins-manager";
+import { listOrganizationSkills } from "@/lib/skills";
+import { listOrganizationPlugins } from "@/lib/plugins";
 
 export const metadata = { title: "Settings" };
 
@@ -13,11 +15,7 @@ export default async function SettingsPage() {
   const ctx = await requireCapability("org:settings");
   const [settings, models, keys, rawConnections] = await Promise.all([
     prisma.organizationSettings.findUnique({ where: { organizationId: ctx.organization.id } }),
-    prisma.aIProviderConfig.findMany({
-      where: { active: true },
-      orderBy: [{ provider: "asc" }, { priority: "asc" }],
-      select: { provider: true, model: true, displayName: true, capabilities: true },
-    }),
+    selectableModels(ctx.organization.id),
     prisma.organizationAIKey.findMany({
       where: { organizationId: ctx.organization.id },
       select: { provider: true, label: true, active: true },
@@ -31,7 +29,12 @@ export default async function SettingsPage() {
     ...c,
     lastTestedAt: c.lastTestedAt?.toISOString() ?? null,
   }));
-  const connectors = (await connectorStatus(ctx.organization.id)).map((c) => ({ ...c, ...CONNECTOR_INFO[c.id] }));
+  const [skills, plugins] = await Promise.all([
+    listOrganizationSkills(ctx.organization.id).then((rows) => rows.map((s) => ({ ...s, updatedAt: s.updatedAt.toISOString() }))),
+    listOrganizationPlugins(ctx.organization.id).then((rows) =>
+      rows.map((p) => ({ ...p, lastTestedAt: p.lastTestedAt?.toISOString() ?? null, updatedAt: p.updatedAt.toISOString() })),
+    ),
+  ]);
   const configurable = Object.fromEntries(
     (Object.keys(ROLE_MATRIX) as (keyof typeof ROLE_MATRIX)[]).map((role) => [
       role,
@@ -64,8 +67,11 @@ export default async function SettingsPage() {
         connections={connections}
         configurable={configurable}
       />
-      <div className="mt-4">
-        <ConnectorSettings connectors={connectors} />
+      <div className="mt-4" id="skills">
+        <SkillsManager skills={skills} />
+      </div>
+      <div className="mt-4" id="plugins">
+        <PluginsManager plugins={plugins} />
       </div>
     </>
   );

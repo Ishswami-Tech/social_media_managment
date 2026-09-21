@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AI_PROVIDERS } from "@platform/types";
 import { json, parseBody, withOrg } from "@/lib/api";
 import { aiRuntime } from "@/lib/ai";
+import { enforceAiRateLimit } from "@/lib/rate-limit";
 import { mediaUrl, storeGeneratedImage } from "@/lib/services/media";
 
 const input = z.object({
@@ -15,6 +16,7 @@ const input = z.object({
 export const POST = (req: Request) =>
   withOrg(req, "ai:image", async (ctx) => {
     const body = await parseBody(req, input);
+    await enforceAiRateLimit(ctx);
     const ai = await aiRuntime(ctx.organization.id, ctx.user.id);
     const res = await ai.image({
       prompt: body.prompt,

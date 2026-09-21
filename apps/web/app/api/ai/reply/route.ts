@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { json, parseBody, withOrg } from "@/lib/api";
 import { aiRuntime } from "@/lib/ai";
+import { enforceAiRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db";
 import { brandContext } from "@/lib/services/brand";
 import { assertConversation } from "@/lib/services/whatsapp";
@@ -14,6 +15,7 @@ export const POST = (req: Request) =>
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+    await enforceAiRateLimit(ctx);
     const ai = await aiRuntime(ctx.organization.id, ctx.user.id);
     const brand = await brandContext(
       ctx.organization.id,

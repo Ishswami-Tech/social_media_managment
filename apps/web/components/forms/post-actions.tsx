@@ -57,6 +57,19 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
     ["DRAFT", "APPROVED", "SCHEDULED", "FAILED", "DISCONNECTED_ACCOUNT"].includes(s) &&
     (!needsApproval || post.approvalStatus === "APPROVED");
   const canCancel = permissions.canEdit && ["SCHEDULED", "QUEUED", "IN_REVIEW", "APPROVED", "RETRYING"].includes(s);
+  const canUnpublish = permissions.canPublish && s === "PUBLISHED";
+
+  async function unpublish() {
+    if (!window.confirm("Remove this post from the connected platform(s)? This cannot be undone.")) return;
+    setBusy(true);
+    const res = await fetch(`/api/posts/${post.id}/unpublish`, { method: "POST" });
+    setBusy(false);
+    const data = (await res.json().catch(() => ({}))) as { message?: string; failures?: string[] };
+    if (!res.ok) return toast.error(data.message ?? "Could not remove the post");
+    if (data.failures?.length) toast.warning(data.failures.join("; "));
+    else toast.success("Removed from platform");
+    router.refresh();
+  }
 
   return (
     <Card>
@@ -133,12 +146,17 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
             Cancel
           </Button>
         )}
+        {canUnpublish && (
+          <Button variant="destructive" onClick={unpublish} disabled={busy}>
+            Remove from platform
+          </Button>
+        )}
         {permissions.canEdit && ["DRAFT", "FAILED", "CANCELLED"].includes(s) && (
           <Button variant="outline" onClick={() => router.push(`/create?edit=${post.id}`)}>
             Edit content
           </Button>
         )}
-        {!canSubmit && !canReview && !canSchedule && !canCancel && (
+        {!canSubmit && !canReview && !canSchedule && !canCancel && !canUnpublish && (
           <p className="text-sm text-muted-foreground">No actions available for your role in this state.</p>
         )}
       </CardContent>

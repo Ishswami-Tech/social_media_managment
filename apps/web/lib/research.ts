@@ -6,7 +6,6 @@ import {
   CONNECTOR_IDS,
   TavilyConnector,
   buildResearchTools,
-  getSkill,
   type Brief,
   type ConnectorId,
   type SearchConnector,
@@ -14,6 +13,8 @@ import {
 } from "@platform/research";
 import { aiMockEnabled, aiRuntime } from "./ai";
 import { keyring, prisma } from "./db";
+import { pluginTools } from "./plugins";
+import { resolveSkill } from "./skills";
 import { getEnv } from "./env";
 import { ApiError } from "./errors";
 import { logger, errorInfo } from "./logger";
@@ -103,7 +104,7 @@ export interface RunSkillInput {
  * set, runs the agent, validates the brief and stores it for reuse.
  */
 export async function runResearchSkill(ctx: OrgContext, input: RunSkillInput) {
-  const skill = getSkill(input.skillId);
+  const skill = await resolveSkill(ctx.organization.id, input.skillId);
   if (!skill) throw new ApiError(404, "Unknown skill", "not_found");
   const organizationId = ctx.organization.id;
   const [search, brand, ai] = await Promise.all([
@@ -152,7 +153,10 @@ export async function runResearchSkill(ctx: OrgContext, input: RunSkillInput) {
         metrics: (v.snapshots[0]?.metrics as Record<string, number> | undefined) ?? undefined,
       }));
     },
-  }).filter((t) => skill.tools.includes(t.definition.name as (typeof skill.tools)[number]));
+  })
+    .filter((t) => skill.tools.includes(t.definition.name as (typeof skill.tools)[number]))
+    // Organization plugins (MCP servers, HTTP endpoints) are offered to every skill; the model decides when to call them.
+    .concat(await pluginTools(organizationId));
 
   const routing = await ai.routing("json", { provider: input.provider, model: input.model });
   const started = Date.now();

@@ -16,7 +16,7 @@ import {
   type SocialProvider,
   type ValidationResult,
 } from "@platform/social-core";
-import { graphGet, graphPost } from "./graph";
+import { graphDelete, graphGet, graphPost } from "./graph";
 import { MetaOAuth, type MetaOAuthOptions } from "./oauth";
 
 export const FACEBOOK_CAPABILITIES: PlatformCapabilities = {
@@ -155,6 +155,15 @@ export class FacebookProvider implements SocialProvider {
       { fields: "followers_count,fan_count" },
     );
     return { metrics: { followers: r.followers_count ?? r.fan_count }, raw: r, capturedAt: new Date() };
+  }
+
+  async deletePost(externalPostId: string, ctx: ProviderContext): Promise<void> {
+    try {
+      await graphDelete<{ success?: boolean }>(ctx.credential, `/${externalPostId}`);
+    } catch (e) {
+      if (e instanceof ProviderError && e.code === "NOT_FOUND") return;
+      throw e;
+    }
   }
 
   async getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus> {

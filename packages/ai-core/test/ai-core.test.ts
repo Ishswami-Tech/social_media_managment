@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { AIError, AIExecutor, ModelRouter, parseJsonOutput, type AIProvider, type ModelInfo } from "../src/index";
+import {
+  AIError,
+  AIExecutor,
+  ContentOperations,
+  ModelRouter,
+  parseJsonOutput,
+  withSkillInstructions,
+  type AIProvider,
+  type ModelInfo,
+  type TextRequest,
+} from "../src/index";
 
 const catalogue: ModelInfo[] = [
   {
@@ -145,6 +155,46 @@ describe("AIExecutor", () => {
         { messages: [] },
       ),
     ).rejects.toMatchObject({ code: "AUTH" });
+  });
+});
+
+describe("skill instructions", () => {
+  it("are appended to the system prompt only when present", () => {
+    expect(withSkillInstructions("base")).toBe("base");
+    expect(withSkillInstructions("base", "  ")).toBe("base");
+    expect(withSkillInstructions("base", "Open with a number.")).toContain("SKILL INSTRUCTIONS");
+    expect(withSkillInstructions("base", "Open with a number.")).toContain("Open with a number.");
+  });
+
+  it("reach the model through every content operation", async () => {
+    const seen: TextRequest[] = [];
+    const provider: AIProvider = {
+      name: "OPENAI",
+      generateText: vi.fn(async (req: TextRequest) => {
+        seen.push(req);
+        return {
+          text: '{"variants":[{"platform":"LINKEDIN","text":"t"}],"hashtags":["#a"],"hooks":["h"],"ctas":["c"],"items":[]}',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: req.model,
+          provider: "OPENAI" as const,
+          latencyMs: 1,
+        };
+      }),
+    };
+    const executor = new AIExecutor(new Map([["OPENAI", provider]]), new ModelRouter(catalogue), () => ({ apiKey: "k" }));
+    const ops = new ContentOperations(executor);
+    const ctx = { availableProviders: ["OPENAI" as const], allowFallback: false };
+    const instructions = "Never open with a question.";
+    await ops.generateVariants(ctx, { idea: "launch", targets: [{ platform: "LINKEDIN", maxLength: 3000, supportsHashtags: true }], instructions });
+    await ops.transform(ctx, { text: "hello", operation: "REWRITE", instructions });
+    await ops.hashtags(ctx, { text: "hello", platform: "LINKEDIN", instructions });
+    await ops.hooksAndCtas(ctx, { idea: "launch", platform: "LINKEDIN", instructions });
+    await ops.calendar(ctx, { theme: "t", platforms: ["LINKEDIN"], startDate: "2026-10-01", days: 7, postsPerWeek: 2, instructions });
+    expect(seen).toHaveLength(5);
+    for (const req of seen) {
+      const system = req.messages.find((m) => m.role === "system");
+      expect(String(system?.content)).toContain("Never open with a question.");
+    }
   });
 });
 

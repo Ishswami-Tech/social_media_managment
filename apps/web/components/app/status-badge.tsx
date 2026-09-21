@@ -11,6 +11,7 @@ const STYLES: Record<string, "default" | "secondary" | "destructive" | "outline"
   PUBLISHED: "success",
   FAILED: "destructive",
   CANCELLED: "outline",
+  DELETED: "outline",
   DISCONNECTED_ACCOUNT: "destructive",
   CONNECTED: "success",
   EXPIRED: "destructive",

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Cpu, Hash, ImagePlus, Plug, Plus, Rocket, Search, Sparkles, Wand2, X } from "lucide-react";
+import { Check, Cpu, Hash, ImagePlus, Plug, Plus, Rocket, Search, Sparkles, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { countCharacters, plainTextToRichDoc, type RichNode } from "@platform/social-core";
 import { uploadMediaFile } from "@/lib/client/upload";
@@ -57,6 +57,12 @@ export interface ComposerSkill {
   name: string;
   description: string;
 }
+export interface ComposerPlugin {
+  slug: string;
+  name: string;
+  description: string;
+  kind: string;
+}
 interface Props {
   accounts: ComposerAccount[];
   media: ComposerMedia[];
@@ -68,6 +74,8 @@ interface Props {
   models?: ComposerModel[];
   /** Research skills offered in the "+" menu. */
   skills?: ComposerSkill[];
+  /** Organization plugins (tools) available to skill runs. */
+  plugins?: ComposerPlugin[];
   existing: {
     id: string;
     title: string;
@@ -82,7 +90,10 @@ type VariantState = {
   text: string;
   doc: RichNode;
   mediaAssetIds: string[];
+  /** Text was edited or generated for this platform (no longer mirrors the master text). */
   custom: boolean;
+  /** Media was picked for this platform specifically; otherwise the shared selection applies. */
+  mediaCustom: boolean;
   replace: { version: number; doc: RichNode } | null;
 };
 type AfterApproval = "immediately" | "scheduled" | "hold";
@@ -107,6 +118,7 @@ export function Composer({
   aiEnabled,
   models = [],
   skills = [],
+  plugins = [],
   existing,
 }: Props) {
   const router = useRouter();
@@ -123,6 +135,7 @@ export function Composer({
           doc: plainTextToRichDoc(v.text),
           mediaAssetIds: v.mediaAssetIds,
           custom: v.text !== existing?.masterText,
+          mediaCustom: v.text !== existing?.masterText,
           replace: null,
         },
       ]),
@@ -144,6 +157,12 @@ export function Composer({
   const version = useRef(1);
   const [researchOpen, setResearchOpen] = useState(false);
   const [researchSkill, setResearchSkill] = useState<string | undefined>(undefined);
+  /** Custom skills attached to this post: their instructions ride along with every AI call below. */
+  const [attachedSkills, setAttachedSkills] = useState<string[]>([]);
+  const toggleSkill = (id: string) =>
+    setAttachedSkills((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const customSkills = skills.filter((s) => s.id.startsWith("custom:"));
+  const researchSkills = skills.filter((s) => !s.id.startsWith("custom:"));
   const [textModel, setTextModel] = useState(AUTO_MODEL);
   const [imageModel, setImageModel] = useState(AUTO_MODEL);
   const editorRef = useRef<Editor | null>(null);
@@ -192,6 +211,7 @@ export function Composer({
         doc: plainTextToRichDoc(masterText),
         mediaAssetIds: sharedMedia,
         custom: false,
+        mediaCustom: false,
         replace: null,
       },
     [variants, masterText, sharedMedia],
@@ -200,7 +220,7 @@ export function Composer({
     const v = variantFor(id);
     return v.custom ? v.text : masterText;
   };
-  const mediaFor = (id: string) => (variants[id]?.custom ? variants[id]!.mediaAssetIds : sharedMedia);
+  const mediaFor = (id: string) => (variants[id]?.mediaCustom ? variants[id]!.mediaAssetIds : sharedMedia);
 
   function toggle(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -211,7 +231,7 @@ export function Composer({
     (id: string, text: string, doc: RichNode) =>
       setVariants((v) => ({
         ...v,
-        [id]: { ...(v[id] ?? { mediaAssetIds: [], replace: null }), text, doc, custom: true },
+        [id]: { ...(v[id] ?? { mediaAssetIds: [], mediaCustom: false, replace: null }), text, doc, custom: true },
       })),
     [],
   );
@@ -220,12 +240,15 @@ export function Composer({
     if (accountId && variants[accountId]?.custom) {
       setVariants((v) => {
         const cur = v[accountId]!;
-        const has = cur.mediaAssetIds.includes(mediaId);
+        // Start from what this platform currently shows (the shared selection until media is customised).
+        const base = cur.mediaCustom ? cur.mediaAssetIds : sharedMedia;
+        const has = base.includes(mediaId);
         return {
           ...v,
           [accountId]: {
             ...cur,
-            mediaAssetIds: has ? cur.mediaAssetIds.filter((m) => m !== mediaId) : [...cur.mediaAssetIds, mediaId],
+            mediaCustom: true,
+            mediaAssetIds: has ? base.filter((m) => m !== mediaId) : [...base, mediaId],
           },
         };
       });
@@ -255,12 +278,12 @@ export function Composer({
     if (fileInput.current) fileInput.current.value = "";
   }
 
-  async function ai(url: string, body: unknown) {
+  async function ai(url: string, body: Record<string, unknown>) {
     setAiBusy(true);
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, skillIds: attachedSkills }),
     });
     setAiBusy(false);
     const data = await res.json();
@@ -290,6 +313,7 @@ export function Composer({
           doc,
           mediaAssetIds: v[a.id]?.mediaAssetIds ?? sharedMedia,
           custom: true,
+          mediaCustom: v[a.id]?.mediaCustom ?? false,
           replace: { version: ++version.current, doc },
         };
       }
@@ -657,23 +681,60 @@ export function Composer({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-72">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Skills</DropdownMenuLabel>
-                        {skills.map((sk) => (
-                          <DropdownMenuItem key={sk.id} onSelect={() => openSkill(sk.id)}>
-                            <Search />
-                            <span className="grid">
-                              <span>{sk.name}</span>
-                              <span className="text-xs text-muted-foreground">{sk.description}</span>
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
-                        {skills.length === 0 && (
-                          <DropdownMenuItem onSelect={() => openSkill()}>
-                            <Search /> Research with AI
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          Skills · attach to every AI action
+                        </DropdownMenuLabel>
+                        {customSkills.map((sk) => {
+                          const on = attachedSkills.includes(sk.id);
+                          return (
+                            <DropdownMenuItem
+                              key={sk.id}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                toggleSkill(sk.id);
+                              }}
+                            >
+                              <Check className={on ? "opacity-100" : "opacity-0"} />
+                              <span className="grid">
+                                <span>{sk.name}</span>
+                                <span className="line-clamp-2 text-xs text-muted-foreground">{sk.description}</span>
+                              </span>
+                            </DropdownMenuItem>
+                          );
+                        })}
+                        {customSkills.length === 0 && (
+                          <DropdownMenuItem onSelect={() => router.push("/settings#skills")}>
+                            <Plug /> Import skills in Settings…
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Run a skill with tools</DropdownMenuLabel>
+                        {[...customSkills, ...researchSkills].map((sk) => (
+                          <DropdownMenuItem key={`run-${sk.id}`} onSelect={() => openSkill(sk.id)}>
+                            <Search />
+                            <span>{sk.name}</span>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
                         <DropdownMenuLabel className="text-xs text-muted-foreground">Plugins</DropdownMenuLabel>
+                        {plugins.map((p) => (
+                          <DropdownMenuItem key={p.slug} onSelect={() => router.push("/settings#plugins")}>
+                            <Plug />
+                            <span className="grid">
+                              <span>
+                                {p.name} <span className="text-xs text-muted-foreground">({p.kind})</span>
+                              </span>
+                              <span className="line-clamp-1 text-xs text-muted-foreground">
+                                {p.description || "available to skill runs"}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuItem onSelect={() => router.push("/settings#plugins")}>
+                          <Plus /> Add plugin (MCP server or HTTP tool)…
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Actions</DropdownMenuLabel>
                         <DropdownMenuItem onSelect={() => generateImage()} disabled={imageBusy || !masterText.trim()}>
                           <Sparkles /> Generate image from this post
                         </DropdownMenuItem>
@@ -682,11 +743,6 @@ export function Composer({
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => fileInput.current?.click()}>
                           <ImagePlus /> Upload image
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Connectors</DropdownMenuLabel>
-                        <DropdownMenuItem onSelect={() => router.push("/settings#connectors")}>
-                          <Plug /> Web search, feeds and AI keys…
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -776,6 +832,19 @@ export function Composer({
                 ) : null
               }
             />
+            {attachedSkills.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 text-xs">
+                <span className="text-muted-foreground">Skills on this post:</span>
+                {attachedSkills.map((id) => (
+                  <Badge key={id} variant="secondary" className="gap-1">
+                    {customSkills.find((s) => s.id === id)?.name ?? id}
+                    <button type="button" aria-label="Detach skill" onClick={() => toggleSkill(id)}>
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{countCharacters(masterText)} characters</span>
               {aiEnabled && (
@@ -838,6 +907,7 @@ export function Composer({
                                 [a.id]: {
                                   ...v,
                                   custom: true,
+                                  mediaCustom: false,
                                   text: masterText,
                                   doc: plainTextToRichDoc(masterText),
                                   mediaAssetIds: sharedMedia,

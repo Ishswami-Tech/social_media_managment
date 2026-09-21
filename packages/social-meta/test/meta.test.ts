@@ -88,6 +88,17 @@ describe("FacebookProvider", () => {
     expect(r.externalPostId).toBe("p1_99");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("deletes a page post with the Graph API", async () => {
+    const fetchMock = mockFetch((url, init) => {
+      expect(url).toContain("/p1_99?");
+      expect(init?.method).toBe("DELETE");
+      return new Response(JSON.stringify({ success: true }));
+    });
+    const fb = new FacebookProvider({ clientId: "a", clientSecret: "b" });
+    await fb.deletePost("p1_99", { credential: { accessToken: "ptok", scopes: [] }, externalAccountId: "p1", accountType: "PAGE" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("InstagramProvider", () => {

@@ -175,6 +175,16 @@ function decode(s: string): string {
 
 const BLOCKED_HOSTS = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[::1\]|169\.254\.)/;
 
+/** True when the URL is http(s) and does not point at a private, loopback or link-local host (SSRF guard). */
+export function isPublicHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return /^https?:$/.test(u.protocol) && !BLOCKED_HOSTS.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Fetch and clean a public web page. Refuses private/loopback addresses (SSRF guard). */
 export async function readUrl(
   url: string,

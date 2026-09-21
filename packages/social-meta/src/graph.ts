@@ -14,6 +14,12 @@ export function graphGet<T>(
   return requestJson<T>(url.toString());
 }
 
+export function graphDelete<T>(credential: OAuthCredential, path: string): Promise<T> {
+  const url = new URL(`${GRAPH}${path}`);
+  url.searchParams.set("access_token", credential.accessToken);
+  return requestJson<T>(url.toString(), { method: "DELETE" });
+}
+
 export function graphPost<T>(
   credential: OAuthCredential,
   path: string,

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { approvalRequired } from "@/lib/services/posts";
+import { approvalRequired, postHistory } from "@/lib/services/posts";
 import { mediaUrl } from "@/lib/services/media";
 import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
@@ -42,6 +42,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
     },
   });
   if (!post) notFound();
+  const history = await postHistory(ctx, post.id);
   const needsApproval = approvalRequired(ctx, post);
   const mediaUrls: Record<string, string> = {};
   for (const v of post.variants)
@@ -65,7 +66,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                 </CardTitle>
                 <CardDescription className="flex items-center gap-2">
                   <StatusBadge status={v.status} />
-                  {v.externalUrl && (
+                  {v.externalUrl && v.status !== "DELETED" && (
                     <a href={v.externalUrl} target="_blank" rel="noreferrer" className="underline">
                       View live post
                     </a>
@@ -132,6 +133,28 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                   </div>
                   {a.comment && <p className="mt-1 text-muted-foreground">{a.comment}</p>}
                   <p className="mt-1 text-xs text-muted-foreground">{formatDate(a.createdAt)}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>History</CardTitle>
+              <CardDescription>Every change, review, publish attempt and removal.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 text-sm">
+              {history.length === 0 && <p className="text-muted-foreground">No events yet.</p>}
+              {history.map((e) => (
+                <div key={e.id} className="border-l-2 pl-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{e.action}</span>
+                    <span className="text-xs text-muted-foreground">{formatDate(e.at)}</span>
+                  </div>
+                  {(e.actor || e.detail) && (
+                    <p className="text-xs text-muted-foreground">
+                      {[e.actor, e.detail].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               ))}
             </CardContent>

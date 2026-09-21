@@ -87,10 +87,45 @@ generation, rewrite/shorten/expand, hashtags, hooks, calendars, quality checks, 
 generation (placeholder PNGs through the real media pipeline) and research skills (mock search connector).
 Routing, metering, per-model selection and approvals all run exactly as with real keys.
 
+### Models come from your providers, not a list
+
+The model pickers (composer, AI Studio, Settings defaults) are discovered live from whichever provider
+endpoints the organization can reach: an AI connection (any Anthropic- or OpenAI-compatible gateway),
+a bring-your-own key, or the platform keys. A configured gateway takes precedence for its provider, so
+the picker shows exactly what that gateway serves. The Super Admin catalogue only supplies pricing for
+automatic routing and acts as a fallback when a provider cannot be listed. Results are cached for ten
+minutes per endpoint.
+
+### Skills (importable playbooks)
+
+Settings → Skills imports Agent-Skills style playbooks (a `SKILL.md` with frontmatter plus optional
+`references/*.md`) from any GitHub repository, folder or file URL, for example
+https://github.com/sergebulaev/linkedin-skills. You can also write one by hand. Enabled skills appear
+next to the built-in research skills in the composer's "+" menu and in the Research dialog; the model
+follows the skill's instructions and returns platform-ready posts you can drop into the composer.
+
+Skills can also be attached to ordinary AI actions: pick them under "Skills · attach to every AI action" in
+the composer's "+" menu (chips show what is attached), or switch a skill to "always" in Settings so it is
+injected into every generate, rewrite, shorten, expand, hashtags and calendar call for the organization.
+
+### Plugins (tools the model can call)
+
+Settings → Plugins registers MCP servers (streamable HTTP; every tool the server lists becomes available)
+or single HTTP endpoints (one tool; arguments are sent as JSON). Plugins are offered to every skill run,
+so a skill can look up your CRM, search an internal index or call any API you expose. Request headers are
+encrypted at rest and each plugin is connection-tested when saved.
+
+### Post history and removal
+
+Every post page shows a timeline (created, edited, submitted, approved/rejected, scheduled, each publish
+attempt with the provider's error, removal) built from the audit log and publish attempts. Published
+posts can be removed from LinkedIn and Facebook with "Remove from platform", which moves the post to
+the `DELETED` status; Instagram's API does not support deleting posts.
+
 ## Environment variables
 
 See `.env.example`. Required: `DATABASE_URL`, `REDIS_URL`, `AUTH_SECRET`, `ENCRYPTION_KEY`, `APP_URL`.
-Optional integrations: `LINKEDIN_CLIENT_ID/SECRET`, `META_APP_ID/SECRET`, `META_WEBHOOK_VERIFY_TOKEN`,
+Optional integrations: `LINKEDIN_CLIENT_ID/SECRET` (plus `LINKEDIN_API_VERSION`, a YYYYMM value to bump when LinkedIn retires the default), `META_APP_ID/SECRET`, `META_WEBHOOK_VERIFY_TOKEN`,
 `R2_*`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_AI_API_KEY`, `RESEND_API_KEY`/`EMAIL_FROM`, `SENTRY_DSN`. Without R2 the app falls back
 to in-memory media storage for development.
 

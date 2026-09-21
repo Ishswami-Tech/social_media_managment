@@ -140,6 +140,8 @@ model Organization {
   aiKeys          OrganizationAIKey[]
   aiConnections   OrganizationAIConnection[]
   connectors      OrganizationConnector[]
+  skills          OrganizationSkill[]
+  plugins         OrganizationPlugin[]
   researchBriefs  ResearchBrief[]
   brands          Brand[]
   contacts        Contact[]
@@ -389,6 +391,7 @@ enum PostStatus {
   RETRYING
   CANCELLED
   DISCONNECTED_ACCOUNT
+  DELETED
 }
 
 enum ApprovalStatus {
@@ -628,6 +631,58 @@ model OrganizationConnector {
 }
 
 /// Output of a research skill run: a sourced brief that can seed posts.
+/// Imported or hand-written Agent-Skills playbooks the model follows (SKILL.md + references).
+model OrganizationSkill {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  slug           String
+  name           String
+  description    String       @default("")
+  instructions   String
+  sourceUrl      String?
+  enabled        Boolean      @default(true)
+  /// Injected into every AI call for this organization (generate, rewrite, hashtags, calendar), not just research runs.
+  autoApply      Boolean      @default(false)
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, enabled])
+}
+
+enum PluginKind {
+  MCP
+  HTTP
+}
+
+/// External tools the model may call: an MCP server (streamable HTTP) or a single HTTP endpoint.
+model OrganizationPlugin {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  slug             String
+  name             String
+  description      String       @default("")
+  kind             PluginKind
+  url              String
+  /// Encrypted JSON of extra request headers (Authorization etc.)
+  headersEncrypted String?
+  /// HTTP plugins: JSON schema for the tool arguments and the HTTP method to use
+  inputSchema      Json?
+  method           String       @default("POST")
+  enabled          Boolean      @default(true)
+  lastTestedAt     DateTime?
+  lastTestStatus   String?
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, enabled])
+}
+
 model ResearchBrief {
   id             String       @id @default(cuid())
   organizationId String

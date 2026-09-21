@@ -139,6 +139,8 @@ export interface SocialProvider {
   uploadMedia(media: NormalizedMedia, ctx: ProviderContext): Promise<RemoteMedia>;
   publish(post: NormalizedPost, ctx: ProviderContext): Promise<PublishResult>;
   getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus>;
+  /** Remove a published post from the platform. Absent when the platform API cannot delete posts. */
+  deletePost?(externalPostId: string, ctx: ProviderContext): Promise<void>;
   /** Post-level metrics; resolves to null when the platform/account type does not expose them. */
   getPostMetrics?(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null>;
   /** Account-level metrics (followers etc.); null when unsupported. */

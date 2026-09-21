@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { assertTransition, PLATFORMS, type PostStatus } from "@platform/types";
-import type { Prisma } from "@platform/database";
+import { loadSocialCredential, type Prisma } from "@platform/database";
+import type { ProviderContext } from "@platform/social-core";
 import { ApiError, badRequest, conflict, notFound } from "../errors";
 import { audit } from "../audit";
-import { prisma } from "../db";
+import { keyring, prisma } from "../db";
+import { providers } from "../providers";
 import { queues } from "../queue";
 import type { OrgContext } from "../session";
 
@@ -297,6 +299,122 @@ export async function cancelPost(ctx: OrgContext, postId: string) {
   const updated = await setStatus(postId, "CANCELLED");
   await audit(ctx, "post.cancel", "Post", postId);
   return updated;
+}
+
+/**
+ * Removes a published post from every platform it went to (where the provider
+ * API allows it), then marks the post DELETED. Variants that were never
+ * published are left untouched. Each removal is audited.
+ */
+export async function unpublishPost(ctx: OrgContext, postId: string) {
+  const post = await getPost(ctx, postId);
+  assertTransition(post.status, "DELETED");
+  const removed: { platform: string; externalPostId: string }[] = [];
+  const failures: string[] = [];
+  for (const variant of post.variants) {
+    if (variant.status !== "PUBLISHED" || !variant.externalPostId) continue;
+    const provider = providers().get(variant.platform);
+    if (!provider.deletePost) {
+      failures.push(`${variant.platform} does not support deleting posts through its API`);
+      continue;
+    }
+    const credential = await loadSocialCredential(prisma, keyring(), variant.socialAccountId);
+    if (!credential) {
+      failures.push(`${variant.socialAccount.displayName}: no stored credential`);
+      continue;
+    }
+    const account = await prisma.socialAccount.findUniqueOrThrow({ where: { id: variant.socialAccountId } });
+    const providerCtx: ProviderContext = {
+      credential,
+      externalAccountId: account.externalAccountId,
+      accountType: account.accountType,
+      metadata: (account.metadata as Record<string, unknown>) ?? undefined,
+    };
+    try {
+      await provider.deletePost(variant.externalPostId, providerCtx);
+      await prisma.postVariant.update({ where: { id: variant.id }, data: { status: "DELETED" } });
+      removed.push({ platform: variant.platform, externalPostId: variant.externalPostId });
+    } catch (e) {
+      failures.push(`${variant.socialAccount.displayName}: ${(e as Error).message}`);
+    }
+  }
+  if (removed.length === 0 && failures.length > 0) throw conflict(failures.join("; "));
+  const updated = await prisma.post.update({ where: { id: postId }, data: { status: "DELETED" }, include: postInclude });
+  await audit(ctx, "post.unpublish", "Post", postId, { removed, failures });
+  return { post: updated, removed, failures };
+}
+
+export interface PostHistoryEvent {
+  id: string;
+  at: Date;
+  action: string;
+  actor: string | null;
+  detail: string | null;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  "post.create": "Created",
+  "post.update": "Edited",
+  "post.submit": "Submitted for approval",
+  "post.approve": "Approved",
+  "post.reject": "Rejected",
+  "post.auto_schedule": "Auto-scheduled after approval",
+  "post.schedule": "Scheduled",
+  "post.cancel": "Cancelled",
+  "post.unpublish": "Removed from platform",
+  "post.delete": "Deleted",
+};
+
+function describe(action: string, metadata: unknown): string | null {
+  const m = (metadata ?? {}) as Record<string, unknown>;
+  if (typeof m.comment === "string" && m.comment) return m.comment;
+  if (typeof m.scheduledAt === "string") return `for ${new Date(m.scheduledAt).toLocaleString()}`;
+  if (action === "post.unpublish") {
+    const removed = Array.isArray(m.removed) ? (m.removed as { platform: string }[]).map((r) => r.platform) : [];
+    const failures = Array.isArray(m.failures) ? (m.failures as string[]) : [];
+    return [removed.length ? `removed from ${removed.join(", ")}` : null, ...failures].filter(Boolean).join("; ") || null;
+  }
+  return null;
+}
+
+/**
+ * Chronological timeline of everything that happened to a post: audited
+ * actions (create, edit, review, schedule, cancel, removal) merged with every
+ * publish attempt the worker made.
+ */
+export async function postHistory(ctx: OrgContext, postId: string): Promise<PostHistoryEvent[]> {
+  const [logs, attempts] = await Promise.all([
+    prisma.auditLog.findMany({
+      where: { organizationId: ctx.organization.id, resourceType: "Post", resourceId: postId },
+      include: { actor: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.publishAttempt.findMany({
+      where: { publishJob: { postVariant: { postId } } },
+      include: { publishJob: { include: { postVariant: { select: { platform: true } } } } },
+      orderBy: { startedAt: "asc" },
+    }),
+  ]);
+  const fromLogs: PostHistoryEvent[] = logs.map((l) => ({
+    id: l.id,
+    at: l.createdAt,
+    action: ACTION_LABELS[l.action] ?? l.action,
+    actor: l.actor?.name ?? null,
+    detail: describe(l.action, l.metadata),
+  }));
+  const fromAttempts: PostHistoryEvent[] = attempts
+    .filter((a) => a.status !== "RUNNING")
+    .map((a) => ({
+      id: a.id,
+      at: a.finishedAt ?? a.startedAt,
+      action:
+        a.status === "SUCCEEDED"
+          ? `Published to ${a.publishJob.postVariant.platform}`
+          : `Publish to ${a.publishJob.postVariant.platform} failed`,
+      actor: null,
+      detail: a.status === "SUCCEEDED" ? null : (a.error ?? a.errorCode ?? null),
+    }));
+  return [...fromLogs, ...fromAttempts].sort((x, y) => x.at.getTime() - y.at.getTime());
 }
 
 export async function listPosts(

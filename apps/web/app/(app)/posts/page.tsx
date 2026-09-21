@@ -33,6 +33,7 @@ export default async function PostsPage({
     "QUEUED",
     "PUBLISHED",
     "FAILED",
+    "DELETED",
   ];
 
   return (
