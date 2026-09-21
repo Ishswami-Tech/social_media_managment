@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -70,7 +70,6 @@ export function SettingsForm({ organization, settings, models, keys, connections
 
   // Connection edit form
   const [editingConn, setEditingConn] = useState<{ id: string; name: string; provider: string; baseUrl: string; models: string | null; apiKey: string } | null>(null);
-  const [autoResolved, setAutoResolved] = useState<{ provider: string; model: string; displayName: string } | null>(null);
 
   async function save() {
     setBusy(true);
@@ -427,7 +426,7 @@ export function SettingsForm({ organization, settings, models, keys, connections
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Edit connection</DialogTitle>
-                <DialogDescription>Update this AI connection's details.</DialogDescription>
+                <DialogDescription>Update this AI connection&apos;s details.</DialogDescription>
               </DialogHeader>
               {editingConn && (
                 <div className="grid gap-3 py-2">
@@ -495,7 +494,7 @@ export function SettingsForm({ organization, settings, models, keys, connections
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Configurable permissions</CardTitle>
-          <CardDescription>Capabilities the matrix marks as "Configured".</CardDescription>
+          <CardDescription>Capabilities the matrix marks as &quot;Configured&quot;.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {Object.entries(configurable)

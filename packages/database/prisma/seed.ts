@@ -11,6 +11,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import type { AIProviderName } from "../src/generated/prisma/enums";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
@@ -77,7 +78,17 @@ async function main() {
     });
   }
 
-  const models = [
+  const models: {
+    provider: AIProviderName;
+    model: string;
+    displayName: string;
+    capabilities: string[];
+    inputCostPerM?: number;
+    outputCostPerM?: number;
+    imageCost?: number;
+    isDefault?: boolean;
+    priority: number;
+  }[] = [
     {
       provider: "OPENAI",
       model: "gpt-5",
@@ -116,8 +127,6 @@ async function main() {
   ];
 
   // Seed AI models: start with the static list, then overlay any dynamic models from the Anthropic proxy.
-  const existingModels = await prisma.aIProviderConfig.findMany();
-  const existingSet = new Set(existingModels.map((m) => `${m.provider}::${m.model}`));
   const seen = new Set<string>();
   for (const m of models) {
     seen.add(`${m.provider}::${m.model}`);
@@ -137,7 +146,7 @@ async function main() {
         signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) {
-        const { data } = await res.json<{ data: { id: string; display_name: string; type?: string }[] }>();
+        const { data } = (await res.json()) as { data: { id: string; display_name: string; type?: string }[] };
         for (const m of data) {
           const key = `ANTHROPIC::${m.id}`;
           if (!seen.has(key) && m.type !== "embedding") {

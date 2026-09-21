@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LinkedInProvider } from "../src/index";
+import { DEFAULT_LINKEDIN_API_VERSION, LinkedInProvider } from "../src/index";
 
 const provider = new LinkedInProvider({ clientId: "cid", clientSecret: "sec" });
 
@@ -63,7 +63,35 @@ describe("LinkedInProvider", () => {
     expect(res.externalPostId).toBe("urn:li:share:123");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
-    expect(headers["linkedin-version"]).toBeDefined();
+    expect(headers["linkedin-version"]).toBe(DEFAULT_LINKEDIN_API_VERSION);
+    expect(DEFAULT_LINKEDIN_API_VERSION).toMatch(/^\d{6}$/);
+  });
+
+  it("sends a configured LinkedIn-Version header instead of the default", async () => {
+    const fetchMock = mockFetch({
+      "https://api.linkedin.com/rest/posts": () =>
+        new Response("", { status: 201, headers: { "x-restli-id": "urn:li:share:9" } }),
+    });
+    const custom = new LinkedInProvider({ clientId: "cid", clientSecret: "sec", apiVersion: "202701" });
+    await custom.publish(
+      { idempotencyKey: "k", text: "Hello", media: [] },
+      { credential: { accessToken: "tok", scopes: [] }, externalAccountId: "abc", accountType: "PROFILE" },
+    );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers["linkedin-version"]).toBe("202701");
+  });
+
+  it("deletes a published post and treats an already-missing post as deleted", async () => {
+    const fetchMock = mockFetch({
+      "https://api.linkedin.com/rest/posts/urn%3Ali%3Ashare%3A123": (init) =>
+        new Response(null, { status: init?.method === "DELETE" ? 204 : 200 }),
+      "https://api.linkedin.com/rest/posts/urn%3Ali%3Ashare%3Agone": () =>
+        new Response(JSON.stringify({ message: "not found" }), { status: 404 }),
+    });
+    const ctx = { credential: { accessToken: "tok", scopes: [] }, externalAccountId: "abc", accountType: "PROFILE" as const };
+    await expect(provider.deletePost("urn:li:share:123", ctx)).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
+    await expect(provider.deletePost("urn:li:share:gone", ctx)).resolves.toBeUndefined();
   });
 
   it("maps a 401 to a non-retryable AUTH_EXPIRED error", async () => {

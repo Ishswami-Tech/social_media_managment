@@ -16,6 +16,7 @@ export function providers(): ProviderRegistry {
       new LinkedInProvider({
         clientId: env.LINKEDIN_CLIENT_ID,
         clientSecret: env.LINKEDIN_CLIENT_SECRET,
+        apiVersion: env.LINKEDIN_API_VERSION,
         includeOrganizations: false,
       }),
     );

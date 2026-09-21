@@ -74,7 +74,15 @@ export class ModelRouter {
   }
 }
 
+/**
+ * Blended price used to rank "auto" candidates. Models with no pricing at all
+ * (typically discovered live from a provider or proxy) sort last so automatic
+ * routing prefers the curated catalogue and only falls back to them.
+ */
 function costOf(m: ModelInfo): number {
+  if (m.inputCostPerM === undefined && m.outputCostPerM === undefined && m.imageCost === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
   return (m.inputCostPerM ?? 0) + (m.outputCostPerM ?? 0) * 3 + (m.imageCost ?? 0) * 1000;
 }
 

@@ -59,7 +59,16 @@ export function parseJsonOutput<T>(schema: z.ZodType<T>, text: string): T {
   try {
     parsed = JSON.parse(candidate);
   } catch (e) {
-    throw new AIError(`Model returned invalid JSON: ${(e as Error).message}`, "INVALID_REQUEST", false);
+    // A doubled opening brace ("{{...}") happens when a prefilled "{" is echoed back; drop it and retry once.
+    const retry = candidate.replace(/^\{\s*(?=\{)/, "");
+    if (retry === candidate) {
+      throw new AIError(`Model returned invalid JSON: ${(e as Error).message}`, "INVALID_REQUEST", false);
+    }
+    try {
+      parsed = JSON.parse(retry);
+    } catch {
+      throw new AIError(`Model returned invalid JSON: ${(e as Error).message}`, "INVALID_REQUEST", false);
+    }
   }
   const result = schema.safeParse(parsed);
   if (!result.success)
@@ -75,6 +84,15 @@ export function parseJsonOutput<T>(schema: z.ZodType<T>, text: string): T {
  * High-level content operations (spec §2.2 / §11). Each builds prompts from
  * brand context + platform guidance and returns validated structured output.
  */
+/**
+ * Appends organization skill instructions (imported SKILL.md playbooks) to a
+ * system prompt so every content operation follows them.
+ */
+export function withSkillInstructions(system: string, instructions?: string): string {
+  if (!instructions?.trim()) return system;
+  return `${system}\n\n===== SKILL INSTRUCTIONS (follow these) =====\n${instructions.trim()}\n===== END SKILL INSTRUCTIONS =====`;
+}
+
 export class ContentOperations {
   constructor(private readonly executor: AIExecutor) {}
 
@@ -85,12 +103,17 @@ export class ContentOperations {
       targets: GenerationTarget[];
       brand?: BrandContext;
       extraInstructions?: string;
+      /** Skill playbooks attached to this call. */
+      instructions?: string;
       count?: number;
     },
   ): Promise<Variants> {
     const targets = input.targets.map((t) => `- ${platformGuidance(t)}`).join("\n");
     const messages: ChatMessage[] = [
-      { role: "system", content: `${brandSystemPrompt(input.brand)}\n\n${JSON_INSTRUCTION}` },
+      {
+        role: "system",
+        content: withSkillInstructions(`${brandSystemPrompt(input.brand)}\n\n${JSON_INSTRUCTION}`, input.instructions),
+      },
       {
         role: "user",
         content:
@@ -119,6 +142,8 @@ export class ContentOperations {
       operation: Extract<AIOperation, "REWRITE" | "SHORTEN" | "EXPAND" | "TRANSLATE">;
       brand?: BrandContext;
       instruction?: string;
+      /** Skill playbooks attached to this call. */
+      instructions?: string;
       targetLanguage?: string;
       maxLength?: number;
     },
@@ -130,7 +155,13 @@ export class ContentOperations {
       TRANSLATE: `Translate the text into ${input.targetLanguage ?? "English"}, adapting idioms naturally.`,
     };
     const messages: ChatMessage[] = [
-      { role: "system", content: `${brandSystemPrompt(input.brand)}\nReturn only the resulting text, no preamble.` },
+      {
+        role: "system",
+        content: withSkillInstructions(
+          `${brandSystemPrompt(input.brand)}\nReturn only the resulting text, no preamble.`,
+          input.instructions,
+        ),
+      },
       {
         role: "user",
         content: `${verbs[input.operation]}${input.instruction ? ` ${input.instruction}` : ""}\n\nText:\n${input.text}`,
@@ -140,9 +171,12 @@ export class ContentOperations {
     return res.text.trim();
   }
 
-  async hashtags(ctx: Ctx, input: { text: string; platform: string; count?: number }): Promise<string[]> {
+  async hashtags(
+    ctx: Ctx,
+    input: { text: string; platform: string; count?: number; instructions?: string },
+  ): Promise<string[]> {
     const messages: ChatMessage[] = [
-      { role: "system", content: JSON_INSTRUCTION },
+      { role: "system", content: withSkillInstructions(JSON_INSTRUCTION, input.instructions) },
       {
         role: "user",
         content: `Suggest ${input.count ?? 10} relevant, specific hashtags for this ${input.platform} post. Mix broad and niche. JSON shape: {"hashtags":["#tag"]}\n\n${input.text}`,
@@ -156,10 +190,13 @@ export class ContentOperations {
 
   async hooksAndCtas(
     ctx: Ctx,
-    input: { idea: string; platform: string; brand?: BrandContext },
+    input: { idea: string; platform: string; brand?: BrandContext; instructions?: string },
   ): Promise<{ hooks: string[]; ctas: string[] }> {
     const messages: ChatMessage[] = [
-      { role: "system", content: `${brandSystemPrompt(input.brand)}\n${JSON_INSTRUCTION}` },
+      {
+        role: "system",
+        content: withSkillInstructions(`${brandSystemPrompt(input.brand)}\n${JSON_INSTRUCTION}`, input.instructions),
+      },
       {
         role: "user",
         content: `Give 5 scroll-stopping opening hooks and 5 calls-to-action for a ${input.platform} post about:\n${input.idea}\nJSON shape: {"hooks":["..."],"ctas":["..."]}`,
@@ -178,10 +215,14 @@ export class ContentOperations {
       days: number;
       postsPerWeek: number;
       brand?: BrandContext;
+      instructions?: string;
     },
   ) {
     const messages: ChatMessage[] = [
-      { role: "system", content: `${brandSystemPrompt(input.brand)}\n${JSON_INSTRUCTION}` },
+      {
+        role: "system",
+        content: withSkillInstructions(`${brandSystemPrompt(input.brand)}\n${JSON_INSTRUCTION}`, input.instructions),
+      },
       {
         role: "user",
         content:

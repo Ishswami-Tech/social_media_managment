@@ -25,7 +25,12 @@ import {
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const API = "https://api.linkedin.com";
-const API_VERSION = "202509";
+/**
+ * LinkedIn's versioned REST API takes a YYYYMM `LinkedIn-Version` header and
+ * retires versions roughly a year after release ("Requested version ... is not
+ * active"). Override with `LINKEDIN_API_VERSION` when this default ages out.
+ */
+export const DEFAULT_LINKEDIN_API_VERSION = "202609";
 
 /** Member scopes (OpenID + posting) and organization scopes (Community Management API). */
 export const LINKEDIN_SCOPES = ["openid", "profile", "email", "w_member_social"];
@@ -68,6 +73,8 @@ interface UserInfo {
 export interface LinkedInProviderOptions extends ProviderConfig {
   /** Include organization scopes and discover administered organizations on connect */
   includeOrganizations?: boolean;
+  /** `LinkedIn-Version` header (YYYYMM). Defaults to DEFAULT_LINKEDIN_API_VERSION. */
+  apiVersion?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -246,6 +253,20 @@ export class LinkedInProvider implements SocialProvider {
     };
   }
 
+  async deletePost(externalPostId: string, ctx: ProviderContext): Promise<void> {
+    try {
+      const res = await this.apiRaw(ctx.credential, `/rest/posts/${encodeURIComponent(externalPostId)}`, {
+        method: "DELETE",
+      });
+      if (res.status !== 204 && res.status !== 200)
+        throw new ProviderError(`LinkedIn responded ${res.status} deleting the post`, "UNKNOWN", false, res.status);
+    } catch (e) {
+      // Already gone on the platform: treat as deleted.
+      if (e instanceof ProviderError && e.code === "NOT_FOUND") return;
+      throw e;
+    }
+  }
+
   async getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus> {
     try {
       const post = await this.api<{ lifecycleState?: string }>(
@@ -390,7 +411,7 @@ export class LinkedInProvider implements SocialProvider {
   private headers(credential: OAuthCredential): Record<string, string> {
     return {
       authorization: `Bearer ${credential.accessToken}`,
-      "linkedin-version": API_VERSION,
+      "linkedin-version": this.opts.apiVersion ?? DEFAULT_LINKEDIN_API_VERSION,
       "x-restli-protocol-version": "2.0.0",
     };
   }

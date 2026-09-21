@@ -29,7 +29,7 @@ export const PATCH = (req: Request) =>
         for (const m of models) {
           if (existingSet.has(m.id)) continue;
           await prisma.aIProviderConfig.create({
-            data: { provider: "ANTHROPIC", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+            data: { provider: "ANTHROPIC", model: m.id, displayName: m.displayName, capabilities: m.capabilities, priority: 100 },
           });
           totalAdded++;
         }
@@ -49,7 +49,7 @@ export const PATCH = (req: Request) =>
           if (existingSet.has(m.id)) continue;
           if (!textLike.some((p) => m.id.toLowerCase().startsWith(p))) continue;
           await prisma.aIProviderConfig.create({
-            data: { provider: "OPENAI", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+            data: { provider: "OPENAI", model: m.id, displayName: m.displayName, capabilities: m.capabilities, priority: 100 },
           });
           totalAdded++;
         }
@@ -65,7 +65,7 @@ export const PATCH = (req: Request) =>
         for (const m of models) {
           if (existingSet.has(m.id)) continue;
           await prisma.aIProviderConfig.create({
-            data: { provider: "GOOGLE", model: m.id, displayName: m.displayName, capabilities: m.capabilities as any, priority: 100 },
+            data: { provider: "GOOGLE", model: m.id, displayName: m.displayName, capabilities: m.capabilities, priority: 100 },
           });
           totalAdded++;
         }

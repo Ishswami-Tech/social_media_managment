@@ -34,7 +34,7 @@ describe("runAgent", () => {
       }),
     };
     const exec = new AIExecutor(new Map([["OPENAI", provider]]), new ModelRouter(catalogue), () => ({ apiKey: "k" }));
-    const search = vi.fn(async (args: Record<string, unknown>) => [
+    const search = vi.fn(async (_args: Record<string, unknown>) => [
       { title: "Cold brew rises", url: "https://x", snippet: "Cold brew sales up 20%" },
     ]);
     const result = await runAgent(

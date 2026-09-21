@@ -27,6 +27,10 @@ export const envSchema = z.object({
 
   LINKEDIN_CLIENT_ID: optionalString,
   LINKEDIN_CLIENT_SECRET: optionalString,
+  /** YYYYMM `LinkedIn-Version` header; LinkedIn retires versions after ~1 year. */
+  LINKEDIN_API_VERSION: optionalString.refine((v) => v === undefined || /^\d{6}$/.test(v), {
+    message: "LINKEDIN_API_VERSION must be YYYYMM, e.g. 202609",
+  }),
   META_APP_ID: optionalString,
   META_APP_SECRET: optionalString,
   META_WEBHOOK_VERIFY_TOKEN: optionalString,
@@ -50,6 +54,14 @@ export const envSchema = z.object({
   CRON_SECRET: optionalString,
   SENTRY_DSN: optionalString,
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+
+  /** Per-organization budget for AI endpoints; 0 disables. */
+  AI_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(0).default(60),
+  /** Allow plugins (MCP servers / HTTP tools) on private or loopback addresses, e.g. self-hosted on a LAN. */
+  PLUGIN_ALLOW_PRIVATE_URLS: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

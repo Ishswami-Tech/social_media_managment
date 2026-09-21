@@ -16,3 +16,4 @@ dump.rdb
 apps/web/next-env.d.ts
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
+apps/web/uploads/
