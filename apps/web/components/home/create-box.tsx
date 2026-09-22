@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,7 @@ export function CreateBox({ accounts, canWriteYourself }: Props) {
         onChange={(e) => setTopic(e.target.value)}
         rows={4}
         maxLength={500}
+        disabled={busy}
         placeholder="A tip, an announcement, a story — anything."
         aria-label="What do you want to post about?"
         className="text-base"
@@ -96,6 +98,7 @@ export function CreateBox({ accounts, canWriteYourself }: Props) {
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
         maxLength={500}
+        disabled={busy}
         placeholder="Add a goal or audience (optional)"
         aria-label="Add a goal or audience (optional)"
       />
@@ -108,8 +111,9 @@ export function CreateBox({ accounts, canWriteYourself }: Props) {
               type="button"
               onClick={() => toggle(a.id)}
               aria-pressed={on}
+              disabled={busy}
               className={cn(
-                "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
+                "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-60",
                 on ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50",
               )}
             >
@@ -124,7 +128,14 @@ export function CreateBox({ accounts, canWriteYourself }: Props) {
       )}
       <div className="flex flex-wrap items-center gap-4">
         <Button onClick={submit} disabled={!ready || busy} size="lg">
-          {busy ? "Working…" : "Create with AI"}
+          {busy ? (
+            <>
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              Creating…
+            </>
+          ) : (
+            "Create with AI"
+          )}
         </Button>
         {canWriteYourself && (
           <Link href="/create" className="text-sm text-muted-foreground underline-offset-4 hover:underline">

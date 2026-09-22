@@ -5,8 +5,10 @@ import { ApiError } from "@/lib/errors";
 import { getRun, type AgentRunDetail } from "@/lib/agent/runs";
 import { composeFinalText } from "@/lib/agent/apply";
 import { formatCents, formatLatency } from "@/components/agent/format";
+import { LiveProgress } from "@/components/agent/live-progress";
 import { RunReplay, type ReplayEvent } from "@/components/agent/run-replay";
-import { IN_PROGRESS_STATUSES, statusLabel } from "@/components/home/labels";
+import { buildSummaryLine, detailToRunInitial } from "@/lib/agent/progress";
+import { IN_PROGRESS_STATUSES, isProducing, isReady, showsLiveFlow, statusLabel } from "@/components/home/labels";
 import { RefreshTimer } from "@/components/home/refresh-timer";
 import { ReviewPanel, type ReviewAccount, type ReviewSource } from "@/components/review/review-panel";
 import { PageHeader } from "@/components/app/page-header";
@@ -103,6 +105,24 @@ function DraftList({ account }: { account: RunAccount }) {
   );
 }
 
+/** The one line that replaces the stepper once there is something to read. */
+function summaryOf(run: AgentRunDetail): string {
+  const sources = new Set(
+    run.claims.filter((c) => c.status === "SUPPORTED").map((c) => c.sourceUrl ?? c.sourceTitle ?? c.id),
+  );
+  const drafts = run.accounts.flatMap((a) => a.drafts);
+  const finishedAt = run.completedAt ?? run.updatedAt;
+  const startedAt = run.startedAt ?? run.createdAt;
+  return buildSummaryLine({
+    sourceCount: sources.size,
+    draftCount: drafts.filter((d) => d.role === "WRITER").length,
+    judged: drafts.some((d) => d.judgeScore !== null),
+    adapted: drafts.some((d) => d.role === "ADAPTATION"),
+    durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+    spentCents: run.spentCents,
+  });
+}
+
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCapability("ai:generate");
   const { id } = await params;
@@ -125,6 +145,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const unverifiedCount = run.claims.filter((c) => c.status !== "SUPPORTED").length;
   const accounts = run.accounts.map(toReviewAccount);
   const inProgress = IN_PROGRESS_STATUSES.includes(run.status);
+  // While the AI is still producing there is nothing to read, so the live flow
+  // stands in for the recommendation and swaps itself out when it is ready.
+  const live = showsLiveFlow(run.status);
+  const producing = isProducing(run.status);
 
   return (
     <div className="mx-auto grid max-w-3xl gap-6">
@@ -149,15 +173,22 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </p>
       )}
 
-      <ReviewPanel
-        runId={run.id}
-        status={run.status}
-        accounts={accounts}
-        sources={sources}
-        unverifiedCount={unverifiedCount}
-        canDecide={canDecide}
-        canManage={ctx.can("content:create")}
-      />
+      {live && <LiveProgress runId={run.id} initial={detailToRunInitial(run)} variant="full" />}
+
+      {!producing && (
+        <div className="grid gap-3">
+          {isReady(run.status) && <p className="text-xs text-muted-foreground">{summaryOf(run)}</p>}
+          <ReviewPanel
+            runId={run.id}
+            status={run.status}
+            accounts={accounts}
+            sources={sources}
+            unverifiedCount={unverifiedCount}
+            canDecide={canDecide}
+            canManage={ctx.can("content:create")}
+          />
+        </div>
+      )}
 
       <details className="rounded-lg border p-4">
         <summary className="cursor-pointer text-sm font-medium">How this was made</summary>

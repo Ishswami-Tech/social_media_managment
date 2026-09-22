@@ -3,7 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const INTERVAL_MS = 10_000;
+/**
+ * Fallback only: the live progress view streams updates, so this just catches
+ * anything the stream missed (a closed tab, a proxy that ate the connection).
+ */
+const INTERVAL_MS = 30_000;
 
 /** Keeps the page in step with work happening in the background. Renders nothing. */
 export function RefreshTimer({ enabled }: { enabled: boolean }) {

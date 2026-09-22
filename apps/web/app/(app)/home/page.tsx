@@ -5,10 +5,12 @@ import { listRuns } from "@/lib/agent/runs";
 import { listPosts } from "@/lib/services/posts";
 import { formatDate, truncate } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
+import { LiveProgress } from "@/components/agent/live-progress";
 import { ApprovalCard, type ApprovalAccount } from "@/components/home/approval-card";
 import { CreateBox } from "@/components/home/create-box";
-import { IN_PROGRESS_STATUSES, statusLabel } from "@/components/home/labels";
+import { IN_PROGRESS_STATUSES } from "@/components/home/labels";
 import { RefreshTimer } from "@/components/home/refresh-timer";
+import { runProgressSelect, toRunInitial } from "@/lib/agent/progress";
 
 export const metadata = { title: "Home" };
 
@@ -49,7 +51,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     listRuns(ctx, { status: "AWAITING_APPROVAL", page: 1, pageSize: MAX_CARDS }),
     prisma.agentRun.findMany({
       where: { organizationId, status: { in: [...IN_PROGRESS_STATUSES] } },
-      select: { id: true, topic: true, status: true },
+      select: runProgressSelect,
       orderBy: { createdAt: "desc" },
       take: MAX_CARDS,
     }),
@@ -140,11 +142,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {working.length > 0 && (
         <Section title="In progress">
-          <div className="grid">
+          <div className="grid gap-3">
             {working.map((r) => (
-              <Row key={r.id} href={`/review/${r.id}`} aside={statusLabel(r.status)}>
-                {truncate(r.topic, 70)}
-              </Row>
+              <article key={r.id} className="grid gap-3 rounded-lg border p-4">
+                <header className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex -space-x-1">
+                      {[...new Set(r.accounts.map((a) => a.platform))].map((pl) => (
+                        <PlatformIcon key={pl} platform={pl} className="ring-2 ring-background" />
+                      ))}
+                    </span>
+                    <span className="min-w-0 truncate text-sm font-medium">{truncate(r.topic, 70)}</span>
+                  </span>
+                  <Link href={`/review/${r.id}`} className="shrink-0 text-xs underline underline-offset-4">
+                    Open
+                  </Link>
+                </header>
+                <LiveProgress runId={r.id} initial={toRunInitial(r)} variant="compact" />
+              </article>
             ))}
           </div>
         </Section>
