@@ -12,6 +12,8 @@ import {
 
 const DEFAULT_BASE = "https://api.anthropic.com/v1";
 const API_VERSION = "2023-06-01";
+/** Generous default: reasoning models spend thinking tokens from the same budget before answering. */
+const DEFAULT_MAX_TOKENS = 8_192;
 
 /**
  * Anthropic-compatible endpoints are versioned under `/v1` (`/v1/messages`,
@@ -84,7 +86,7 @@ export class AnthropicProvider implements AIProvider {
   async generateText(req: TextRequest, auth: ProviderAuth): Promise<TextResponse> {
     const started = Date.now();
     const { system, messages } = split(req.messages);
-    const body: Record<string, unknown> = { model: req.model, max_tokens: req.maxTokens ?? 2048, messages };
+    const body: Record<string, unknown> = { model: req.model, max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS, messages };
     if (system) body.system = system;
     if (req.temperature !== undefined) body.temperature = req.temperature;
     const usingTools = !!req.tools?.length;
@@ -117,8 +119,17 @@ export class AnthropicProvider implements AIProvider {
     // prefills) already answered with a complete object or a code fence.
     const lead = rawText.trimStart();
     const text = !prefill || lead.startsWith("{") || lead.startsWith("`") ? rawText : "{" + rawText;
-    if (!text && toolCalls.length === 0)
-      throw new AIError("Anthropic returned empty content", "PROVIDER_UNAVAILABLE", true, "ANTHROPIC");
+    if (!rawText && toolCalls.length === 0) {
+      const truncated = data.stop_reason === "max_tokens";
+      throw new AIError(
+        truncated
+          ? "Anthropic hit max_tokens before producing any text (reasoning consumed the budget); raise maxTokens"
+          : "Anthropic returned empty content",
+        "PROVIDER_UNAVAILABLE",
+        true,
+        "ANTHROPIC",
+      );
+    }
     return {
       text,
       toolCalls: toolCalls.length ? toolCalls : undefined,

@@ -145,7 +145,7 @@ function AccountCard({
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Recommendation</p>
             <p className="text-sm whitespace-pre-wrap">{finalText}</p>
             {account.finalHashtags.length > 0 && (
-              <p className="text-sm text-muted-foreground">{account.finalHashtags.map((h) => `#${h}`).join(" ")}</p>
+              <p className="text-sm text-muted-foreground">{account.finalHashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")}</p>
             )}
             {account.mediaConcept && (
               <p className="text-xs text-muted-foreground">

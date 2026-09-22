@@ -174,7 +174,9 @@ async function park(job: Job<AgentRunJobData>, message: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function runAgentRunJob(job: Job<AgentRunJobData>): Promise<void> {
-  const { runId, organizationId, resume = false } = job.data;
+  const { runId, organizationId } = job.data;
+  // BullMQ's own retries arrive with attemptsMade > 0 and must be honoured like a human retry.
+  const resume = job.data.resume === true || job.attemptsMade > 0;
   const log = logger.child({ worker: "agent-run", runId, organizationId, jobId: job.id });
 
   const header = await loadRunHeader(runId, organizationId);

@@ -15,6 +15,12 @@ import { getPrompt } from "../prompts";
 export const MAX_EVENT_CHARS = 2_000;
 const DEFAULT_OUTPUT_TOKENS = 900;
 const MIN_MAX_TOKENS = 1_024;
+/**
+ * Reasoning models spend "thinking" tokens out of the same max_tokens budget
+ * before writing any text. The expected output size drives the cost estimate;
+ * the request budget adds headroom so thinking never starves the answer.
+ */
+const THINKING_HEADROOM_TOKENS = 6_000;
 
 export type RoutingCtx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
 
@@ -112,7 +118,8 @@ interface Attempt {
 
 async function execute(ctx: PipelineContext, input: ModelCallInput, decision: ModelDecision): Promise<Attempt> {
   const started = Date.now();
-  const maxTokens = Math.max(MIN_MAX_TOKENS, input.expectedOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
+  const expectedOutput = Math.max(MIN_MAX_TOKENS, input.expectedOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
+  const maxTokens = expectedOutput + THINKING_HEADROOM_TOKENS;
   if (input.tools) {
     const result = await runAgent(ctx.executor, decision.routing, {
       system: input.system,
