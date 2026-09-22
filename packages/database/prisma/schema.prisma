@@ -608,6 +608,26 @@ model OrganizationAIConnection {
   @@index([organizationId])
 }
 
+/// Platform-wide AI provider connections managed by Super Admin. Keys are encrypted
+/// at rest (AAD `platform-ai-conn:<id>`) and models are discovered live from each
+/// endpoint, so nothing about the provider catalogue is hard-coded or seeded.
+model PlatformAIConnection {
+  id              String    @id @default(cuid())
+  name            String // user-facing label, e.g. "OpenAI production"
+  provider        String // free text, normalised with normalizeProvider() at use
+  baseUrl         String? // optional custom endpoint (required for gateways)
+  apiKeyEncrypted String
+  models          String? // JSON array of model ids; when set, replaces live discovery
+  enabled         Boolean   @default(true)
+  lastTestedAt    DateTime?
+  lastTestStatus  String? // "ok" | "error: <message>"
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([enabled])
+}
+
 model AIUsage {
   id             String         @id @default(cuid())
   organizationId String

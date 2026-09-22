@@ -1,0 +1,12 @@
+-- Retire the seeded AI model catalogue.
+--
+-- "AIProviderConfig" used to be populated by the seed with a hard-coded list of
+-- models plus a one-off sync against an Anthropic proxy. Models are now discovered
+-- live from PlatformAIConnection rows (and the environment keys), and the table is
+-- only a pricing/default/priority overlay on top of that discovery.
+--
+-- Deactivating every existing row is the simplest safe migration: rows whose provider
+-- no longer has a key would otherwise keep appearing in routing and in the admin UI.
+-- "Refresh from providers" (POST /api/admin/ai-providers/refresh) re-activates every
+-- row it rediscovers and keeps the pricing that was already entered for it.
+UPDATE "AIProviderConfig" SET "active" = false;

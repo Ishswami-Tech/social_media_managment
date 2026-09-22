@@ -9,9 +9,8 @@ import {
   type Brief,
   type ConnectorId,
   type SearchConnector,
-  type SearchResult,
 } from "@platform/research";
-import { aiMockEnabled, aiRuntime } from "./ai";
+import { aiRuntime } from "./ai";
 import { keyring, prisma } from "./db";
 import { pluginTools } from "./plugins";
 import { resolveSkill } from "./skills";
@@ -28,22 +27,8 @@ export interface ConnectorStatus {
 }
 
 /** Which search connectors are usable for this organization (BYO key wins over the platform key). */
-/** Offline stand-in used with AI_MOCK=1 so research skills run without a search key. */
-class MockSearchConnector implements SearchConnector {
-  readonly id = "TAVILY" as const;
-  async search(query: string, opts?: { maxResults?: number }): Promise<SearchResult[]> {
-    return Array.from({ length: Math.min(opts?.maxResults ?? 5, 5) }, (_, i) => ({
-      title: `${query} — example source ${i + 1}`,
-      url: `https://example.com/${encodeURIComponent(query.toLowerCase().replace(/\s+/g, "-"))}/${i + 1}`,
-      snippet: `Placeholder result ${i + 1} for "${query}" from the offline mock connector (AI_MOCK=1).`,
-      publishedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
-    }));
-  }
-}
-
 export async function connectorStatus(organizationId: string): Promise<ConnectorStatus[]> {
   const env = getEnv();
-  if (aiMockEnabled()) return CONNECTOR_IDS.map((id) => ({ id, configured: true, source: "platform" as const }));
   const own = await prisma.organizationConnector.findMany({ where: { organizationId, active: true } });
   const platform: Record<ConnectorId, string | undefined> = {
     TAVILY: env.TAVILY_API_KEY,
@@ -57,7 +42,6 @@ export async function connectorStatus(organizationId: string): Promise<Connector
 
 export async function resolveSearchConnector(organizationId: string): Promise<SearchConnector | undefined> {
   const env = getEnv();
-  if (aiMockEnabled()) return new MockSearchConnector();
   const own = await prisma.organizationConnector.findMany({ where: { organizationId, active: true } });
   const key = (id: ConnectorId, platform?: string) => {
     const o = own.find((c) => c.connector === id);

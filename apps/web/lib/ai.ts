@@ -1,7 +1,6 @@
 import {
   AIExecutor,
   ContentOperations,
-  MockProvider,
   ModelRouter,
   type AIProvider,
   type ImageRequest,
@@ -23,15 +22,9 @@ const realProviders = new Map<AIProviderName, AIProvider>([
   ["ANTHROPIC", new AnthropicProvider()],
   ["GOOGLE", new GoogleProvider()],
 ]);
-const mockProviders = new Map<AIProviderName, AIProvider>(
-  [...realProviders.keys()].map((name) => [name, new MockProvider(name)]),
-);
 
-export function aiMockEnabled(): boolean {
-  return getEnv().AI_MOCK && getEnv().NODE_ENV !== "production";
-}
 function providerImpls(): Map<AIProviderName, AIProvider> {
-  return aiMockEnabled() ? mockProviders : realProviders;
+  return realProviders;
 }
 
 export function aiProvider(name: AIProviderName): AIProvider {
@@ -71,7 +64,87 @@ export function normalizeProvider(name: string | null | undefined): AIProviderNa
   return "OPENAI";
 }
 
-interface LiveModel {
+/** Additional data bound to a platform connection's encrypted key so a stolen envelope is not portable. */
+export function platformConnectionAad(id: string): string {
+  return `platform-ai-conn:${id}`;
+}
+
+/** Parses the optional JSON allow-list stored on a connection; malformed values fall back to discovery. */
+function parseModelList(value: string | null): string[] | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return undefined;
+    const ids = parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    return ids.length > 0 ? ids : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A credential the platform itself owns: an admin-managed connection, or an environment key. */
+export interface PlatformAISource {
+  /** `connection:<name>` for a stored connection, `env` for an environment key. */
+  origin: string;
+  provider: AIProviderName;
+  auth: ProviderAuth;
+  /** Explicit allow-list from the connection; when present it replaces live discovery. */
+  models?: string[];
+  /** Cache scope for live model listings. */
+  scope: string;
+}
+
+/**
+ * Platform credentials in precedence order: every enabled connection (oldest
+ * first, so the first row for a provider is the one routing uses), then the
+ * environment keys — but only for providers that no connection covers.
+ */
+export async function platformAISources(): Promise<PlatformAISource[]> {
+  const env = getEnv();
+  const rows = await prisma.platformAIConnection.findMany({
+    where: { enabled: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const sources: PlatformAISource[] = [];
+  const covered = new Set<AIProviderName>();
+
+  for (const row of rows) {
+    const provider = normalizeProvider(row.provider);
+    let apiKey: string;
+    try {
+      apiKey = keyring().decrypt(row.apiKeyEncrypted, platformConnectionAad(row.id));
+    } catch (e) {
+      logger.error("platform AI connection key could not be decrypted", { connectionId: row.id, ...errorInfo(e) });
+      continue;
+    }
+    covered.add(provider);
+    sources.push({
+      origin: `connection:${row.name}`,
+      provider,
+      auth: row.baseUrl ? { apiKey, baseUrl: row.baseUrl } : { apiKey },
+      models: parseModelList(row.models),
+      scope: `platform-conn:${row.id}`,
+    });
+  }
+
+  const envKeys: [AIProviderName, string | undefined, string | undefined][] = [
+    ["OPENAI", env.OPENAI_API_KEY, undefined],
+    ["ANTHROPIC", env.ANTHROPIC_API_KEY, env.ANTHROPIC_BASE_URL],
+    ["GOOGLE", env.GOOGLE_AI_API_KEY, undefined],
+  ];
+  for (const [provider, apiKey, baseUrl] of envKeys) {
+    if (!apiKey || covered.has(provider)) continue;
+    sources.push({
+      origin: "env",
+      provider,
+      auth: baseUrl ? { apiKey, baseUrl } : { apiKey },
+      scope: "platform-env",
+    });
+  }
+  return sources;
+}
+
+export interface LiveModel {
   id: string;
   displayName: string;
   capabilities: AICapability[];
@@ -89,6 +162,11 @@ declare global {
 function liveModelCache(): Map<string, { at: number; models: LiveModel[] }> {
   if (!globalThis.__platformLiveModels) globalThis.__platformLiveModels = new Map();
   return globalThis.__platformLiveModels;
+}
+
+/** Drops every cached listing so the next discovery goes back to the provider APIs. */
+export function clearLiveModelCache(): void {
+  liveModelCache().clear();
 }
 
 /** Short, non-reversible fingerprint so cache keys never contain the secret itself. */
@@ -132,14 +210,20 @@ async function listLiveModels(
   }
 }
 
+/** What a platform source currently serves: its allow-list when it has one, otherwise a live listing. */
+export async function platformSourceModels(source: PlatformAISource): Promise<LiveModel[]> {
+  if (source.models)
+    return source.models.map((id) => ({ id, displayName: id, capabilities: DEFAULT_TEXT_CAPABILITIES }));
+  return (await listLiveModels(source.provider, source.auth, source.scope)) ?? [];
+}
+
 /**
  * Models discovered straight from provider APIs, nothing hard-coded. Gateways
  * and keys configured by the organization take precedence: when one exists
- * for a provider, the platform key's models for that provider are not offered.
+ * for a provider, the platform's models for that provider are not offered.
  * A connection with an explicit model list uses that list instead of discovery.
  */
 export async function discoverModels(organizationId: string): Promise<SelectableModel[]> {
-  const env = getEnv();
   const [connections, orgKeys] = await Promise.all([
     prisma.organizationAIConnection.findMany({ where: { organizationId, isActive: true } }),
     prisma.organizationAIKey.findMany({ where: { organizationId, active: true } }),
@@ -188,16 +272,16 @@ export async function discoverModels(organizationId: string): Promise<Selectable
       push({ provider: k.provider, model: m.id, displayName: m.displayName, capabilities: m.capabilities, source: "organization" });
   }
 
-  const platform: [AIProviderName, string | undefined, string | undefined][] = [
-    ["ANTHROPIC", env.ANTHROPIC_API_KEY, env.ANTHROPIC_BASE_URL],
-    ["OPENAI", env.OPENAI_API_KEY, undefined],
-    ["GOOGLE", env.GOOGLE_AI_API_KEY, undefined],
-  ];
-  for (const [provider, apiKey, baseUrl] of platform) {
-    if (!apiKey || orgProviders.has(provider)) continue;
-    const models = await listLiveModels(provider, { apiKey, baseUrl }, "platform");
-    for (const m of models ?? [])
-      push({ provider, model: m.id, displayName: m.displayName, capabilities: m.capabilities, source: "platform" });
+  for (const source of await platformAISources()) {
+    if (orgProviders.has(source.provider)) continue;
+    for (const m of await platformSourceModels(source))
+      push({
+        provider: source.provider,
+        model: m.id,
+        displayName: m.displayName,
+        capabilities: m.capabilities,
+        source: "platform",
+      });
   }
   return out;
 }
@@ -250,9 +334,10 @@ export async function platformDefault(
 }
 
 /**
- * Resolves the API key for a provider: connections (custom URLs) take priority,
- * then the organization's own key (BYO), then the platform key from the environment.
- * Keys never leave the server.
+ * Resolves the API key for a provider. Organization sources win: its own
+ * connections (custom URLs) first, then its BYO key. Failing that the platform
+ * answers — the first enabled platform connection for that provider, and only if
+ * there is none, the environment key. Keys never leave the server.
  */
 export async function resolveAuth(
   organizationId: string,
@@ -260,27 +345,19 @@ export async function resolveAuth(
   resolver: (p: AIProviderName) => Promise<ProviderAuth | undefined>;
   available: AIProviderName[];
 }> {
-  const env = getEnv();
-  const orgKeys = await prisma.organizationAIKey.findMany({ where: { organizationId, active: true } });
-  const connections = await prisma.organizationAIConnection.findMany({
-    where: { organizationId, isActive: true },
-  });
-  const platformKeys: Partial<Record<AIProviderName, string>> = {
-    OPENAI: env.OPENAI_API_KEY,
-    ANTHROPIC: env.ANTHROPIC_API_KEY,
-    GOOGLE: env.GOOGLE_AI_API_KEY,
-  };
-  const anthropicBaseUrl = env.ANTHROPIC_BASE_URL;
+  const [orgKeys, connections, platformSources] = await Promise.all([
+    prisma.organizationAIKey.findMany({ where: { organizationId, active: true } }),
+    prisma.organizationAIConnection.findMany({ where: { organizationId, isActive: true } }),
+    platformAISources(),
+  ]);
   const available = new Set<AIProviderName>();
   for (const k of orgKeys) available.add(k.provider);
   for (const c of connections) available.add(normalizeProvider(c.provider));
-  for (const [p, v] of Object.entries(platformKeys)) if (v) available.add(p as AIProviderName);
-  if (aiMockEnabled()) for (const p of realProviders.keys()) available.add(p);
+  for (const s of platformSources) available.add(s.provider);
 
   return {
     available: [...available],
     resolver: async (provider) => {
-      if (aiMockEnabled()) return { apiKey: "mock" };
       // Connection wins (custom base URL). Provider names are free text, so match them normalised.
       const conn = connections.find((c) => normalizeProvider(c.provider) === provider);
       if (conn) {
@@ -289,17 +366,11 @@ export async function resolveAuth(
           baseUrl: conn.baseUrl,
         };
       }
-      // Then BYO key (only for known providers)
-      if (["OPENAI", "ANTHROPIC", "GOOGLE"].includes(provider as AIProviderName)) {
-        const own = orgKeys.find((k) => k.provider === provider);
-        if (own) return { apiKey: keyring().decrypt(own.keyEncrypted, `ai-key:${organizationId}:${provider}`) };
-        const platform = platformKeys[provider];
-        if (!platform) return undefined;
-        const auth: ProviderAuth = { apiKey: platform };
-        if (provider === "ANTHROPIC" && anthropicBaseUrl) auth.baseUrl = anthropicBaseUrl;
-        return auth;
-      }
-      return undefined;
+      // Then the organization's BYO key (only for known providers).
+      const own = orgKeys.find((k) => k.provider === provider);
+      if (own) return { apiKey: keyring().decrypt(own.keyEncrypted, `ai-key:${organizationId}:${provider}`) };
+      // Finally the platform: connections are already ordered ahead of environment keys.
+      return platformSources.find((s) => s.provider === provider)?.auth;
     },
   };
 }

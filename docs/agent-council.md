@@ -34,7 +34,7 @@ packages/agent-council/
   src/pipeline.ts                      advance(runId): executes the next stage, persists via store, emits events
   src/budget.ts                        cost estimation helpers (cents) from usage & catalogue
   src/circuit-breaker.ts               in-memory breaker used by ProviderHealthPort implementations
-  test/*.test.ts                       every stage with MockProvider; pipeline end-to-end with in-memory store
+  test/*.test.ts                       every stage with the fakes in test/helpers; pipeline end-to-end with in-memory store
 packages/queue/src/jobs.ts             agent-run + dead-letter queues (done)
 apps/web/lib/agent/
   store.ts                             Prisma AgentRunStore

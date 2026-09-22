@@ -5,93 +5,141 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-interface Model {
+export interface DiscoveredModel {
   id: string;
   provider: string;
   model: string;
   displayName: string;
   capabilities: string[];
-  active: boolean;
-  isDefault: boolean;
-  priority: number;
   inputCostPerM: number;
   outputCostPerM: number;
   imageCost: number;
+  active: boolean;
+  isDefault: boolean;
+  priority: number;
+  /** `connection:<name>` or `env`. */
+  source: string;
 }
 
-export function AIModelTable({ models, platformKeys }: { models: Model[]; platformKeys: Record<string, boolean> }) {
-  const router = useRouter();
-  const [health, setHealth] = useState<Record<string, string>>({});
-  const [form, setForm] = useState({
-    provider: "OPENAI",
-    model: "",
-    displayName: "",
-    capabilities: "text,json",
-    inputCostPerM: "0",
-    outputCostPerM: "0",
-    imageCost: "0",
-  });
+function sourceLabel(source: string): string {
+  return source === "env" ? "From environment" : source.slice("connection:".length);
+}
 
-  async function upsert(m: Partial<Model> & { provider: string; model: string }) {
-    const res = await fetch("/api/admin/ai-providers", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(m),
-    });
-    if (!res.ok) return toast.error((await res.json()).message ?? "Failed");
-    toast.success("Model saved");
-    router.refresh();
+/**
+ * Models discovered from the configured providers. The table edits the overlay that
+ * sits on top of discovery: cost, priority, default and whether routing may use it.
+ */
+export function AIModelTable({ models }: { models: DiscoveredModel[] }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function save(m: DiscoveredModel, changes: Partial<DiscoveredModel>) {
+    const next = { ...m, ...changes };
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/ai-providers/models", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          provider: next.provider,
+          model: next.model,
+          displayName: next.displayName,
+          capabilities: next.capabilities,
+          active: next.active,
+          isDefault: next.isDefault,
+          priority: next.priority,
+          inputCostPerM: next.inputCostPerM,
+          outputCostPerM: next.outputCostPerM,
+          imageCost: next.imageCost,
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { message?: string };
+        toast.error(data.message ?? "Could not save that change.");
+        return;
+      }
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save that change.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function check(provider: string) {
-    const res = await fetch("/api/admin/ai-providers", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider }),
-    });
-    const data = await res.json();
-    setHealth((h) => ({ ...h, [provider]: data.ok ? "ok" : `error: ${data.message ?? "unknown"}` }));
+  async function refresh() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/ai-providers/refresh", { method: "POST" });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        discovered?: number;
+        created?: number;
+        message?: string;
+      };
+      if (!res.ok || !data.ok) {
+        toast.error(data.message ?? "Could not reach the providers.");
+        return;
+      }
+      toast.success(`Found ${data.discovered ?? 0} models, ${data.created ?? 0} of them new.`);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reach the providers.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Number fields save on blur so typing does not fire a request per keystroke. */
+  function numberCell(m: DiscoveredModel, field: "inputCostPerM" | "outputCostPerM" | "imageCost" | "priority") {
+    return (
+      <Input
+        type="number"
+        min={0}
+        step={field === "priority" ? 1 : 0.01}
+        defaultValue={m[field]}
+        disabled={busy}
+        className="h-8 w-24 tabular-nums"
+        onBlur={(e) => {
+          const value = Number(e.target.value);
+          if (Number.isFinite(value) && value !== m[field]) void save(m, { [field]: value });
+        }}
+      />
+    );
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="grid gap-3 md:grid-cols-3">
-        {["OPENAI", "ANTHROPIC", "GOOGLE"].map((p) => (
-          <Card key={p} className="gap-2 py-4">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-sm">
-                {p}
-                <Badge variant={platformKeys[p] ? "success" : "outline"}>
-                  {platformKeys[p] ? "key configured" : "no platform key"}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">{health[p] ?? ""}</span>
-              <Button size="sm" variant="outline" onClick={() => check(p)} disabled={!platformKeys[p]}>
-                Health check
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Model catalogue</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <Card>
+      <CardHeader>
+        <CardTitle>Models</CardTitle>
+        <CardDescription>
+          Everything the providers above currently serve. Set a cost to make it count towards budgets, and mark a default
+          so automatic choices land on it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div>
+          <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
+            {busy ? "Refreshing…" : "Refresh from providers"}
+          </Button>
+        </div>
+        {models.length === 0 ? (
+          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            Add a provider to see its models.
+          </p>
+        ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Model</TableHead>
-                <TableHead>Capabilities</TableHead>
-                <TableHead>Cost in/out per 1M · image</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Can do</TableHead>
+                <TableHead>Cost in / out per 1M</TableHead>
+                <TableHead>Per image</TableHead>
                 <TableHead>Priority</TableHead>
                 <TableHead>Default</TableHead>
                 <TableHead>Active</TableHead>
@@ -102,9 +150,11 @@ export function AIModelTable({ models, platformKeys }: { models: Model[]; platfo
                 <TableRow key={m.id}>
                   <TableCell>
                     <span className="block font-medium">{m.displayName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {m.provider} · {m.model}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{m.model}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="block text-sm">{sourceLabel(m.source)}</span>
+                    <span className="text-xs text-muted-foreground">{m.provider}</span>
                   </TableCell>
                   <TableCell className="space-x-1">
                     {m.capabilities.map((c) => (
@@ -113,88 +163,34 @@ export function AIModelTable({ models, platformKeys }: { models: Model[]; platfo
                       </Badge>
                     ))}
                   </TableCell>
-                  <TableCell className="text-xs tabular-nums">
-                    ${m.inputCostPerM} / ${m.outputCostPerM} · ${m.imageCost}
+                  <TableCell className="flex gap-1">
+                    {numberCell(m, "inputCostPerM")}
+                    {numberCell(m, "outputCostPerM")}
                   </TableCell>
-                  <TableCell>{m.priority}</TableCell>
+                  <TableCell>{numberCell(m, "imageCost")}</TableCell>
+                  <TableCell>{numberCell(m, "priority")}</TableCell>
                   <TableCell>
-                    <Switch checked={m.isDefault} onCheckedChange={(v) => upsert({ ...m, isDefault: v })} />
+                    <Switch
+                      checked={m.isDefault}
+                      disabled={busy}
+                      aria-label={`Make ${m.displayName} the default`}
+                      onCheckedChange={(v) => save(m, { isDefault: v, active: v ? true : m.active })}
+                    />
                   </TableCell>
                   <TableCell>
-                    <Switch checked={m.active} onCheckedChange={(v) => upsert({ ...m, active: v })} />
+                    <Switch
+                      checked={m.active}
+                      disabled={busy}
+                      aria-label={`Allow ${m.displayName}`}
+                      onCheckedChange={(v) => save(m, { active: v })}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Add model</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2 md:grid-cols-7">
-          <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {["OPENAI", "ANTHROPIC", "GOOGLE"].map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            placeholder="model id"
-            value={form.model}
-            onChange={(e) => setForm({ ...form, model: e.target.value })}
-          />
-          <Input
-            placeholder="display name"
-            value={form.displayName}
-            onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-          />
-          <Input
-            placeholder="capabilities (text,json,vision,image,embedding)"
-            value={form.capabilities}
-            onChange={(e) => setForm({ ...form, capabilities: e.target.value })}
-          />
-          <Input
-            placeholder="$ in / 1M"
-            value={form.inputCostPerM}
-            onChange={(e) => setForm({ ...form, inputCostPerM: e.target.value })}
-          />
-          <Input
-            placeholder="$ out / 1M"
-            value={form.outputCostPerM}
-            onChange={(e) => setForm({ ...form, outputCostPerM: e.target.value })}
-          />
-          <Button
-            onClick={() =>
-              upsert({
-                provider: form.provider,
-                model: form.model,
-                displayName: form.displayName || form.model,
-                capabilities: form.capabilities
-                  .split(",")
-                  .map((c) => c.trim())
-                  .filter(Boolean),
-                inputCostPerM: Number(form.inputCostPerM) || 0,
-                outputCostPerM: Number(form.outputCostPerM) || 0,
-                imageCost: Number(form.imageCost) || 0,
-                active: true,
-                isDefault: false,
-                priority: 100,
-              })
-            }
-            disabled={!form.model}
-          >
-            Add
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

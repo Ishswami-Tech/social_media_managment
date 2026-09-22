@@ -70,22 +70,20 @@ SEED_ADMIN_EMAIL=you@example.com pnpm db:seed
 ```bash
 cp .env.example .env
 # set AUTH_SECRET and ENCRYPTION_KEY in .env (see "Generate secrets" above); APP_URL=http://localhost:3000
-# optional: AI_MOCK=1 makes every AI feature work offline (deterministic mock model, placeholder images)
 docker compose up --build
 ```
 
 This starts Postgres, Redis, the web app and the worker. The worker applies migrations and the seed on
 start, so once `web` is healthy open http://localhost:3000/register. Everything else is optional:
 without LinkedIn/Meta app credentials the connect buttons will report the provider as not configured,
-and without AI keys the AI Studio explains which key is missing. To promote your account to Super Admin
-set `SEED_ADMIN_EMAIL=you@example.com` in `.env` and restart the worker (`docker compose restart worker`).
+and without AI providers the AI features explain that a provider must be added first. To promote your account
+to Super Admin set `SEED_ADMIN_EMAIL=you@example.com` in `.env` and restart the worker
+(`docker compose restart worker`).
 
-### Testing AI features without keys
-
-Set `AI_MOCK=1` (ignored in production) and every provider in the model catalogue is served by an offline mock:
-generation, rewrite/shorten/expand, hashtags, hooks, calendars, quality checks, reply suggestions, image
-generation (placeholder PNGs through the real media pipeline) and research skills (mock search connector).
-Routing, metering, per-model selection and approvals all run exactly as with real keys.
+There is no mock or demo data: every model, post, metric and recommendation in the UI comes from a real
+provider, a real connected account or your own database. Add AI providers under Super Admin → AI providers
+(any number of OpenAI, Anthropic, Google or OpenAI-compatible gateways with their own keys and URLs) or per
+organization under Settings → AI.
 
 ### Models come from your providers, not a list
 
@@ -195,13 +193,6 @@ has no long-lived processes). Per-minute crons need the Pro plan; on Hobby, run 
 
 `docker compose up --build` runs Postgres, Redis, the web app and a persistent worker (`docker/Dockerfile.worker`
 applies migrations on start). Point Cloudflare at the web service and set the same environment variables.
-
-## Smoke test
-
-`apps/web/scripts/smoke/run.sh` drives a running production build (`next start` on :3000 plus the worker) through
-sign-up, organizations, RBAC, the post lifecycle into the worker, signed webhooks, media processing, and the admin
-console. It needs `META_APP_SECRET=test-meta-app-secret` and `META_WEBHOOK_VERIFY_TOKEN=verify-me` in `apps/web/.env`
-and is re-runnable without a database reset.
 
 ## Scripts
 

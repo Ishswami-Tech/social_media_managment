@@ -1,5 +1,5 @@
 /**
- * Seeds the platform plan catalogue, the AI model catalogue and a Super Admin.
+ * Seeds the platform plan catalogue, the feature flags and a Super Admin.
  *
  *   SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=... pnpm db:seed
  *
@@ -7,11 +7,13 @@
  * compatible with sign-in; the web app exposes this via apps/web/scripts.
  * Here we only upsert catalogue data and, if SEED_ADMIN_EMAIL exists already,
  * promote that user to the "admin" role.
+ *
+ * AI models are deliberately not seeded: a Super Admin adds provider connections in
+ * the admin console and the models are discovered live from those providers.
  */
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
-import type { AIProviderName } from "../src/generated/prisma/enums";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
@@ -76,103 +78,6 @@ async function main() {
       create: p,
       update: { name: p.name, priceCents: p.priceCents, limits: p.limits },
     });
-  }
-
-  const models: {
-    provider: AIProviderName;
-    model: string;
-    displayName: string;
-    capabilities: string[];
-    inputCostPerM?: number;
-    outputCostPerM?: number;
-    imageCost?: number;
-    isDefault?: boolean;
-    priority: number;
-  }[] = [
-    {
-      provider: "OPENAI",
-      model: "gpt-5",
-      displayName: "GPT-5",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 1.25,
-      outputCostPerM: 10,
-      isDefault: true,
-      priority: 10,
-    },
-    {
-      provider: "OPENAI",
-      model: "gpt-5-mini",
-      displayName: "GPT-5 mini",
-      capabilities: ["text", "vision", "json"],
-      inputCostPerM: 0.25,
-      outputCostPerM: 2,
-      priority: 20,
-    },
-    {
-      provider: "OPENAI",
-      model: "gpt-image-1",
-      displayName: "GPT Image 1",
-      capabilities: ["image"],
-      imageCost: 0.04,
-      priority: 10,
-    },
-    {
-      provider: "OPENAI",
-      model: "text-embedding-3-small",
-      displayName: "Embedding 3 small",
-      capabilities: ["embedding"],
-      inputCostPerM: 0.02,
-      priority: 10,
-    },
-  ];
-
-  // Seed AI models: start with the static list, then overlay any dynamic models from the Anthropic proxy.
-  const seen = new Set<string>();
-  for (const m of models) {
-    seen.add(`${m.provider}::${m.model}`);
-    await prisma.aIProviderConfig.upsert({
-      where: { provider_model: { provider: m.provider, model: m.model } },
-      create: { ...m, capabilities: [...m.capabilities] },
-      update: { displayName: m.displayName, capabilities: [...m.capabilities] },
-    });
-  }
-  // Fetch live models from the Anthropic proxy endpoint.
-  try {
-    const proxyBase = process.env.ANTHROPIC_BASE_URL?.replace(/\/$/, "") ?? "https://claude.opuscode.pro/api";
-    const proxyKey = process.env.ANTHROPIC_API_KEY;
-    if (proxyKey) {
-      const res = await fetch(`${proxyBase}/models`, {
-        headers: { "x-api-key": proxyKey, "anthropic-version": "2023-06-01" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (res.ok) {
-        const { data } = (await res.json()) as { data: { id: string; display_name: string; type?: string }[] };
-        for (const m of data) {
-          const key = `ANTHROPIC::${m.id}`;
-          if (!seen.has(key) && m.type !== "embedding") {
-            seen.add(key);
-            await prisma.aIProviderConfig.upsert({
-              where: { provider_model: { provider: "ANTHROPIC", model: m.id } },
-              create: {
-                provider: "ANTHROPIC",
-                model: m.id,
-                displayName: m.display_name,
-                capabilities: ["text", "vision", "json"],
-                inputCostPerM: 0,
-                outputCostPerM: 0,
-                priority: 100,
-              },
-              update: { displayName: m.display_name },
-            });
-          }
-        }
-        console.log(`Synced ${data.length} models from proxy (${proxyBase})`);
-      } else {
-        console.warn(`Proxy returned ${res.status} when fetching models`);
-      }
-    }
-  } catch (e) {
-    console.warn("Could not sync models from proxy:", (e as Error).message);
   }
 
   const flags = [
