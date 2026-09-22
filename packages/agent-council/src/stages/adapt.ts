@@ -20,6 +20,7 @@ import {
   stepName,
   strategyText,
   supportedClaims,
+  withSkills,
   type RunAccountSnapshot,
 } from "./shared";
 import { synthesizeDraft } from "./synthesis";
@@ -49,13 +50,16 @@ async function adaptDraft(
       pref: { provider: synthesized.provider, model: synthesized.model },
       temperature: 0.4,
       expectedOutputTokens: ADAPT_OUTPUT_TOKENS,
-      system: renderPrompt("adapt", {
-        ...accountVars(account),
-        strategy: strategyText(account.strategy),
-        claims: claimsText(supportedClaims(run.claims)),
-        text: synthesized.text,
-        hashtags: synthesized.hashtags.join(" "),
-      }),
+      system: withSkills(
+        ctx,
+        renderPrompt("adapt", {
+          ...accountVars(account),
+          strategy: strategyText(account.strategy),
+          claims: claimsText(supportedClaims(run.claims)),
+          text: synthesized.text,
+          hashtags: synthesized.hashtags.join(" "),
+        }),
+      ),
       user: "Adapt the post to the platform now. Return only the JSON object.",
     },
     AdaptOutputSchema,

@@ -230,8 +230,11 @@ export function createMemoryStore(initial: RunSnapshot): MemoryStore {
     },
     async setStatus(_runId, status, extra) {
       statuses.push(status);
-      snapshot = { ...snapshot, status };
+      snapshot = { ...snapshot, status, currentStep: extra?.currentStep ?? snapshot.currentStep };
       if (extra?.currentStep) events.push({ step: extra.currentStep, status: "STARTED" });
+    },
+    async markStep(_runId, currentStep) {
+      snapshot = { ...snapshot, currentStep };
     },
     async saveResearch(_runId, research, claims) {
       const withIds: ClaimRecord[] = claims.map((c, i) => ({ ...c, id: `cl_${i + 1}` }));

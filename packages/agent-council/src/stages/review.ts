@@ -20,6 +20,7 @@ import {
   stepName,
   strategyText,
   supportedClaims,
+  withSkills,
   type RunAccountSnapshot,
 } from "./shared";
 
@@ -80,13 +81,16 @@ async function reviseDraft(
       pref: { provider: draft.provider, model: draft.model },
       temperature: 0.3,
       expectedOutputTokens: REVISION_OUTPUT_TOKENS,
-      system: renderPrompt("revision", {
-        ...accountVars(account),
-        claims: claimsText(supportedClaims(run.claims)),
-        issues: result.issues.map((i) => `- [${i.severity}] ${i.code}: ${i.message}`).join("\n"),
-        text: draft.text,
-        hashtags: draft.hashtags.join(" "),
-      }),
+      system: withSkills(
+        ctx,
+        renderPrompt("revision", {
+          ...accountVars(account),
+          claims: claimsText(supportedClaims(run.claims)),
+          issues: result.issues.map((i) => `- [${i.severity}] ${i.code}: ${i.message}`).join("\n"),
+          text: draft.text,
+          hashtags: draft.hashtags.join(" "),
+        }),
+      ),
       user: "Revise the draft now. Return only the JSON object.",
     },
     DraftOutputSchema,

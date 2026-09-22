@@ -36,6 +36,15 @@ export const createRunInput = z.object({
   audience: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(2000).optional(),
   socialAccountIds: z.array(z.string().min(1)).min(1).max(10),
+  /** Skills to attach: their instructions are appended to every writing prompt. */
+  skillIds: z.array(z.string().min(1).max(120)).max(8).optional(),
+  /** "PROVIDER::model" the person picked; omitted means automatic routing. */
+  model: z
+    .string()
+    .trim()
+    .max(200)
+    .regex(/^[A-Z0-9_]+::.+$/, "Model must look like PROVIDER::model")
+    .optional(),
   assurance: z.enum(AGENT_ASSURANCE_LEVELS).optional(),
   publishMode: z.enum(AGENT_PUBLISH_MODES).optional(),
   scheduledAt: z.string().datetime({ offset: true }).optional(),
@@ -174,6 +183,8 @@ export async function createRun(ctx: OrgContext, input: CreateRunInput): Promise
       audience: input.audience,
       notes: input.notes,
       platforms: [...new Set(accounts.map((a) => a.platform))],
+      skillIds: [...new Set(input.skillIds ?? [])],
+      preferredModel: input.model ?? null,
       status: "QUEUED",
       assurance: input.assurance ?? settings.agentAssurance,
       publishMode,
@@ -191,6 +202,8 @@ export async function createRun(ctx: OrgContext, input: CreateRunInput): Promise
     accounts: ids.length,
     publishMode,
     maxCents,
+    skills: run.skillIds.length,
+    model: run.preferredModel,
     downgraded: requestedMode !== publishMode,
   });
   return run;

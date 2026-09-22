@@ -17,6 +17,7 @@ import {
   stepName,
   strategyText,
   supportedClaims,
+  withSkills,
   type RunAccountSnapshot,
 } from "./shared";
 
@@ -80,11 +81,14 @@ async function writeDraft(
       pref: slot.pref,
       temperature: slot.temperature,
       expectedOutputTokens: WRITER_OUTPUT_TOKENS,
-      system: renderPrompt("writer", {
-        ...accountVars(account),
-        strategy: strategyText(account.strategy),
-        claims: claimsText(supportedClaims(run.claims)),
-      }),
+      system: withSkills(
+        ctx,
+        renderPrompt("writer", {
+          ...accountVars(account),
+          strategy: strategyText(account.strategy),
+          claims: claimsText(supportedClaims(run.claims)),
+        }),
+      ),
       user: "Write the post now. Return only the JSON object.",
     },
     DraftOutputSchema,

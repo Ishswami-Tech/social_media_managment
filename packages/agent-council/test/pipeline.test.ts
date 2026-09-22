@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { AI_PROVIDERS } from "@platform/types";
-import { advanceRun, decideNextAfterAdapting, runPipelineToCompletion, type PublishPolicy } from "../src/pipeline";
+import {
+  advanceRun,
+  decideNextAfterAdapting,
+  interruptedStage,
+  runPipelineToCompletion,
+  stepDone,
+  type PublishPolicy,
+} from "../src/pipeline";
 import { isPipelineBlocked } from "../src/errors";
 import { planWriters } from "../src/stages/writers";
 import { assertBlind, buildCandidates, resolveWinner } from "../src/stages/judge";
@@ -290,5 +297,36 @@ describe("decideNextAfterAdapting", () => {
     for (const override of cases) {
       expect(decideNextAfterAdapting({ ...base, ...override }), JSON.stringify(override)).toBe("AWAITING_APPROVAL");
     }
+  });
+});
+
+describe("interrupted stages", () => {
+  it("re-runs a stage whose checkpoint is not done instead of skipping it", async () => {
+    expect(interruptedStage({ status: "ADAPTING", currentStep: "ADAPTING:running" })).toBe("ADAPTING");
+    expect(interruptedStage({ status: "ADAPTING", currentStep: stepDone("ADAPTING") })).toBeUndefined();
+    expect(interruptedStage({ status: "AWAITING_APPROVAL", currentStep: null })).toBeUndefined();
+
+    const { ctx, memory } = setup();
+    await runPipelineToCompletion(ctx, "run_1");
+    const before = memory.recommendations.length;
+    expect(memory.snapshot().currentStep).toBe(stepDone("ADAPTING"));
+
+    // Simulate a worker crash mid-adaptation: the checkpoint is left at "running".
+    await memory.store.markStep("run_1", "ADAPTING:running");
+    const result = await advanceRun(ctx, "run_1");
+
+    expect(result).toEqual({ status: "ADAPTING", done: true });
+    expect(memory.statuses.filter((s) => s === "ADAPTING")).toHaveLength(1);
+    expect(memory.recommendations.length).toBe(before * 2);
+    expect(memory.snapshot().currentStep).toBe(stepDone("ADAPTING"));
+  });
+
+  it("moves on when the checkpoint says the stage finished", async () => {
+    const { ctx, memory } = setup();
+    await runPipelineToCompletion(ctx, "run_1");
+    const before = memory.recommendations.length;
+    const result = await advanceRun(ctx, "run_1");
+    expect(result).toEqual({ status: "ADAPTING", done: true });
+    expect(memory.recommendations.length).toBe(before);
   });
 });

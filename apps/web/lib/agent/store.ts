@@ -240,6 +240,7 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
         id: run.id,
         organizationId: run.organizationId,
         status: run.status,
+        currentStep: run.currentStep,
         assurance: run.assurance,
         publishMode: run.publishMode,
         brief,
@@ -264,6 +265,10 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
         data: statusUpdate(current, status, extra, now()),
       });
       if (updated.count === 0) throw new Error(`Agent run ${runId} changed status concurrently; refusing ${status}`);
+    },
+
+    async markStep(runId, currentStep) {
+      await prisma.agentRun.update({ where: { id: runId }, data: { currentStep } });
     },
 
     async saveResearch(runId, brief, claims) {

@@ -168,6 +168,8 @@ export interface UseRunProgress {
   progress: RunProgress;
   /** True while the live stream is delivering; false on the polling fallback. */
   live: boolean;
+  /** Re-open the stream after the run was retried or resumed (it closes on settled statuses). */
+  reconnect: () => void;
 }
 
 /**
@@ -177,7 +179,13 @@ export interface UseRunProgress {
 export function useRunProgress(runId: string, initial: RunInitial, onReady?: () => void): UseRunProgress {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(initial);
   const [live, setLive] = useState(true);
+  const [generation, setGeneration] = useState(0);
   const readyFired = useRef(false);
+  const reconnect = useCallback(() => {
+    readyFired.current = false;
+    setSnapshot((s) => ({ ...s, status: "QUEUED" }));
+    setGeneration((g) => g + 1);
+  }, []);
   const onReadyRef = useRef(onReady);
   // Kept in a ref so an inline callback does not restart the stream on every
   // render. Written after paint, never during it.
@@ -293,14 +301,14 @@ export function useRunProgress(runId: string, initial: RunInitial, onReady?: () 
     // `snapshot.status` only matters for the settled check, which stops the
     // effect for good; re-running on every event would reconnect constantly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, announce]);
+  }, [runId, announce, generation]);
 
   const progress = useMemo(
     () => buildProgress(snapshot.status, snapshot.events, snapshot.accounts, { claimCount: snapshot.claimCount }),
     [snapshot],
   );
 
-  return { snapshot, progress, live };
+  return { snapshot, progress, live, reconnect };
 }
 
 // ---------------------------------------------------------------------------

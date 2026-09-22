@@ -40,6 +40,12 @@ interface Props {
   canDecide: boolean;
   /** `content:create` — pause, stop and try again. */
   canManage: boolean;
+  /**
+   * Render only Pause/Resume/Stop/Try again, without the per-account texts.
+   * The review screen uses this while the AI is still working, so those
+   * controls are reachable before there is anything to read.
+   */
+  controlsOnly?: boolean;
 }
 
 interface ErrorBody {
@@ -207,7 +213,16 @@ function AccountBlock({
   );
 }
 
-export function ReviewPanel({ runId, status, accounts, sources, unverifiedCount, canDecide, canManage }: Props) {
+export function ReviewPanel({
+  runId,
+  status,
+  accounts,
+  sources,
+  unverifiedCount,
+  canDecide,
+  canManage,
+  controlsOnly = false,
+}: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -230,17 +245,20 @@ export function ReviewPanel({ runId, status, accounts, sources, unverifiedCount,
 
   return (
     <div className="grid gap-4">
-      {accounts.length === 0 && <p className="text-sm text-muted-foreground">No accounts were picked for this one.</p>}
-      {accounts.map((a) => (
-        <AccountBlock
-          key={a.id}
-          runId={runId}
-          account={a}
-          sources={sources}
-          unverifiedCount={unverifiedCount}
-          canDecide={canDecide && a.decision === "PENDING"}
-        />
-      ))}
+      {!controlsOnly && accounts.length === 0 && (
+        <p className="text-sm text-muted-foreground">No accounts were picked for this one.</p>
+      )}
+      {!controlsOnly &&
+        accounts.map((a) => (
+          <AccountBlock
+            key={a.id}
+            runId={runId}
+            account={a}
+            sources={sources}
+            unverifiedCount={unverifiedCount}
+            canDecide={canDecide && a.decision === "PENDING"}
+          />
+        ))}
 
       {(canPause || canResume || canStop || canRetry) && (
         <div className="flex flex-wrap gap-4 text-sm">

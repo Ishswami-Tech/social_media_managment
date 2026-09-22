@@ -175,6 +175,21 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
       {live && <LiveProgress runId={run.id} initial={detailToRunInitial(run)} variant="full" />}
 
+      {/* While the text is still being written there is nothing to read, but
+          pausing, stopping and trying again must still be within reach. */}
+      {producing && (
+        <ReviewPanel
+          runId={run.id}
+          status={run.status}
+          accounts={accounts}
+          sources={sources}
+          unverifiedCount={unverifiedCount}
+          canDecide={false}
+          canManage={ctx.can("content:create")}
+          controlsOnly
+        />
+      )}
+
       {!producing && (
         <div className="grid gap-3">
           {isReady(run.status) && <p className="text-xs text-muted-foreground">{summaryOf(run)}</p>}

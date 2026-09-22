@@ -13,6 +13,7 @@ import {
   filterClaimIds,
   stepName,
   supportedClaims,
+  withSkills,
   type RunAccountSnapshot,
 } from "./shared";
 
@@ -38,14 +39,17 @@ export async function synthesizeDraft(
       pref: { provider: winner.provider, model: winner.model },
       temperature: 0.4,
       expectedOutputTokens: SYNTHESIS_OUTPUT_TOKENS,
-      system: renderPrompt("synthesis", {
-        ...accountVars(account),
-        claims: claimsText(supportedClaims(run.claims)),
-        winner: winner.text,
-        winnerHashtags: winner.hashtags.join(" "),
-        borrow: borrow.length > 0 ? borrow.map((b) => `- ${b}`).join("\n") : "(nothing to borrow)",
-        rationale,
-      }),
+      system: withSkills(
+        ctx,
+        renderPrompt("synthesis", {
+          ...accountVars(account),
+          claims: claimsText(supportedClaims(run.claims)),
+          winner: winner.text,
+          winnerHashtags: winner.hashtags.join(" "),
+          borrow: borrow.length > 0 ? borrow.map((b) => `- ${b}`).join("\n") : "(nothing to borrow)",
+          rationale,
+        }),
+      ),
       user: "Produce the merged post now. Return only the JSON object.",
     },
     DraftOutputSchema,

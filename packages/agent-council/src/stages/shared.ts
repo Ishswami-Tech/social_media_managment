@@ -1,7 +1,7 @@
 /** Prompt variables, claim helpers and check inputs shared by the stages. */
 import { z } from "zod";
 import type { PlatformCapabilities } from "@platform/types";
-import { platformGuidance } from "@platform/ai-core";
+import { platformGuidance, withSkillInstructions } from "@platform/ai-core";
 import { hashtagLimit, type CheckInput } from "../checks";
 import type { AccountStrategy, ClaimRecord, DraftCandidate, PipelineContext, RunSnapshot } from "../contracts";
 
@@ -17,6 +17,15 @@ export const DraftOutputSchema = z.object({
 export type DraftOutput = z.infer<typeof DraftOutputSchema>;
 
 export type RunAccountSnapshot = RunSnapshot["accounts"][number];
+
+/**
+ * A stage system prompt with the campaign's attached skill playbooks appended,
+ * using the same framing as every other AI call so one skill reads the same way
+ * wherever it is applied. Returns the prompt unchanged when nothing is attached.
+ */
+export function withSkills(ctx: PipelineContext, system: string): string {
+  return withSkillInstructions(system, ctx.skillInstructions);
+}
 
 export function stringify(value: unknown): string {
   return JSON.stringify(value, null, 2);

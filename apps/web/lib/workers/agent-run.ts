@@ -191,7 +191,7 @@ export async function runAgentRunJob(job: Job<AgentRunJobData>): Promise<void> {
   }
 
   try {
-    const ctx = await buildPipelineContext(organizationId);
+    const ctx = await buildPipelineContext(organizationId, runId);
     for (let step = 0; step < MAX_ADVANCE_STEPS; step++) {
       const result = await advanceRun(ctx, runId);
       if (result.done) break;
@@ -238,6 +238,12 @@ async function settleAfterPipeline(
     return;
   }
   const policy = await buildPolicy(runId, organizationId);
+  if (!policy.checksPassed) {
+    // Every account must carry a recommendation before a human is asked to approve anything.
+    await setStatus(runId, "FAILED", { error: "The AI did not finish a post for every account. Try again." });
+    log.warn("agent run finished without a recommendation for every account");
+    return;
+  }
   const next = decideNextAfterAdapting(policy);
   log.info("agent run left the pipeline", { next });
 

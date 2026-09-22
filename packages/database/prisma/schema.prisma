@@ -803,6 +803,10 @@ model AgentRun {
   audience       String?
   notes          String?
   platforms      Platform[]
+  /// Skill ids attached to this campaign ("custom:<slug>"); their instructions ride along with every writing call
+  skillIds       String[]       @default([])
+  /// "PROVIDER::model" the person picked for this campaign; null means automatic routing
+  preferredModel String?
   status         AgentRunStatus @default(QUEUED)
   assurance      AgentAssurance @default(JUDGE_ONLY)
   publishMode    AgentPublishMode @default(APPROVAL_REQUIRED)

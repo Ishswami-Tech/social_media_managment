@@ -40,15 +40,33 @@ export interface AdvanceResult {
  * pipeline (paused, blocked, awaiting approval, finished) is returned untouched
  * so the caller can decide what to do.
  */
+export const stepDone = (status: AgentRunStatus): string => `${status}:done`;
+export const stepRunning = (status: AgentRunStatus): string => `${status}:running`;
+
+/**
+ * A run found at a pipeline status whose checkpoint is not `<STATUS>:done` was
+ * interrupted mid-stage (worker restart, crash, stalled job). Re-run that
+ * stage rather than treating it as finished.
+ */
+export function interruptedStage(run: Pick<RunSnapshot, "status" | "currentStep">): AgentRunStatus | undefined {
+  return STAGES[run.status] && run.currentStep !== stepDone(run.status) ? run.status : undefined;
+}
+
 export async function advanceRun(ctx: PipelineContext, runId: string): Promise<AdvanceResult> {
   const run = await ctx.store.load(runId);
-  const next = nextPipelineStage(run.status);
-  const stage = next ? STAGES[next] : undefined;
-  if (!next || !stage) return { status: run.status, done: true };
-  assertRunTransition(run.status, next);
-  await ctx.store.setStatus(runId, next, { currentStep: next });
-  await stage(ctx, { ...run, status: next });
-  return { status: next, done: next === "ADAPTING" };
+  const resume = interruptedStage(run);
+  const target = resume ?? nextPipelineStage(run.status);
+  const stage = target ? STAGES[target] : undefined;
+  if (!target || !stage) return { status: run.status, done: true };
+  if (resume) {
+    await ctx.store.markStep(runId, stepRunning(target));
+  } else {
+    assertRunTransition(run.status, target);
+    await ctx.store.setStatus(runId, target, { currentStep: stepRunning(target) });
+  }
+  await stage(ctx, { ...run, status: target });
+  await ctx.store.markStep(runId, stepDone(target));
+  return { status: target, done: target === "ADAPTING" };
 }
 
 /** Drives the run through every remaining stage (worker loop and tests). */

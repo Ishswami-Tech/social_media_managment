@@ -154,6 +154,8 @@ export interface RunSnapshot {
   id: string;
   organizationId: string;
   status: AgentRunStatus;
+  /** Checkpoint marker: `<STAGE>:running` while a stage executes, `<STAGE>:done` once it finished. */
+  currentStep?: string | null;
   assurance: AgentAssurance;
   publishMode: AgentPublishMode;
   brief: CampaignBrief;
@@ -197,6 +199,8 @@ export interface StepEvent {
 export interface AgentRunStore {
   load(runId: string): Promise<RunSnapshot>;
   setStatus(runId: string, status: AgentRunStatus, extra?: { currentStep?: string; error?: string; blockedReason?: string }): Promise<void>;
+  /** Persists the checkpoint marker without changing the status (a stage finished or was re-entered). */
+  markStep(runId: string, currentStep: string): Promise<void>;
   saveResearch(runId: string, brief: Brief, claims: ClaimRecord[]): Promise<ClaimRecord[]>;
   saveStrategy(runAccountId: string, strategy: AccountStrategy): Promise<void>;
   saveDraft(runId: string, runAccountId: string, draft: DraftCandidate, extra?: { checks?: CheckResult; judgeScore?: number; judgeRationale?: string }): Promise<string>;
@@ -253,6 +257,11 @@ export interface PipelineContext {
    * the duplicate check. Empty/undefined disables duplicate detection.
    */
   recentTexts?: string[];
+  /**
+   * Additive: skill playbooks attached to this campaign. Appended to the system
+   * prompt of every stage that writes text (writer, revision, synthesis, adapt).
+   */
+  skillInstructions?: string;
   /** Deterministic clock/random for tests */
   now?: () => Date;
 }

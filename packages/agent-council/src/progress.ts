@@ -440,13 +440,22 @@ function byTime(a: ProgressEvent, b: ProgressEvent): number {
  * `status` is the run status; `events` may arrive in any order and may be a
  * suffix of the full history (the stream sends the most recent ones).
  */
+/**
+ * A retry starts the pipeline over, so stages and durations are computed from
+ * the events after the most recent `retry` marker only.
+ */
+export function latestAttempt(ordered: readonly ProgressEvent[]): ProgressEvent[] {
+  const last = ordered.reduce((found, e, i) => (e.step === "retry" ? i : found), -1);
+  return last >= 0 ? ordered.slice(last + 1) : [...ordered];
+}
+
 export function buildProgress(
   status: string,
   events: readonly ProgressEvent[],
   accounts: readonly ProgressAccount[],
   extras: ProgressExtras = {},
 ): RunProgress {
-  const ordered = [...events].sort(byTime);
+  const ordered = latestAttempt([...events].sort(byTime));
   const ctx: Ctx = {
     accounts,
     candidates: countCandidates(ordered),

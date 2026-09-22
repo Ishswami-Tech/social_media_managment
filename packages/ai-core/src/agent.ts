@@ -36,7 +36,11 @@ export interface AgentOptions {
   operation?: "GENERATE" | "REPURPOSE" | "CALENDAR" | "QUALITY_CHECK";
   /** Cap on serialized tool output passed back to the model */
   maxToolResultChars?: number;
+  /** Output budget per model turn (reasoning models spend thinking tokens from it). */
+  maxTokens?: number;
 }
+
+const DEFAULT_AGENT_MAX_TOKENS = 8_192;
 
 type Ctx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
 
@@ -72,7 +76,7 @@ export async function runAgent(executor: AIExecutor, ctx: Ctx, opts: AgentOption
       temperature: opts.temperature ?? 0.4,
       json: opts.json && (finalTurn || true),
       operation: opts.operation ?? "GENERATE",
-      maxTokens: 4000,
+      maxTokens: opts.maxTokens ?? DEFAULT_AGENT_MAX_TOKENS,
     });
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;

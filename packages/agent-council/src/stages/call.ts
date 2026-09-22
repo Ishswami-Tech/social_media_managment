@@ -20,7 +20,15 @@ const MIN_MAX_TOKENS = 1_024;
  * before writing any text. The expected output size drives the cost estimate;
  * the request budget adds headroom so thinking never starves the answer.
  */
-const THINKING_HEADROOM_TOKENS = 6_000;
+const THINKING_HEADROOM_TOKENS = 12_000;
+/** Ceiling for the automatic retry after a reasoning model exhausts its budget. */
+const MAX_RETRY_TOKENS = 64_000;
+
+/** True when a provider reported that thinking consumed the whole output budget. */
+export function isBudgetExhausted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /max_tokens|maxOutputTokens|consumed the budget/i.test(message);
+}
 
 export type RoutingCtx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
 
@@ -116,10 +124,29 @@ interface Attempt {
   latencyMs: number;
 }
 
+/**
+ * One model call with a given output budget. Reasoning models may spend the
+ * whole budget thinking; `execute` retries once with double the budget when a
+ * provider reports that.
+ */
 async function execute(ctx: PipelineContext, input: ModelCallInput, decision: ModelDecision): Promise<Attempt> {
-  const started = Date.now();
   const expectedOutput = Math.max(MIN_MAX_TOKENS, input.expectedOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
   const maxTokens = expectedOutput + THINKING_HEADROOM_TOKENS;
+  try {
+    return await executeWithBudget(ctx, input, decision, maxTokens);
+  } catch (error) {
+    if (!isBudgetExhausted(error) || maxTokens >= MAX_RETRY_TOKENS) throw error;
+    return executeWithBudget(ctx, input, decision, Math.min(MAX_RETRY_TOKENS, maxTokens * 2));
+  }
+}
+
+async function executeWithBudget(
+  ctx: PipelineContext,
+  input: ModelCallInput,
+  decision: ModelDecision,
+  maxTokens: number,
+): Promise<Attempt> {
+  const started = Date.now();
   if (input.tools) {
     const result = await runAgent(ctx.executor, decision.routing, {
       system: input.system,
@@ -128,6 +155,7 @@ async function execute(ctx: PipelineContext, input: ModelCallInput, decision: Mo
       maxSteps: input.maxSteps,
       temperature: input.temperature,
       json: input.json,
+      maxTokens,
     });
     return { text: result.text, usage: result.usage, latencyMs: Date.now() - started };
   }

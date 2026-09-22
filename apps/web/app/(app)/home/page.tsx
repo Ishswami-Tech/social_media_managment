@@ -1,215 +1,186 @@
 import Link from "next/link";
+import type { Prisma } from "@platform/database";
 import { requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { listRuns } from "@/lib/agent/runs";
-import { listPosts } from "@/lib/services/posts";
-import { formatDate, truncate } from "@/lib/utils";
-import { PlatformIcon } from "@/components/app/platform-icon";
-import { LiveProgress } from "@/components/agent/live-progress";
-import { ApprovalCard, type ApprovalAccount } from "@/components/home/approval-card";
-import { CreateBox } from "@/components/home/create-box";
-import { IN_PROGRESS_STATUSES } from "@/components/home/labels";
-import { RefreshTimer } from "@/components/home/refresh-timer";
+import { composeFinalText } from "@/lib/agent/apply";
 import { runProgressSelect, toRunInitial } from "@/lib/agent/progress";
+import { selectableModels } from "@/lib/ai";
+import { pluginSummaries } from "@/lib/plugins";
+import { listSkillSummaries } from "@/lib/skills";
+import {
+  ComposerBar,
+  ExamplePrompts,
+  type ComposerBarAccount,
+  type ComposerBarModel,
+} from "@/components/home/composer-bar";
+import { Thread, type ThreadAccount, type ThreadProps } from "@/components/home/thread";
 
 export const metadata = { title: "Home" };
 
-const MAX_CARDS = 5;
+/** How much of the conversation the feed keeps in view. */
+const MAX_THREADS = 20;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="grid gap-3">
-      <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">{title}</h2>
-      {children}
-    </section>
-  );
+const EXAMPLE_PROMPTS = [
+  "A lesson we learned shipping faster this quarter",
+  "Announce our new integration and why it matters",
+  "A customer story about cutting setup time in half",
+] as const;
+
+/** Everything a thread needs: the live view, plus what people read and decide on. */
+const threadSelect = {
+  ...runProgressSelect,
+  createdById: true,
+  assurance: true,
+  skillIds: true,
+  preferredModel: true,
+  blockedReason: true,
+  error: true,
+  accounts: {
+    select: {
+      ...runProgressSelect.accounts.select,
+      finalHashtags: true,
+      strategy: true,
+      postId: true,
+    },
+    orderBy: { createdAt: "asc" },
+  },
+} satisfies Prisma.AgentRunSelect;
+
+type ThreadRow = Prisma.AgentRunGetPayload<{ select: typeof threadSelect }>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function Row({ href, children, aside }: { href: string; children: React.ReactNode; aside: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent"
-    >
-      <span className="min-w-0 truncate">{children}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{aside}</span>
-    </Link>
-  );
+/** `AgentRunAccount.strategy` is free-form JSON; only the one line people read is taken. */
+function readAngle(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  for (const key of ["angle", "rationale", "hookType"]) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
+function toThreadAccount(account: ThreadRow["accounts"][number]): ThreadAccount {
+  const base = account.editedText ?? account.finalText ?? "";
+  return {
+    id: account.id,
+    platform: account.platform,
+    displayName: account.socialAccount.displayName,
+    text: base ? composeFinalText(base, account.finalHashtags) : "",
+    why: readAngle(account.strategy),
+    decision: account.decision,
+    postId: account.postId,
+  };
+}
+
+/** "OPENAI::gpt-5" → the model's short display name, or the bare model id. */
+function modelChip(preferred: string | null, models: ComposerBarModel[]): string | null {
+  if (!preferred) return null;
+  const match = models.find((m) => `${m.provider}::${m.model}` === preferred);
+  const name = match?.displayName ?? preferred.split("::")[1] ?? preferred;
+  return name.split("(")[0]?.trim() ?? name;
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ forbidden?: string }> }) {
   const ctx = await requireOrg();
   const { forbidden } = await searchParams;
   const organizationId = ctx.organization.id;
+  const canCreate = ctx.can("ai:generate");
 
-  const [accounts, awaiting, working, scheduled, queued, published] = await Promise.all([
+  const [accounts, runs, skills, plugins, models] = await Promise.all([
     prisma.socialAccount.findMany({
       where: { organizationId, status: "CONNECTED" },
       select: { id: true, platform: true, displayName: true },
       orderBy: [{ platform: "asc" }, { displayName: "asc" }],
     }),
-    listRuns(ctx, { status: "AWAITING_APPROVAL", page: 1, pageSize: MAX_CARDS }),
     prisma.agentRun.findMany({
-      where: { organizationId, status: { in: [...IN_PROGRESS_STATUSES] } },
-      select: runProgressSelect,
+      where: { organizationId },
+      select: threadSelect,
       orderBy: { createdAt: "desc" },
-      take: MAX_CARDS,
+      take: MAX_THREADS,
     }),
-    listPosts(ctx, { status: "SCHEDULED", page: 1, pageSize: MAX_CARDS }),
-    listPosts(ctx, { status: "QUEUED", page: 1, pageSize: MAX_CARDS }),
-    listPosts(ctx, { status: "PUBLISHED", page: 1, pageSize: MAX_CARDS }),
+    listSkillSummaries(organizationId).catch(() => []),
+    pluginSummaries(organizationId).catch(() => []),
+    selectableModels(organizationId).catch(() => []),
   ]);
 
-  // The list query stays lean, so the texts people read are fetched separately.
-  const runIds = awaiting.items.map((r) => r.id);
-  const pending = runIds.length
-    ? await prisma.agentRunAccount.findMany({
-        where: { runId: { in: runIds }, decision: "PENDING", run: { organizationId } },
-        select: {
-          id: true,
-          runId: true,
-          platform: true,
-          finalText: true,
-          editedText: true,
-          socialAccount: { select: { displayName: true } },
-        },
-        orderBy: { createdAt: "asc" },
-      })
-    : [];
+  const composerAccounts: ComposerBarAccount[] = accounts;
+  const composerModels: ComposerBarModel[] = models.map((m) => ({
+    provider: m.provider,
+    model: m.model,
+    displayName: m.displayName,
+    capabilities: [...m.capabilities],
+  }));
+  const customSkills = skills
+    .filter((s) => s.source === "custom")
+    .map((s) => ({ id: s.id, name: s.name, description: s.description }));
+  const skillName = (id: string) => customSkills.find((s) => s.id === id)?.name ?? id.replace(/^custom:/, "");
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
 
-  const approvals = awaiting.items
-    .map((run) => {
-      const forRun: ApprovalAccount[] = pending
-        .filter((a) => a.runId === run.id && (a.editedText ?? a.finalText))
-        .map((a) => ({
-          id: a.id,
-          platform: a.platform,
-          displayName: a.socialAccount.displayName,
-          text: a.editedText ?? a.finalText ?? "",
-        }));
-      return {
-        id: run.id,
-        topic: run.topic,
-        accounts: forRun,
-        canDecide: canApprove && (run.createdById !== ctx.user.id || isAdmin),
-      };
-    })
-    .filter((r) => r.accounts.length > 0);
-
-  const upcoming = [...scheduled.items, ...queued.items]
-    .sort((a, b) => (a.scheduledAt?.getTime() ?? 0) - (b.scheduledAt?.getTime() ?? 0))
-    .slice(0, MAX_CARDS);
+  // Oldest at the top, newest just above the composer — like any conversation.
+  const threads: ThreadProps[] = [...runs].reverse().map((run) => ({
+    runId: run.id,
+    topic: run.topic,
+    initial: toRunInitial(run),
+    accounts: run.accounts.map(toThreadAccount),
+    skills: run.skillIds.map(skillName),
+    model: modelChip(run.preferredModel, composerModels),
+    assurance: run.assurance,
+    blockedReason: run.blockedReason,
+    error: run.error,
+    canDecide: canApprove && (run.createdById !== ctx.user.id || isAdmin),
+    canManage: ctx.can("content:create"),
+  }));
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-10">
-      <RefreshTimer enabled={working.length > 0} />
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+      <div className="mx-auto w-full max-w-3xl flex-1">
+        <div className="flex items-center justify-between gap-3 pb-4">
+          <h1 className="text-sm font-medium text-muted-foreground">Your posts, start to finish</h1>
+          <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+            See all posts
+          </Link>
+        </div>
 
-      {forbidden && (
-        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          That page is not available to your role. Ask someone who owns this workspace.
+        {forbidden && (
+          <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            That page is not available to your role. Ask someone who owns this workspace.
+          </p>
+        )}
+
+        {threads.length === 0 ? (
+          <div className="grid gap-4 py-10">
+            <h2 className="text-2xl font-semibold tracking-tight">Tell me what to post about.</h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              I&rsquo;ll research it, write a few drafts, judge them blind and hand you the best one to approve.
+            </p>
+            {canCreate && <ExamplePrompts prompts={EXAMPLE_PROMPTS} />}
+          </div>
+        ) : (
+          <div className="grid gap-10 pb-6">
+            {threads.map((thread) => (
+              <Thread key={thread.runId} {...thread} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {canCreate ? (
+        <ComposerBar
+          accounts={composerAccounts}
+          skills={customSkills}
+          plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
+          models={composerModels}
+        />
+      ) : (
+        <p className="sticky bottom-0 -mx-4 border-t bg-background/85 px-4 py-3 text-sm text-muted-foreground backdrop-blur md:-mx-6 md:px-6">
+          Your role can read posts but not write them.
         </p>
       )}
-
-      {ctx.can("ai:generate") ? (
-        <CreateBox accounts={accounts} canWriteYourself={ctx.can("content:create")} />
-      ) : (
-        <section className="grid gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">What do you want to post about?</h2>
-          {ctx.can("content:create") ? (
-            <Link href="/create" className="text-sm underline underline-offset-4">
-              Write a post
-            </Link>
-          ) : (
-            <p className="text-sm text-muted-foreground">Your role can read posts but not write them.</p>
-          )}
-        </section>
-      )}
-
-      <Section title="Needs your approval">
-        {approvals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing waiting on you right now.</p>
-        ) : (
-          <div className="grid gap-3">
-            {approvals.map((r) => (
-              <ApprovalCard key={r.id} runId={r.id} topic={r.topic} accounts={r.accounts} canDecide={r.canDecide} />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {working.length > 0 && (
-        <Section title="In progress">
-          <div className="grid gap-3">
-            {working.map((r) => (
-              <article key={r.id} className="grid gap-3 rounded-lg border p-4">
-                <header className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="flex -space-x-1">
-                      {[...new Set(r.accounts.map((a) => a.platform))].map((pl) => (
-                        <PlatformIcon key={pl} platform={pl} className="ring-2 ring-background" />
-                      ))}
-                    </span>
-                    <span className="min-w-0 truncate text-sm font-medium">{truncate(r.topic, 70)}</span>
-                  </span>
-                  <Link href={`/review/${r.id}`} className="shrink-0 text-xs underline underline-offset-4">
-                    Open
-                  </Link>
-                </header>
-                <LiveProgress runId={r.id} initial={toRunInitial(r)} variant="compact" />
-              </article>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      <Section title="Scheduled">
-        {upcoming.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing scheduled yet.</p>
-        ) : (
-          <div className="grid">
-            {upcoming.map((p) => (
-              <Row
-                key={p.id}
-                href={`/posts/${p.id}`}
-                aside={formatDate(p.scheduledAt, { dateStyle: "medium", timeStyle: "short" }, p.timezone)}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex -space-x-1">
-                    {[...new Set(p.variants.map((v) => v.platform))].map((pl) => (
-                      <PlatformIcon key={pl} platform={pl} className="ring-2 ring-background" />
-                    ))}
-                  </span>
-                  <span className="truncate">{p.title || truncate(p.masterText, 60)}</span>
-                </span>
-              </Row>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Recently published">
-        {published.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing published yet.</p>
-        ) : (
-          <div className="grid">
-            {published.items.map((p) => (
-              <Row key={p.id} href={`/posts/${p.id}`} aside={formatDate(p.publishedAt, { dateStyle: "medium" })}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex -space-x-1">
-                    {[...new Set(p.variants.map((v) => v.platform))].map((pl) => (
-                      <PlatformIcon key={pl} platform={pl} className="ring-2 ring-background" />
-                    ))}
-                  </span>
-                  <span className="truncate">{p.title || truncate(p.masterText, 60)}</span>
-                </span>
-              </Row>
-            ))}
-          </div>
-        )}
-      </Section>
     </div>
   );
 }
