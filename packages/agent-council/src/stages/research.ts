@@ -45,6 +45,27 @@ export function fallbackBrief(run: RunSnapshot, raw: string): Brief {
   };
 }
 
+/** One line per tool the model can actually call, so the prompt never advertises a missing one. */
+const TOOL_GUIDES: Record<string, string> = {
+  web_search: "web_search: search the public web for recent, reputable material; refine the query when results are weak.",
+  read_url: "read_url: read a public page in full; use it on search results, URLs in the notes, or well-known primary sources.",
+  read_feed: "read_feed: read an RSS/Atom feed.",
+  brand_knowledge: "brand_knowledge: facts the organization recorded about its brand, products and voice.",
+  recent_posts_performance: "recent_posts_performance: what this audience engaged with recently.",
+};
+
+export function toolGuide(tools: readonly { definition: { name: string; description: string } }[]): string {
+  if (tools.length === 0) return "- No tools are available. Work only from the campaign details and clearly mark unverified statements as caveats.";
+  const lines = tools.map((t) => `- ${TOOL_GUIDES[t.definition.name] ?? `${t.definition.name}: ${t.definition.description}`}`);
+  const hasSearch = tools.some((t) => t.definition.name === "web_search");
+  return hasSearch
+    ? lines.join("\n")
+    : [
+        ...lines,
+        "- There is no web search. Reach sources through read_url on URLs from the campaign notes, official sites and documentation you already know, and through the brand and performance tools.",
+      ].join("\n");
+}
+
 function brandClause(run: RunSnapshot): string {
   const brand = run.accounts.find((a) => a.profile.identity?.brand)?.profile.identity?.brand;
   return brand ? ` for the brand "${brand}"` : "";
@@ -69,6 +90,7 @@ export function normalizeClaims(claims: z.infer<typeof ClaimsOutputSchema>["clai
 async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Brief> {
   const system = renderPrompt("research", {
     brandClause: brandClause(run),
+    toolGuide: toolGuide(ctx.researchTools),
     topic: run.brief.topic,
     goal: run.brief.goal,
     audience: run.brief.audience ?? "(not specified)",

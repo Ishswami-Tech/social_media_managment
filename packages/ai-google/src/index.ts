@@ -177,10 +177,11 @@ export class GoogleProvider implements AIProvider {
       }));
     if (!text && toolCalls.length === 0) {
       const truncated = cand?.finishReason === "MAX_TOKENS";
+      const reason = cand?.finishReason;
       throw new AIError(
         truncated
           ? "Gemini hit maxOutputTokens before producing any text (thinking consumed the budget); raise maxTokens"
-          : "Gemini returned no text",
+          : `Gemini returned no text${reason ? ` (finishReason: ${reason})` : ""}`,
         "PROVIDER_UNAVAILABLE",
         true,
         "GOOGLE",

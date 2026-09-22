@@ -4,13 +4,15 @@ import {
   BraveConnector,
   BriefSchema,
   CONNECTOR_IDS,
+  GeminiSearchConnector,
   TavilyConnector,
   buildResearchTools,
   type Brief,
   type ConnectorId,
   type SearchConnector,
+  type SearchConnectorId,
 } from "@platform/research";
-import { aiRuntime } from "./ai";
+import { aiRuntime, discoverModels, resolveAuth, type SelectableModel } from "./ai";
 import { keyring, prisma } from "./db";
 import { pluginTools } from "./plugins";
 import { resolveSkill } from "./skills";
@@ -21,23 +23,49 @@ import { brandContext } from "./services/brand";
 import type { OrgContext } from "./session";
 
 export interface ConnectorStatus {
-  id: ConnectorId;
+  id: SearchConnectorId;
   configured: boolean;
   source: "organization" | "platform" | null;
 }
 
-/** Which search connectors are usable for this organization (BYO key wins over the platform key). */
+/**
+ * Which search connectors are usable for this organization (BYO key wins over
+ * the platform key). Gemini search needs no key of its own: it is available
+ * whenever a Gemini model can be reached for the organization.
+ */
 export async function connectorStatus(organizationId: string): Promise<ConnectorStatus[]> {
   const env = getEnv();
-  const own = await prisma.organizationConnector.findMany({ where: { organizationId, active: true } });
+  const [own, gemini] = await Promise.all([
+    prisma.organizationConnector.findMany({ where: { organizationId, active: true } }),
+    geminiSearchSource(organizationId),
+  ]);
   const platform: Record<ConnectorId, string | undefined> = {
     TAVILY: env.TAVILY_API_KEY,
     BRAVE: env.BRAVE_SEARCH_API_KEY,
   };
-  return CONNECTOR_IDS.map((id) => {
+  const keyed = CONNECTOR_IDS.map((id): ConnectorStatus => {
     const o = own.find((c) => c.connector === id);
     return { id, configured: !!o || !!platform[id], source: o ? "organization" : platform[id] ? "platform" : null };
   });
+  return [...keyed, { id: "GEMINI", configured: gemini !== null, source: gemini }];
+}
+
+/** Where the Gemini model used for search grounding comes from, or null when none is configured. */
+async function geminiSearchSource(organizationId: string): Promise<"organization" | "platform" | null> {
+  const model = await geminiSearchModel(organizationId);
+  if (!model) return null;
+  return model.source === "organization" ? "organization" : "platform";
+}
+
+/**
+ * The Gemini text model used for Google Search grounding: the cheapest "flash"
+ * model the account exposes, discovered live rather than hard-coded.
+ */
+async function geminiSearchModel(organizationId: string): Promise<SelectableModel | undefined> {
+  const models = (await discoverModels(organizationId)).filter(
+    (m) => m.provider === "GOOGLE" && m.capabilities.includes("text") && !m.model.includes("image"),
+  );
+  return models.find((m) => /flash/i.test(m.model)) ?? models[0];
 }
 
 export async function resolveSearchConnector(organizationId: string): Promise<SearchConnector | undefined> {
@@ -51,7 +79,15 @@ export async function resolveSearchConnector(organizationId: string): Promise<Se
   if (tavily) return new TavilyConnector(tavily);
   const brave = key("BRAVE", env.BRAVE_SEARCH_API_KEY);
   if (brave) return new BraveConnector(brave);
-  return undefined;
+  return resolveGeminiSearch(organizationId);
+}
+
+async function resolveGeminiSearch(organizationId: string): Promise<SearchConnector | undefined> {
+  const [model, { resolver }] = await Promise.all([geminiSearchModel(organizationId), resolveAuth(organizationId)]);
+  if (!model) return undefined;
+  const auth = await resolver("GOOGLE");
+  if (!auth) return undefined;
+  return new GeminiSearchConnector({ apiKey: auth.apiKey, baseUrl: auth.baseUrl, model: model.model });
 }
 
 export async function setConnectorKey(ctx: OrgContext, connector: ConnectorId, apiKey: string) {

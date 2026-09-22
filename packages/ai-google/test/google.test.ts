@@ -87,6 +87,13 @@ describe("GoogleProvider.generateText", () => {
     expect(config.maxOutputTokens).toBe(8192);
   });
 
+  it("names the finish reason when Gemini answers with neither text nor a tool call", async () => {
+    mockFetch({ candidates: [{ content: { parts: [] }, finishReason: "MALFORMED_FUNCTION_CALL" }] });
+    await expect(provider.generateText({ model: "m", messages: [{ role: "user", content: "x" }] }, auth)).rejects.toThrow(
+      /Gemini returned no text \(finishReason: MALFORMED_FUNCTION_CALL\)/,
+    );
+  });
+
   it("reports a truncated thinking budget as a retryable error", async () => {
     mockFetch({ candidates: [{ content: { parts: [] }, finishReason: "MAX_TOKENS" }] });
     await expect(provider.generateText({ model: "m", messages: [{ role: "user", content: "x" }] }, auth)).rejects.toThrow(

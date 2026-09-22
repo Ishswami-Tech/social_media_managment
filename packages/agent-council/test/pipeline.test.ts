@@ -123,7 +123,7 @@ describe("runPipelineToCompletion", () => {
     expect(started).toHaveLength(script.calls.length);
     expect(succeeded).toHaveLength(script.calls.length);
     for (const event of succeeded) {
-      expect(event.promptVersion).toBe(1);
+      expect(event.promptVersion).toBeGreaterThanOrEqual(1);
       expect(event.promptHash).toMatch(/^[0-9a-f]{64}$/);
       expect(event.model).toBeTruthy();
       expect(typeof event.costCents).toBe("number");

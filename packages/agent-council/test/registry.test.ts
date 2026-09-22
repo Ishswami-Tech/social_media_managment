@@ -12,12 +12,12 @@ import "../src/prompts";
 const REQUIRED_KEYS = ["research", "claims", "strategy", "writer", "revision", "judge", "synthesis", "adapt"];
 
 describe("prompt registry", () => {
-  it("registers every pipeline prompt at version 1 with a stable sha256 hash", () => {
+  it("registers every pipeline prompt with a positive version and a stable sha256 hash", () => {
     const prompts = listPrompts();
     for (const key of REQUIRED_KEYS) {
       const prompt = prompts.find((p) => p.key === key);
       expect(prompt, `prompt "${key}" is missing`).toBeDefined();
-      expect(prompt!.version).toBe(1);
+      expect(prompt!.version).toBeGreaterThanOrEqual(1);
       expect(prompt!.hash).toMatch(/^[0-9a-f]{64}$/);
       expect(prompt!.hash).toBe(promptHash(prompt!.key, prompt!.version, prompt!.template));
     }

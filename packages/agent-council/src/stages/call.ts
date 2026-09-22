@@ -255,6 +255,7 @@ export async function callJson<T>(
       promptHash: call.promptHash,
       provider: call.provider,
       model: call.model,
+      error: `The model's JSON did not match the expected shape: ${errorMessage(error)}`,
       validation: errorMessage(error),
     });
     throw error;

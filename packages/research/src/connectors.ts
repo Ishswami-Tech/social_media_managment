@@ -25,18 +25,26 @@ export interface FeedItem {
   summary?: string;
 }
 
+export type SearchConnectorId = "TAVILY" | "BRAVE" | "GEMINI";
+
 export interface SearchConnector {
-  readonly id: "TAVILY" | "BRAVE";
+  readonly id: SearchConnectorId;
   search(
     query: string,
     opts?: { maxResults?: number; freshness?: "day" | "week" | "month" | "year" },
   ): Promise<SearchResult[]>;
 }
 
+/** Connectors that take their own API key (Gemini search rides on the organization's Gemini AI key instead). */
 export const CONNECTOR_IDS = ["TAVILY", "BRAVE"] as const;
 export type ConnectorId = (typeof CONNECTOR_IDS)[number];
 
-export const CONNECTOR_INFO: Record<ConnectorId, { name: string; description: string; docsUrl: string }> = {
+export const CONNECTOR_INFO: Record<SearchConnectorId, { name: string; description: string; docsUrl: string }> = {
+  GEMINI: {
+    name: "Google Search (Gemini)",
+    description: "Google Search grounding through your Gemini key; no extra key needed.",
+    docsUrl: "https://ai.google.dev/gemini-api/docs/google-search",
+  },
   TAVILY: {
     name: "Tavily",
     description: "Web search built for AI agents; returns cleaned page excerpts.",
