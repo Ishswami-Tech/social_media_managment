@@ -1,18 +1,26 @@
-import { requireOrg } from "@/lib/session";
-import { isSuperAdmin } from "@/lib/session";
+import { isSuperAdmin, requireOrg } from "@/lib/session";
+import { prisma } from "@/lib/db";
 import { Sidebar } from "@/components/app/sidebar";
 import { UserMenu } from "@/components/app/user-menu";
-import { MAIN_NAV, ORG_NAV, WHATSAPP_NAV } from "@/components/app/nav";
+import { MAIN_NAV, MORE_NAV, ORG_NAV, WHATSAPP_NAV, type NavItem } from "@/components/app/nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireOrg();
-  const filter = (items: typeof MAIN_NAV) => items.filter((i) => !i.capability || ctx.can(i.capability));
+  const whatsAppAccounts = await prisma.whatsAppAccount.count({ where: { organizationId: ctx.organization.id } });
+  const hasWhatsApp = whatsAppAccounts > 0;
+  /** Capability gating plus the organization-shape gate for WhatsApp destinations. */
+  const prepare = (items: NavItem[]): NavItem[] =>
+    items
+      .filter((i) => !i.capability || ctx.can(i.capability))
+      .map((i) => ({ ...i, hidden: i.href.startsWith("/whatsapp") && !hasWhatsApp }));
+
   return (
     <div className="flex min-h-screen">
       <Sidebar
-        main={filter(MAIN_NAV)}
-        whatsapp={filter(WHATSAPP_NAV)}
-        org={filter(ORG_NAV)}
+        main={prepare(MAIN_NAV)}
+        more={prepare(MORE_NAV)}
+        whatsapp={prepare(WHATSAPP_NAV)}
+        org={prepare(ORG_NAV)}
         isSuperAdmin={isSuperAdmin(ctx.user)}
         organizationName={ctx.organization.name}
       />

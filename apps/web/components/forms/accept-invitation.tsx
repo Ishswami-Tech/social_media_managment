@@ -20,7 +20,7 @@ export function AcceptInvitation({ invitationId }: { invitationId: string }) {
     if (data?.member.organizationId)
       await authClient.organization.setActive({ organizationId: data.member.organizationId });
     toast.success("Welcome aboard");
-    router.push("/dashboard");
+    router.push("/home");
     router.refresh();
   }
 

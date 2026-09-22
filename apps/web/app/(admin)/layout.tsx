@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <AdminNav />
         <div className="border-t p-2">
           <Link
-            href="/dashboard"
+            href="/home"
             className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent/60"
           >
             <ArrowLeft className="size-4" /> Back to app

@@ -1,54 +1,139 @@
 import Link from "next/link";
-import { POST_STATUSES, type PostStatus } from "@platform/types";
-import { requireOrg } from "@/lib/session";
+import type { PostStatus } from "@platform/types";
+import { requireOrg, type OrgContext } from "@/lib/session";
+import { prisma } from "@/lib/db";
 import { listPosts } from "@/lib/services/posts";
-import { formatDate, truncate } from "@/lib/utils";
+import { cn, formatDate, truncate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
+import { CalendarView } from "@/components/posts/calendar-view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export const metadata = { title: "Posts" };
 
+/** Plain-language groups over the internal post statuses. Drafts only show under "All". */
+const FILTERS = [
+  { key: "all", label: "All", statuses: undefined },
+  { key: "review", label: "Needs review", statuses: ["IN_REVIEW", "APPROVED"] },
+  { key: "scheduled", label: "Scheduled", statuses: ["SCHEDULED", "QUEUED", "PUBLISHING"] },
+  { key: "published", label: "Published", statuses: ["PUBLISHED"] },
+  { key: "failed", label: "Failed", statuses: ["FAILED", "DISCONNECTED_ACCOUNT"] },
+] as const satisfies readonly { key: string; label: string; statuses?: readonly PostStatus[] }[];
+
+type FilterKey = (typeof FILTERS)[number]["key"];
+
+function resolveFilter(raw: string | undefined): (typeof FILTERS)[number] {
+  return FILTERS.find((f) => f.key === raw) ?? FILTERS[0];
+}
+
+function monthFromParam(m: string | undefined): { year: number; month: number } {
+  const now = new Date();
+  const parts = m ? m.split("-").map(Number) : [];
+  const year = Number.isFinite(parts[0]) ? Number(parts[0]) : now.getUTCFullYear();
+  const month = Number.isFinite(parts[1]) ? Number(parts[1]) - 1 : now.getUTCMonth();
+  return { year, month: Math.min(11, Math.max(0, month)) };
+}
+
 export default async function PostsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string }>;
+  searchParams: Promise<{ view?: string; filter?: string; page?: string; m?: string }>;
 }) {
   const ctx = await requireOrg();
   const sp = await searchParams;
-  const status = POST_STATUSES.includes(sp.status as PostStatus) ? (sp.status as PostStatus) : undefined;
-  const page = Math.max(1, Number(sp.page ?? 1) || 1);
-  const canSeeAll = ctx.can("content:edit_any") || ctx.can("content:approve");
-  const { items, total, pageSize } = await listPosts(ctx, { status, page, pageSize: 25, mine: !canSeeAll });
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const filters: (PostStatus | "ALL")[] = [
-    "ALL",
-    "DRAFT",
-    "IN_REVIEW",
-    "APPROVED",
-    "SCHEDULED",
-    "QUEUED",
-    "PUBLISHED",
-    "FAILED",
-    "DELETED",
-  ];
+  const isCalendar = sp.view === "calendar";
 
   return (
     <>
-      <PageHeader title="Posts" description={`${total} post(s)`}>
+      <PageHeader title="Posts" description="Everything you have drafted, scheduled and published.">
+        <div className="inline-flex rounded-lg border p-0.5">
+          <Link
+            href="/posts"
+            className={cn(
+              "rounded-md px-3 py-1 text-sm font-medium",
+              isCalendar ? "text-muted-foreground hover:text-foreground" : "bg-muted",
+            )}
+          >
+            List
+          </Link>
+          <Link
+            href="/posts?view=calendar"
+            className={cn(
+              "rounded-md px-3 py-1 text-sm font-medium",
+              isCalendar ? "bg-muted" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Calendar
+          </Link>
+        </div>
         {ctx.can("content:create") && (
           <Button asChild>
             <Link href="/create">New post</Link>
           </Button>
         )}
       </PageHeader>
+      {isCalendar ? (
+        <CalendarMonth ctx={ctx} month={sp.m} />
+      ) : (
+        <PostList ctx={ctx} filter={sp.filter} page={sp.page} />
+      )}
+    </>
+  );
+}
+
+async function CalendarMonth({ ctx, month: monthParam }: { ctx: OrgContext; month: string | undefined }) {
+  const { year, month } = monthFromParam(monthParam);
+  const start = new Date(Date.UTC(year, month, 1));
+  const end = new Date(Date.UTC(year, month + 1, 1));
+  const posts = await prisma.post.findMany({
+    where: {
+      organizationId: ctx.organization.id,
+      OR: [{ scheduledAt: { gte: start, lt: end } }, { publishedAt: { gte: start, lt: end } }],
+    },
+    select: {
+      id: true,
+      title: true,
+      masterText: true,
+      scheduledAt: true,
+      publishedAt: true,
+      createdAt: true,
+      variants: { select: { platform: true } },
+    },
+    orderBy: { scheduledAt: "asc" },
+  });
+  return <CalendarView posts={posts} year={year} month={month} timezone={ctx.settings.timezone} />;
+}
+
+async function PostList({
+  ctx,
+  filter: filterParam,
+  page: pageParam,
+}: {
+  ctx: OrgContext;
+  filter?: string;
+  page?: string;
+}) {
+  const filter = resolveFilter(filterParam);
+  const page = Math.max(1, Number(pageParam ?? 1) || 1);
+  const canSeeAll = ctx.can("content:edit_any") || ctx.can("content:approve");
+  const { items, total, pageSize } = await listPosts(ctx, {
+    status: filter.statuses ? [...filter.statuses] : undefined,
+    page,
+    pageSize: 25,
+    mine: !canSeeAll,
+  });
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const pageHref = (n: number, key: FilterKey) => `/posts?${key === "all" ? "" : `filter=${key}&`}page=${n}`;
+
+  return (
+    <>
       <div className="mb-4 flex flex-wrap gap-2">
-        {filters.map((f) => (
-          <Button key={f} asChild size="sm" variant={(f === "ALL" && !status) || f === status ? "default" : "outline"}>
-            <Link href={f === "ALL" ? "/posts" : `/posts?status=${f}`}>{f.replaceAll("_", " ").toLowerCase()}</Link>
+        {FILTERS.map((f) => (
+          <Button key={f.key} asChild size="sm" variant={f.key === filter.key ? "default" : "outline"}>
+            <Link href={f.key === "all" ? "/posts" : `/posts?filter=${f.key}`}>{f.label}</Link>
           </Button>
         ))}
       </div>
@@ -68,7 +153,7 @@ export default async function PostsPage({
               {items.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    No posts match this filter.
+                    Nothing here yet.
                   </TableCell>
                 </TableRow>
               )}
@@ -102,13 +187,13 @@ export default async function PostsPage({
       {pages > 1 && (
         <div className="mt-4 flex items-center justify-end gap-2 text-sm">
           <Button asChild variant="outline" size="sm" disabled={page <= 1}>
-            <Link href={`/posts?${status ? `status=${status}&` : ""}page=${page - 1}`}>Previous</Link>
+            <Link href={pageHref(page - 1, filter.key)}>Previous</Link>
           </Button>
           <span className="text-muted-foreground">
             Page {page} of {pages}
           </span>
           <Button asChild variant="outline" size="sm" disabled={page >= pages}>
-            <Link href={`/posts?${status ? `status=${status}&` : ""}page=${page + 1}`}>Next</Link>
+            <Link href={pageHref(page + 1, filter.key)}>Next</Link>
           </Button>
         </div>
       )}

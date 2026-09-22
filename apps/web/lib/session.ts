@@ -114,13 +114,13 @@ export async function requireOrg(): Promise<OrgContext> {
 
 export async function requireCapability(capability: Capability): Promise<OrgContext> {
   const ctx = await requireOrg();
-  if (!ctx.can(capability)) redirect("/dashboard?forbidden=" + encodeURIComponent(capability));
+  if (!ctx.can(capability)) redirect("/home?forbidden=" + encodeURIComponent(capability));
   return ctx;
 }
 
 export async function requireSuperAdmin(): Promise<Session> {
   const s = await requireUser();
-  if (!isSuperAdmin(s.user)) redirect("/dashboard");
+  if (!isSuperAdmin(s.user)) redirect("/home");
   return s;
 }
 

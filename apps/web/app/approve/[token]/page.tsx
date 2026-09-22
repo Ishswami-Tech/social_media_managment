@@ -17,7 +17,7 @@ function Message({ title, description }: { title: string; description: string })
       </CardHeader>
       <CardContent>
         <Button asChild variant="outline">
-          <Link href="/agent">Go to campaigns</Link>
+          <Link href="/home">Go to home</Link>
         </Button>
       </CardContent>
     </Card>

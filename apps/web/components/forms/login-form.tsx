@@ -24,7 +24,7 @@ export function LoginForm({ next }: { next?: string }) {
     });
     setLoading(false);
     if (error) return toast.error(error.message ?? "Sign in failed");
-    router.push(next && next.startsWith("/") ? next : "/dashboard");
+    router.push(next && next.startsWith("/") ? next : "/home");
     router.refresh();
   }
 

@@ -37,7 +37,7 @@ export function OrganizationPicker({ organizations, invitations }: Props) {
     const { error } = await authClient.organization.setActive({ organizationId });
     setBusy(false);
     if (error) return toast.error(error.message ?? "Could not switch organization");
-    router.push("/dashboard");
+    router.push("/home");
     router.refresh();
   }
 
@@ -51,7 +51,7 @@ export function OrganizationPicker({ organizations, invitations }: Props) {
     }
     await authClient.organization.setActive({ organizationId: data.id });
     toast.success(`Created ${data.name}`);
-    router.push("/dashboard");
+    router.push("/home");
     router.refresh();
   }
 

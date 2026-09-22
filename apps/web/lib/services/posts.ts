@@ -462,11 +462,20 @@ export async function postHistory(ctx: OrgContext, postId: string): Promise<Post
 
 export async function listPosts(
   ctx: OrgContext,
-  opts: { status?: PostStatus; from?: Date; to?: Date; page: number; pageSize: number; mine?: boolean },
+  opts: {
+    /** A single status, or a group of statuses shown under one filter. */
+    status?: PostStatus | PostStatus[];
+    from?: Date;
+    to?: Date;
+    page: number;
+    pageSize: number;
+    mine?: boolean;
+  },
 ) {
+  const statusFilter = Array.isArray(opts.status) ? { in: opts.status } : opts.status;
   const where: Prisma.PostWhereInput = {
     organizationId: ctx.organization.id,
-    ...(opts.status ? { status: opts.status } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
     ...(opts.mine ? { createdById: ctx.user.id } : {}),
     ...(opts.from || opts.to ? { scheduledAt: { gte: opts.from, lte: opts.to } } : {}),
   };

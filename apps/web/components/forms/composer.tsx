@@ -703,7 +703,7 @@ export function Composer({
                           );
                         })}
                         {customSkills.length === 0 && (
-                          <DropdownMenuItem onSelect={() => router.push("/settings#skills")}>
+                          <DropdownMenuItem onSelect={() => router.push("/settings?tab=ai#skills")}>
                             <Plug /> Import skills in Settings…
                           </DropdownMenuItem>
                         )}
@@ -718,7 +718,7 @@ export function Composer({
                         <DropdownMenuSeparator />
                         <DropdownMenuLabel className="text-xs text-muted-foreground">Plugins</DropdownMenuLabel>
                         {plugins.map((p) => (
-                          <DropdownMenuItem key={p.slug} onSelect={() => router.push("/settings#plugins")}>
+                          <DropdownMenuItem key={p.slug} onSelect={() => router.push("/settings?tab=ai#plugins")}>
                             <Plug />
                             <span className="grid">
                               <span>
@@ -730,7 +730,7 @@ export function Composer({
                             </span>
                           </DropdownMenuItem>
                         ))}
-                        <DropdownMenuItem onSelect={() => router.push("/settings#plugins")}>
+                        <DropdownMenuItem onSelect={() => router.push("/settings?tab=ai#plugins")}>
                           <Plus /> Add plugin (MCP server or HTTP tool)…
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
