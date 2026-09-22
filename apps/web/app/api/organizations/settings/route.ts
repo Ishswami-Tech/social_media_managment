@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CAPABILITIES } from "@platform/rbac";
-import { AI_PROVIDERS, ORG_ROLES } from "@platform/types";
+import { AGENT_ASSURANCE_LEVELS, AGENT_PUBLISH_MODES, AI_PROVIDERS, ORG_ROLES } from "@platform/types";
 import { json, parseBody, withOrg } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
@@ -15,6 +15,14 @@ const settingsInput = z.object({
   aiImageModel: z.string().max(100).nullable().optional(),
   aiRetainPrompts: z.boolean().optional(),
   permissionOverrides: z.record(z.enum(ORG_ROLES), z.array(z.enum(CAPABILITIES))).optional(),
+  // Agent Council (campaign automation)
+  agentPublishMode: z.enum(AGENT_PUBLISH_MODES).optional(),
+  agentAssurance: z.enum(AGENT_ASSURANCE_LEVELS).optional(),
+  agentRunMaxCents: z.number().int().min(1).max(100_000).optional(),
+  agentMonthlyBudgetCents: z.number().int().min(1).max(10_000_000).optional(),
+  agentMaxActiveRuns: z.number().int().min(1).max(100).optional(),
+  /** Allow-list of "PROVIDER::model" strings; an empty list means any model the organization can reach. */
+  agentAllowedModels: z.array(z.string().min(1).max(200)).max(200).optional(),
 });
 
 export const GET = (req: Request) =>

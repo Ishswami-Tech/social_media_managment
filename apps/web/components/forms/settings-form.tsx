@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import type { AgentAssurance, AgentPublishMode } from "@platform/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,14 @@ interface Settings {
   aiImageModel: string | null;
   aiRetainPrompts: boolean;
   permissionOverrides: Record<string, string[]>;
+  /** Agent Council (campaign automation) */
+  agentPublishMode: AgentPublishMode;
+  agentAssurance: AgentAssurance;
+  agentRunMaxCents: number;
+  agentMonthlyBudgetCents: number;
+  agentMaxActiveRuns: number;
+  /** Allow-list of "PROVIDER::model" strings; empty = any model the organization can reach. */
+  agentAllowedModels: string[];
 }
 interface Props {
   organization: { id: string; name: string; slug: string };
@@ -211,6 +220,17 @@ export function SettingsForm({ organization, settings, models, keys, connections
         : { ...x, aiImageProvider: p ?? null, aiImageModel: m ?? null },
     );
   };
+
+  /** Number inputs stay valid: an empty or bad value falls back to the minimum. */
+  const positiveInt = (raw: string, min = 1) => {
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= min ? n : min;
+  };
+  const toggleAllowedModel = (key: string, on: boolean) =>
+    setS((x) => ({
+      ...x,
+      agentAllowedModels: on ? [...new Set([...x.agentAllowedModels, key])] : x.agentAllowedModels.filter((m) => m !== key),
+    }));
 
   function statusBadge(status: string | null) {
     if (!status) return <Badge variant="secondary">untested</Badge>;
@@ -487,6 +507,112 @@ export function SettingsForm({ organization, settings, models, keys, connections
               <Input type="password" placeholder="API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="flex-1" />
               <Button variant="outline" onClick={addKey} disabled={busy || apiKey.length < 10}>Add</Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Campaign automation</CardTitle>
+          <CardDescription>
+            Defaults for the Agent Council. Campaigns can lower these limits, never raise them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-1">
+            <Label>Publishing mode</Label>
+            <Select
+              value={s.agentPublishMode}
+              onValueChange={(v) => setS({ ...s, agentPublishMode: v as AgentPublishMode })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MANUAL">Manual — recommendation only</SelectItem>
+                <SelectItem value="APPROVAL_REQUIRED">Approval required — a human decides</SelectItem>
+                <SelectItem value="AUTOMATIC">Automatic — publish without a human</SelectItem>
+              </SelectContent>
+            </Select>
+            {s.agentPublishMode === "AUTOMATIC" && (
+              <p className="text-xs text-amber-600">
+                Campaigns can publish without review. It still requires the creator to have publish rights and each
+                account to allow auto-publishing.
+              </p>
+            )}
+          </div>
+          <div className="grid gap-1">
+            <Label>Assurance level</Label>
+            <Select value={s.agentAssurance} onValueChange={(v) => setS({ ...s, agentAssurance: v as AgentAssurance })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="JUDGE_ONLY">Judge only — faster and cheaper</SelectItem>
+                <SelectItem value="HIGH_ASSURANCE">High assurance — adds cross-review</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="agentRunMaxCents">Maximum spend per campaign (cents)</Label>
+            <Input
+              id="agentRunMaxCents"
+              type="number"
+              min={1}
+              max={100000}
+              value={s.agentRunMaxCents}
+              onChange={(e) => setS({ ...s, agentRunMaxCents: positiveInt(e.target.value) })}
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="agentMonthlyBudgetCents">Monthly AI budget (cents)</Label>
+            <Input
+              id="agentMonthlyBudgetCents"
+              type="number"
+              min={1}
+              max={10000000}
+              value={s.agentMonthlyBudgetCents}
+              onChange={(e) => setS({ ...s, agentMonthlyBudgetCents: positiveInt(e.target.value) })}
+            />
+            <span className="text-xs text-muted-foreground">Reservations stop campaigns before this is exceeded.</span>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="agentMaxActiveRuns">Campaigns running at the same time</Label>
+            <Input
+              id="agentMaxActiveRuns"
+              type="number"
+              min={1}
+              max={100}
+              value={s.agentMaxActiveRuns}
+              onChange={(e) => setS({ ...s, agentMaxActiveRuns: positiveInt(e.target.value) })}
+            />
+          </div>
+          <div className="grid gap-1 md:col-span-2">
+            <Label>Models campaigns may use</Label>
+            <span className="text-xs text-muted-foreground">
+              Select none to allow any model this organization can reach.
+            </span>
+            {textModels.length === 0 ? (
+              <span className="text-xs text-muted-foreground">No models available yet.</span>
+            ) : (
+              <div className="mt-1 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {textModels.map((m) => {
+                  const key = `${m.provider}::${m.model}`;
+                  return (
+                    <label key={key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={s.agentAllowedModels.includes(key)}
+                        onChange={(e) => toggleAllowedModel(key, e.target.checked)}
+                      />
+                      <span className="truncate">
+                        {m.displayName} <span className="text-muted-foreground">· {m.provider}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

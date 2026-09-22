@@ -32,6 +32,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@platform/agent-council':
+        specifier: workspace:*
+        version: link:../../packages/agent-council
       '@platform/ai-anthropic':
         specifier: workspace:*
         version: link:../../packages/ai-anthropic

@@ -6,6 +6,7 @@ import { logger, errorInfo } from "@/lib/logger";
 import { providers } from "@/lib/providers";
 import { queues } from "@/lib/queue";
 import { scheduleAnalyticsCollection } from "@/lib/services/analytics";
+import { learnAllAccountProfiles } from "@/lib/agent/learning";
 
 /** Register repeatable housekeeping jobs (idempotent: BullMQ dedupes by repeat key). */
 export async function scheduleMaintenance() {
@@ -30,6 +31,11 @@ export async function scheduleMaintenance() {
     { every: 6 * 60 * 60_000 },
     { name: "maintenance", data: { task: "collect-analytics" } },
   );
+  await q.upsertJobScheduler(
+    "learn-account-profiles",
+    { every: 24 * 60 * 60_000 },
+    { name: "maintenance", data: { task: "learn-account-profiles" } },
+  );
 }
 
 export async function runMaintenance(data: MaintenanceJobData) {
@@ -44,6 +50,11 @@ export async function runMaintenance(data: MaintenanceJobData) {
     case "collect-analytics": {
       const n = await scheduleAnalyticsCollection();
       logger.info("analytics collection scheduled", n);
+      return;
+    }
+    case "learn-account-profiles": {
+      const result = await learnAllAccountProfiles();
+      logger.info("account profiles learned", result);
       return;
     }
   }

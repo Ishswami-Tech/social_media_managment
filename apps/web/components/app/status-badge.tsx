@@ -35,6 +35,24 @@ const STYLES: Record<string, "default" | "secondary" | "destructive" | "outline"
   COMPLETED: "success",
   PROCESSED: "success",
   IGNORED: "outline",
+  // Agent Council run pipeline (AgentRunStatus)
+  RESEARCHING: "secondary",
+  STRATEGIZING: "secondary",
+  DRAFTING: "secondary",
+  REVIEWING: "secondary",
+  JUDGING: "secondary",
+  ADAPTING: "secondary",
+  AWAITING_APPROVAL: "warning",
+  PAUSED: "warning",
+  BLOCKED: "warning",
+  // Agent Council per-account decision (AgentAccountDecision) and claim ledger (ClaimStatus)
+  REJECTED: "destructive",
+  SUPPORTED: "success",
+  UNSUPPORTED: "destructive",
+  UNVERIFIED: "warning",
+  // Agent run events (AgentEventStatus)
+  STARTED: "secondary",
+  SKIPPED: "outline",
 };
 
 export function StatusBadge({ status }: { status: string }) {

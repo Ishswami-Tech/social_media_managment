@@ -5,7 +5,7 @@ import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
-import { AccountActions, ConnectButtons } from "@/components/forms/account-actions";
+import { AccountActions, AgentAutoPublishSwitch, ConnectButtons } from "@/components/forms/account-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -55,6 +55,7 @@ export default async function AccountsPage({
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Approval</TableHead>
+                <TableHead>Auto-publish by campaigns</TableHead>
                 <TableHead>Connected</TableHead>
                 <TableHead />
               </TableRow>
@@ -62,7 +63,7 @@ export default async function AccountsPage({
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     No accounts connected yet.
                   </TableCell>
                 </TableRow>
@@ -94,6 +95,13 @@ export default async function AccountsPage({
                       : a.requireApproval
                         ? "Required"
                         : "Off"}
+                  </TableCell>
+                  <TableCell>
+                    {canConnect ? (
+                      <AgentAutoPublishSwitch id={a.id} enabled={a.agentAutoPublish} />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{a.agentAutoPublish ? "On" : "Off"}</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(a.createdAt, { dateStyle: "medium" })}

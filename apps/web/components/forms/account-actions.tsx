@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,5 +101,42 @@ export function AccountActions({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Lets the Agent Council publish to this account without a human. It only has
+ * an effect when the organization publishing mode is AUTOMATIC.
+ */
+export function AgentAutoPublishSwitch({ id, enabled }: { id: string; enabled: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [on, setOn] = useState(enabled);
+
+  async function change(value: boolean) {
+    setBusy(true);
+    setOn(value);
+    const res = await fetch(`/api/accounts/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentAutoPublish: value }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setOn(!value);
+      return toast.error("Update failed");
+    }
+    toast.success(value ? "Campaigns may publish to this account" : "Campaigns now need approval for this account");
+    router.refresh();
+  }
+
+  return (
+    <Switch
+      checked={on}
+      onCheckedChange={change}
+      disabled={busy}
+      aria-label="Auto-publish by campaigns"
+      title="Auto-publish by campaigns"
+    />
   );
 }

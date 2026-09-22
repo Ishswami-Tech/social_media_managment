@@ -13,6 +13,7 @@ export type NavIcon =
   | "contacts"
   | "templates"
   | "campaigns"
+  | "agent"
   | "accounts"
   | "brand"
   | "team"
@@ -32,6 +33,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/calendar", label: "Calendar", icon: "calendar" },
   { href: "/media", label: "Media", icon: "media" },
   { href: "/ai", label: "AI Studio", icon: "ai", capability: "ai:generate" },
+  { href: "/agent", label: "Campaigns", icon: "agent", capability: "ai:generate" },
   { href: "/analytics", label: "Analytics", icon: "analytics", capability: "analytics:view" },
 ];
 

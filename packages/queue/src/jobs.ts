@@ -47,7 +47,8 @@ export type MaintenanceJobData =
   | { task: "refresh-tokens" }
   | { task: "expire-oauth-states" }
   | { task: "retry-stuck-jobs" }
-  | { task: "collect-analytics" };
+  | { task: "collect-analytics" }
+  | { task: "learn-account-profiles" };
 
 export interface AgentRunJobData {
   runId: string;

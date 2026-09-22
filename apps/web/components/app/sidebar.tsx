@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Bot,
   Calendar,
   FileText,
   Image,
@@ -36,6 +37,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   contacts: Users2,
   templates: LayoutTemplate,
   campaigns: Megaphone,
+  agent: Bot,
   accounts: Plug,
   brand: Palette,
   team: Users,

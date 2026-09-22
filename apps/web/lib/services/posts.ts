@@ -263,6 +263,49 @@ export async function publishNow(ctx: OrgContext, postId: string) {
   return schedulePost(ctx, postId, new Date().toISOString());
 }
 
+/**
+ * System-initiated scheduling (no request context): used by the Agent Council
+ * once a recommendation has been approved through its own approval flow. The
+ * post must already be APPROVED; it is scheduled through exactly the same
+ * PublishJob + queue path as `schedulePost`. Returns the post id.
+ */
+export async function scheduleApprovedPostSystem(
+  organizationId: string,
+  postId: string,
+  scheduledAt: Date,
+): Promise<{ postId: string; jobCount: number }> {
+  if (Number.isNaN(scheduledAt.getTime())) throw badRequest("Invalid scheduledAt");
+  const post = await prisma.post.findFirst({ where: { id: postId, organizationId }, include: postInclude });
+  if (!post) throw notFound("Post");
+  if (post.approvalStatus !== "APPROVED") throw conflict("Post must be approved before scheduling");
+  assertTransition(post.status, "SCHEDULED");
+  const disconnected = post.variants.filter((v) => v.socialAccount.status !== "CONNECTED");
+  if (disconnected.length)
+    throw conflict(`Reconnect ${disconnected.map((v) => v.socialAccount.displayName).join(", ")} before scheduling`);
+  await prisma.$transaction(async (tx) => {
+    await tx.publishJob.updateMany({
+      where: { postVariant: { postId }, status: { in: ["PENDING", "QUEUED"] } },
+      data: { status: "CANCELLED" },
+    });
+    for (const v of post.variants) {
+      await tx.publishJob.create({
+        data: {
+          postVariantId: v.id,
+          idempotencyKey: `${v.id}:${scheduledAt.toISOString()}`,
+          scheduledAt,
+          status: "PENDING",
+        },
+      });
+    }
+    await tx.post.update({
+      where: { id: postId },
+      data: { status: "SCHEDULED", scheduledAt, variants: { updateMany: { where: {}, data: { status: "SCHEDULED" } } } },
+    });
+  });
+  await enqueuePostJobs(organizationId, postId);
+  return { postId, jobCount: post.variants.length };
+}
+
 async function enqueuePostJobs(organizationId: string, postId: string) {
   const jobs = await prisma.publishJob.findMany({ where: { postVariant: { postId }, status: "PENDING" } });
   for (const job of jobs) {

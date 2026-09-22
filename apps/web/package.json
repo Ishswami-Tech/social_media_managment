@@ -15,6 +15,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@platform/agent-council": "workspace:*",
     "@platform/ai-anthropic": "workspace:*",
     "@platform/ai-core": "workspace:*",
     "@platform/ai-google": "workspace:*",

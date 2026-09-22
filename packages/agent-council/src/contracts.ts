@@ -89,6 +89,12 @@ export interface AccountStrategy {
 }
 
 export interface DraftCandidate {
+  /**
+   * Persistent id assigned by the store (`saveDraft` return value). Additive:
+   * `AgentRunStore.load` should populate it so later stages can attach
+   * judgements (`updateDraftJudgement`) and recommendations (`winnerDraftId`).
+   */
+  id?: string;
   /** Blind label shown to the judge (A, B, C…) */
   label: string;
   role: AgentDraftRole;
@@ -125,6 +131,12 @@ export interface JudgeVerdict {
   borrow: string[];
 }
 
+/** Cross-review output (HIGH_ASSURANCE): issues a second provider found in a draft, keyed by blind label. */
+export interface ReviewNote {
+  label: string;
+  issues: string[];
+}
+
 export interface AccountRecommendation {
   runAccountId: string;
   finalText: string;
@@ -149,9 +161,18 @@ export interface RunSnapshot {
   spentCents: number;
   research?: Brief;
   claims: ClaimRecord[];
+  /**
+   * Additive: the organization's recently published texts (duplicate check).
+   * Falls back to `PipelineContext.recentTexts` when absent.
+   */
+  recentTexts?: string[];
   accounts: (RunAccount & {
     strategy?: AccountStrategy;
     drafts: DraftCandidate[];
+    /** Additive: cross-review notes saved by the review stage (HIGH_ASSURANCE only). */
+    reviewNotes?: ReviewNote[];
+    /** Additive: blind judge verdict saved by the judge stage. */
+    verdict?: JudgeVerdict;
     recommendation?: AccountRecommendation;
   })[];
 }
@@ -182,6 +203,21 @@ export interface AgentRunStore {
   saveRecommendation(rec: AccountRecommendation & { winnerDraftId?: string }): Promise<void>;
   addEvent(runId: string, event: StepEvent): Promise<void>;
   addCost(runId: string, cents: number): Promise<void>;
+  /**
+   * Additive (judge stage): attach the blind judge's score and rationale to a
+   * draft that was saved earlier with `saveDraft` (identified by the returned id).
+   */
+  updateDraftJudgement(draftId: string, score: number, rationale: string): Promise<void>;
+  /**
+   * Additive (judge stage): persist the verdict for an account so the ADAPTING
+   * stage (a later `advanceRun` call) can read `accounts[].verdict` from the snapshot.
+   */
+  saveVerdict(runAccountId: string, verdict: JudgeVerdict): Promise<void>;
+  /**
+   * Additive (review stage, HIGH_ASSURANCE): persist cross-review notes so the
+   * judge stage can read `accounts[].reviewNotes` from the snapshot.
+   */
+  saveReviewNotes(runAccountId: string, notes: ReviewNote[]): Promise<void>;
 }
 
 /** Budget port: reserve before calling a model, settle with the actual cost afterwards. */
@@ -212,6 +248,11 @@ export interface PipelineContext {
   store: AgentRunStore;
   budget: BudgetPort;
   health: ProviderHealthPort;
+  /**
+   * Additive: the organization's recently published texts (last ~50) used by
+   * the duplicate check. Empty/undefined disables duplicate detection.
+   */
+  recentTexts?: string[];
   /** Deterministic clock/random for tests */
   now?: () => Date;
 }

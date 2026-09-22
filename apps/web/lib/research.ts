@@ -1,4 +1,4 @@
-import { runAgent, parseJsonOutput } from "@platform/ai-core";
+import { runAgent, parseJsonOutput, type Tool } from "@platform/ai-core";
 import type { Prisma } from "@platform/database";
 import {
   BraveConnector,
@@ -90,36 +90,17 @@ export async function setConnectorKey(ctx: OrgContext, connector: ConnectorId, a
   });
 }
 
-export interface RunSkillInput {
-  skillId: string;
-  input: string;
-  platforms: string[];
-  brandId?: string;
-  provider?: "OPENAI" | "ANTHROPIC" | "GOOGLE";
-  model?: string;
-}
-
 /**
- * Run a research skill for the organization: builds the tenant-scoped tool
- * set, runs the agent, validates the brief and stores it for reuse.
+ * Tenant-scoped research tools (web search, URL/feed reading, brand knowledge,
+ * recent post performance). Shared by research skills and the Agent Council.
+ * Pass `search` explicitly to reuse a connector already resolved by the caller.
  */
-export async function runResearchSkill(ctx: OrgContext, input: RunSkillInput) {
-  const skill = await resolveSkill(ctx.organization.id, input.skillId);
-  if (!skill) throw new ApiError(404, "Unknown skill", "not_found");
-  const organizationId = ctx.organization.id;
-  const [search, brand, ai] = await Promise.all([
-    resolveSearchConnector(organizationId),
-    brandContext(organizationId, input.brandId, input.input),
-    aiRuntime(organizationId, ctx.user.id),
-  ]);
-  if (skill.needsSearch && !search) {
-    throw new ApiError(
-      409,
-      "This skill needs a web search connector. Add a Tavily or Brave key under Settings → Research connectors.",
-      "connector_missing",
-    );
-  }
-  const allTools = buildResearchTools({
+export async function buildOrgResearchTools(
+  organizationId: string,
+  opts: { search?: SearchConnector } = {},
+): Promise<Tool[]> {
+  const search = "search" in opts ? opts.search : await resolveSearchConnector(organizationId);
+  return buildResearchTools({
     search,
     brandKnowledge: async (q) => {
       const terms = q
@@ -153,7 +134,39 @@ export async function runResearchSkill(ctx: OrgContext, input: RunSkillInput) {
         metrics: (v.snapshots[0]?.metrics as Record<string, number> | undefined) ?? undefined,
       }));
     },
-  })
+  });
+}
+
+export interface RunSkillInput {
+  skillId: string;
+  input: string;
+  platforms: string[];
+  brandId?: string;
+  provider?: "OPENAI" | "ANTHROPIC" | "GOOGLE";
+  model?: string;
+}
+
+/**
+ * Run a research skill for the organization: builds the tenant-scoped tool
+ * set, runs the agent, validates the brief and stores it for reuse.
+ */
+export async function runResearchSkill(ctx: OrgContext, input: RunSkillInput) {
+  const skill = await resolveSkill(ctx.organization.id, input.skillId);
+  if (!skill) throw new ApiError(404, "Unknown skill", "not_found");
+  const organizationId = ctx.organization.id;
+  const [search, brand, ai] = await Promise.all([
+    resolveSearchConnector(organizationId),
+    brandContext(organizationId, input.brandId, input.input),
+    aiRuntime(organizationId, ctx.user.id),
+  ]);
+  if (skill.needsSearch && !search) {
+    throw new ApiError(
+      409,
+      "This skill needs a web search connector. Add a Tavily or Brave key under Settings → Research connectors.",
+      "connector_missing",
+    );
+  }
+  const allTools = (await buildOrgResearchTools(organizationId, { search }))
     .filter((t) => skill.tools.includes(t.definition.name as (typeof skill.tools)[number]))
     // Organization plugins (MCP servers, HTTP endpoints) are offered to every skill; the model decides when to call them.
     .concat(await pluginTools(organizationId));

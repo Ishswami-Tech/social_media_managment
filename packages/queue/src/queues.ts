@@ -28,6 +28,21 @@ const DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 1, // retries are decided by our own policy (decideRetry) to keep DB state authoritative
 };
 
+/**
+ * Agent Council runs retry in BullMQ (FAILED -> QUEUED is the only retry path):
+ * three attempts with exponential backoff, then the job is parked on `dead-letter`.
+ */
+export const AGENT_RUN_JOB_OPTIONS = { attempts: 3, backoffMs: 30_000 } as const;
+
+export interface EnqueueOptions {
+  delayMs?: number;
+  priority?: number;
+  /** Overrides the default single attempt (BullMQ-managed retries). */
+  attempts?: number;
+  /** Exponential backoff base delay used when `attempts` > 1. */
+  backoffMs?: number;
+}
+
 export class QueueRegistry {
   private readonly queues = new Map<QueueName, Queue>();
 
@@ -50,10 +65,16 @@ export class QueueRegistry {
     name: N,
     jobId: string,
     data: JobDataMap[N],
-    opts: { delayMs?: number; priority?: number } = {},
+    opts: EnqueueOptions = {},
   ) {
     const q = this.get(name) as Queue;
-    return q.add(name, data, { jobId: toJobId(jobId), delay: opts.delayMs, priority: opts.priority });
+    return q.add(name, data, {
+      jobId: toJobId(jobId),
+      delay: opts.delayMs,
+      priority: opts.priority,
+      ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+      ...(opts.backoffMs !== undefined ? { backoff: { type: "exponential", delay: opts.backoffMs } } : {}),
+    });
   }
 
   async getJob(name: QueueName, jobId: string) {

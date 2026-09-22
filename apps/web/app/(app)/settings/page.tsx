@@ -11,6 +11,11 @@ import { listOrganizationPlugins } from "@/lib/plugins";
 
 export const metadata = { title: "Settings" };
 
+/** `OrganizationSettings.agentAllowedModels` is free-form JSON; keep only "PROVIDER::model" strings. */
+function readAllowedModels(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
 export default async function SettingsPage() {
   const ctx = await requireCapability("org:settings");
   const [settings, models, keys, rawConnections] = await Promise.all([
@@ -45,7 +50,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader
         title="Organization settings"
-        description="Approval workflow, AI defaults, bring-your-own keys and configurable permissions."
+        description="Approval workflow, AI defaults, campaign automation, bring-your-own keys and configurable permissions."
       />
       <SettingsForm
         organization={ctx.organization}
@@ -61,6 +66,12 @@ export default async function SettingsPage() {
           permissionOverrides:
             (settings?.permissionOverrides as Record<string, string[]> | null) ??
             (DEFAULT_OVERRIDES as Record<string, string[]>),
+          agentPublishMode: settings?.agentPublishMode ?? "APPROVAL_REQUIRED",
+          agentAssurance: settings?.agentAssurance ?? "JUDGE_ONLY",
+          agentRunMaxCents: settings?.agentRunMaxCents ?? 200,
+          agentMonthlyBudgetCents: settings?.agentMonthlyBudgetCents ?? 5000,
+          agentMaxActiveRuns: settings?.agentMaxActiveRuns ?? 5,
+          agentAllowedModels: readAllowedModels(settings?.agentAllowedModels),
         }}
         models={models}
         keys={keys}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { queues } from "@/lib/queue";
 import { formatDate } from "@/lib/utils";
@@ -19,6 +20,8 @@ export default async function AdminQueues() {
   } catch (e) {
     redisError = (e as Error).message;
   }
+  const deadLetterStats = stats["dead-letter"];
+  const deadLetters = deadLetterStats ? deadLetterStats.waiting + deadLetterStats.delayed + deadLetterStats.active : 0;
   const [failedJobs, webhooks] = await Promise.all([
     prisma.publishJob.findMany({
       where: { status: "FAILED" },
@@ -39,6 +42,21 @@ export default async function AdminQueues() {
         description="BullMQ queue depth and recent failures. Workers run as a separate process."
       />
       {redisError && <p className="mb-4 text-sm text-destructive">Redis unavailable: {redisError}</p>}
+      <Card className="mb-4">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <CardTitle>Dead letters</CardTitle>
+          <Link href="/admin/dead-letter" className="text-sm font-medium underline underline-offset-4">
+            Inspect &amp; retry
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <p className="text-2xl font-semibold tabular-nums">{deadLetters}</p>
+          <p className="text-sm text-muted-foreground">
+            Jobs parked after exhausting their retries. They stay here until an administrator re-enqueues or discards
+            them.
+          </p>
+        </CardContent>
+      </Card>
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
         {Object.entries(stats).map(([name, s]) => (
           <StatCard
