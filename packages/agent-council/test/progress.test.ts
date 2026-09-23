@@ -208,6 +208,20 @@ describe("buildProgress: activity lines", () => {
     expect(adapt.activity).toEqual(["Shaping it for LinkedIn…", "Final check passed"]);
   });
 
+  it("reports image generation as part of the adaptation", () => {
+    const events = [
+      event(`media:${ACC}`, "STARTED", { provider: "GOOGLE" }),
+      event(`media:${ACC}`, "SUCCEEDED", { latencyMs: 8_000 }),
+      event(`media:acc_2`, "FAILED", { error: "no image provider" }),
+    ];
+    const adapt = stage(buildProgress("ADAPTING", events, accounts), "adapt");
+    expect(adapt.activity).toEqual([
+      "Creating an image for LinkedIn via Google…",
+      "Image ready for LinkedIn · 8.0 s",
+      "Could not create an image: no image provider",
+    ]);
+  });
+
   it("falls back to a generic label when more than two platforms are involved", () => {
     const many: ProgressAccount[] = [
       ...twoAccounts,

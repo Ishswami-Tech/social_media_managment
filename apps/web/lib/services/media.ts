@@ -63,14 +63,24 @@ export async function completeUpload(ctx: OrgContext, assetId: string) {
 
 /** Store bytes generated server-side (AI images) directly. */
 export async function storeGeneratedImage(ctx: OrgContext, bytes: Buffer, mimeType: string, prompt: string) {
+  return storeGeneratedImageFor({ organizationId: ctx.organization.id, userId: ctx.user.id }, bytes, mimeType, prompt);
+}
+
+/** Same as `storeGeneratedImage` for callers without a session (the agent worker acts as the run's creator). */
+export async function storeGeneratedImageFor(
+  owner: { organizationId: string; userId: string },
+  bytes: Buffer,
+  mimeType: string,
+  prompt: string,
+) {
   const sum = checksum(bytes);
-  const existing = await prisma.mediaAsset.findFirst({ where: { organizationId: ctx.organization.id, checksum: sum } });
+  const existing = await prisma.mediaAsset.findFirst({ where: { organizationId: owner.organizationId, checksum: sum } });
   if (existing) return existing;
   const ext = mimeType === "image/jpeg" ? "jpg" : "png";
   const asset = await prisma.mediaAsset.create({
     data: {
-      organizationId: ctx.organization.id,
-      uploadedById: ctx.user.id,
+      organizationId: owner.organizationId,
+      uploadedById: owner.userId,
       kind: "IMAGE",
       storageKey: `pending/${crypto.randomUUID()}`,
       fileName: `ai-${Date.now()}.${ext}`,
@@ -82,10 +92,10 @@ export async function storeGeneratedImage(ctx: OrgContext, bytes: Buffer, mimeTy
       checksum: sum,
     },
   });
-  const storageKey = buildStorageKey(ctx.organization.id, asset.id, asset.fileName);
+  const storageKey = buildStorageKey(owner.organizationId, asset.id, asset.fileName);
   await storage().putObject(storageKey, bytes, mimeType);
   const updated = await prisma.mediaAsset.update({ where: { id: asset.id }, data: { storageKey } });
-  await queues().enqueue("media", `media:${asset.id}`, { mediaAssetId: asset.id, organizationId: ctx.organization.id });
+  await queues().enqueue("media", `media:${asset.id}`, { mediaAssetId: asset.id, organizationId: owner.organizationId });
   return updated;
 }
 

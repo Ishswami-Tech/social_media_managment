@@ -807,6 +807,8 @@ model AgentRun {
   skillIds       String[]       @default([])
   /// "PROVIDER::model" the person picked for this campaign; null means automatic routing
   preferredModel String?
+  /// Generate an image from each account's media concept once the text is final
+  wantsImage     Boolean        @default(false)
   status         AgentRunStatus @default(QUEUED)
   assurance      AgentAssurance @default(JUDGE_ONLY)
   publishMode    AgentPublishMode @default(APPROVAL_REQUIRED)

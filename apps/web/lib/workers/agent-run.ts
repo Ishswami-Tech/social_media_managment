@@ -22,6 +22,7 @@ import { isOrgRole } from "@/lib/auth-access";
 import { buildPipelineContext } from "@/lib/agent/context";
 import { createPrismaRunStore } from "@/lib/agent/store";
 import { applyApprovedRun } from "@/lib/agent/apply";
+import { generateRunMedia } from "@/lib/agent/media";
 import { notifyAwaitingApproval } from "@/lib/agent/tokens";
 import { prisma } from "@/lib/db";
 import { errorInfo, logger } from "@/lib/logger";
@@ -244,6 +245,8 @@ async function settleAfterPipeline(
     log.warn("agent run finished without a recommendation for every account");
     return;
   }
+  const media = await generateRunMedia(runId, organizationId);
+  if (media.generated + media.failed > 0) log.info("images for the recommendations", media);
   const next = decideNextAfterAdapting(policy);
   log.info("agent run left the pipeline", { next });
 

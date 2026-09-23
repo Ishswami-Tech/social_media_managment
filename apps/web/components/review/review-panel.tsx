@@ -24,6 +24,8 @@ export interface ReviewAccount {
   text: string;
   /** One line explaining the angle that was chosen. */
   why: string | null;
+  /** Generated image attached to the recommendation, when there is one. */
+  image: { url: string; alt: string } | null;
   decision: "PENDING" | "APPROVED" | "REJECTED";
   decisionComment: string | null;
   postId: string | null;
@@ -169,6 +171,13 @@ function AccountBlock({
         />
       ) : (
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
+      )}
+
+      {account.image && (
+        <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">
+          {/* eslint-disable-next-line @next/next/no-img-element -- storage URLs are signed and short-lived */}
+          <img src={account.image.url} alt={account.image.alt} className="max-h-64 rounded-md border object-cover" />
+        </a>
       )}
 
       {account.why && (

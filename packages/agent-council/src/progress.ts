@@ -171,6 +171,7 @@ export function stageOfStep(step: string): ProgressStageKey | null {
       return "judge";
     case "synthesis":
     case "adapt":
+    case "media":
       return "adapt";
     case "notify":
     case "decision":
@@ -343,6 +344,12 @@ function adaptLine(event: ProgressEvent, ctx: Ctx): string | null {
   if (head === "synthesis") {
     if (event.status === "STARTED") return "Taking the best of each draft…";
     if (event.status === "SUCCEEDED") return `Best bits combined${took(event)}`;
+    return null;
+  }
+  if (head === "media") {
+    if (event.status === "STARTED") return `Creating an image${target}${via(event)}…`;
+    if (event.status === "SUCCEEDED") return `Image ready${target}${took(event)}`;
+    if (event.status === "FAILED") return `Could not create an image${target}: ${event.error ?? "unknown reason"}`;
     return null;
   }
   if (!label) return event.status === "SKIPPED" ? `Nothing to shape${forAccount(ctx, runAccountId)}` : null;

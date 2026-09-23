@@ -166,6 +166,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [model, setModel] = useState(AUTO_MODEL);
   const [assurance, setAssurance] = useState<Assurance>("JUDGE_ONLY");
+  const [withImage, setWithImage] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const textModels = models.filter((m) => m.capabilities.includes("text"));
@@ -233,6 +234,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
           ...(selectedSkills.length ? { skillIds: selectedSkills } : {}),
           ...(model === AUTO_MODEL ? {} : { model }),
           assurance,
+          image: withImage,
         }),
       });
       data = (await res.json().catch(() => ({}))) as CreateResponse;
@@ -445,6 +447,17 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <button
+              type="button"
+              className={cn(TRIGGER_CLASS, withImage && "border-primary/40 bg-primary/10 text-foreground")}
+              onClick={() => setWithImage((v) => !v)}
+              aria-pressed={withImage}
+              title={withImage ? "An image will be generated for each post" : "Text only; click to also generate an image"}
+            >
+              <ImagePlus className="size-3.5" aria-hidden />
+              <span>{withImage ? "With image" : "Text only"}</span>
+            </button>
 
             <span className="ml-auto flex items-center gap-2">
               {tooManyAccounts && (

@@ -39,6 +39,8 @@ export interface ThreadAccount {
   text: string;
   /** One line explaining the angle that was chosen. */
   why: string | null;
+  /** Generated image attached to the recommendation, when there is one. */
+  image: { url: string; alt: string } | null;
   decision: ThreadDecision;
   postId: string | null;
 }
@@ -54,6 +56,8 @@ export interface ThreadProps {
   /** Short model name, or null when it was picked automatically. */
   model: string | null;
   assurance: "JUDGE_ONLY" | "HIGH_ASSURANCE";
+  /** An image is generated for every post. */
+  wantsImage: boolean;
   blockedReason: string | null;
   error: string | null;
   /** `content:approve`, and it is not the viewer's own request. */
@@ -266,6 +270,13 @@ function ResultCard({
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
 
+      {account.image && (
+        <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">
+          {/* eslint-disable-next-line @next/next/no-img-element -- storage URLs are signed and short-lived */}
+          <img src={account.image.url} alt={account.image.alt} className="max-h-48 rounded-md border object-cover" />
+        </a>
+      )}
+
       {account.why && (
         <p className="text-xs text-muted-foreground">
           <span className="font-medium">Why: </span>
@@ -329,6 +340,7 @@ export function Thread({
   skills,
   model,
   assurance,
+  wantsImage,
   blockedReason,
   error,
   canDecide,
@@ -444,6 +456,7 @@ export function Thread({
             ))}
             <span className="rounded-full border px-1.5">{model ?? "Auto"}</span>
             <span className="rounded-full border px-1.5">{ASSURANCE_LABEL[assurance]}</span>
+            {wantsImage && <span className="rounded-full border px-1.5">With image</span>}
           </p>
         </div>
       </div>

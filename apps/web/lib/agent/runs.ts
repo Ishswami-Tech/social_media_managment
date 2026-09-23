@@ -46,6 +46,8 @@ export const createRunInput = z.object({
     .regex(/^[A-Z0-9_]+::.+$/, "Model must look like PROVIDER::model")
     .optional(),
   assurance: z.enum(AGENT_ASSURANCE_LEVELS).optional(),
+  /** Generate an image from each account's media concept once the text is final. */
+  image: z.boolean().optional(),
   publishMode: z.enum(AGENT_PUBLISH_MODES).optional(),
   scheduledAt: z.string().datetime({ offset: true }).optional(),
   timezone: z.string().max(64).optional(),
@@ -185,6 +187,7 @@ export async function createRun(ctx: OrgContext, input: CreateRunInput): Promise
       platforms: [...new Set(accounts.map((a) => a.platform))],
       skillIds: [...new Set(input.skillIds ?? [])],
       preferredModel: input.model ?? null,
+      wantsImage: input.image ?? false,
       status: "QUEUED",
       assurance: input.assurance ?? settings.agentAssurance,
       publishMode,

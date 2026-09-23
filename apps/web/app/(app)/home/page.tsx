@@ -3,6 +3,7 @@ import type { Prisma } from "@platform/database";
 import { requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { composeFinalText } from "@/lib/agent/apply";
+import { loadRecommendationImages, type RecommendationImage } from "@/lib/agent/media";
 import { runProgressSelect, toRunInitial } from "@/lib/agent/progress";
 import { selectableModels } from "@/lib/ai";
 import { pluginSummaries } from "@/lib/plugins";
@@ -33,6 +34,7 @@ const threadSelect = {
   assurance: true,
   skillIds: true,
   preferredModel: true,
+  wantsImage: true,
   blockedReason: true,
   error: true,
   accounts: {
@@ -40,6 +42,7 @@ const threadSelect = {
       ...runProgressSelect.accounts.select,
       finalHashtags: true,
       strategy: true,
+      mediaAssetIds: true,
       postId: true,
     },
     orderBy: { createdAt: "asc" },
@@ -62,14 +65,19 @@ function readAngle(value: unknown): string | null {
   return null;
 }
 
-function toThreadAccount(account: ThreadRow["accounts"][number]): ThreadAccount {
+function toThreadAccount(
+  account: ThreadRow["accounts"][number],
+  images: ReadonlyMap<string, RecommendationImage>,
+): ThreadAccount {
   const base = account.editedText ?? account.finalText ?? "";
+  const imageId = account.mediaAssetIds.find((id) => images.has(id));
   return {
     id: account.id,
     platform: account.platform,
     displayName: account.socialAccount.displayName,
     text: base ? composeFinalText(base, account.finalHashtags) : "",
     why: readAngle(account.strategy),
+    image: imageId ? (images.get(imageId) ?? null) : null,
     decision: account.decision,
     postId: account.postId,
   };
@@ -120,16 +128,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
+  const images = await loadRecommendationImages(
+    organizationId,
+    runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
+  ).catch(() => new Map<string, RecommendationImage>());
 
   // Oldest at the top, newest just above the composer — like any conversation.
   const threads: ThreadProps[] = [...runs].reverse().map((run) => ({
     runId: run.id,
     topic: run.topic,
     initial: toRunInitial(run),
-    accounts: run.accounts.map(toThreadAccount),
+    accounts: run.accounts.map((a) => toThreadAccount(a, images)),
     skills: run.skillIds.map(skillName),
     model: modelChip(run.preferredModel, composerModels),
     assurance: run.assurance,
+    wantsImage: run.wantsImage,
     blockedReason: run.blockedReason,
     error: run.error,
     canDecide: canApprove && (run.createdById !== ctx.user.id || isAdmin),

@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/session";
 import { ApiError } from "@/lib/errors";
 import { getRun, type AgentRunDetail } from "@/lib/agent/runs";
 import { composeFinalText } from "@/lib/agent/apply";
+import { loadRecommendationImages, type RecommendationImage } from "@/lib/agent/media";
 import { formatCents, formatLatency } from "@/components/agent/format";
 import { LiveProgress } from "@/components/agent/live-progress";
 import { RunReplay, type ReplayEvent } from "@/components/agent/run-replay";
@@ -56,14 +57,16 @@ function toReplayEvents(run: AgentRunDetail): ReplayEvent[] {
   }));
 }
 
-function toReviewAccount(a: RunAccount): ReviewAccount {
+function toReviewAccount(a: RunAccount, images: ReadonlyMap<string, RecommendationImage>): ReviewAccount {
   const base = a.editedText ?? a.finalText ?? "";
+  const imageId = a.mediaAssetIds.find((id) => images.has(id));
   return {
     id: a.id,
     platform: a.platform,
     displayName: a.socialAccount.displayName,
     text: base ? composeFinalText(base, a.finalHashtags) : "",
     why: readAngle(a.strategy),
+    image: imageId ? (images.get(imageId) ?? null) : null,
     decision: a.decision,
     decisionComment: a.decisionComment,
     postId: a.postId,
@@ -143,7 +146,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter((c) => c.status === "SUPPORTED")
     .map((c) => ({ id: c.id, title: c.sourceTitle ?? c.sourceUrl ?? c.statement, url: c.sourceUrl }));
   const unverifiedCount = run.claims.filter((c) => c.status !== "SUPPORTED").length;
-  const accounts = run.accounts.map(toReviewAccount);
+  const images = await loadRecommendationImages(
+    ctx.organization.id,
+    run.accounts.flatMap((a) => a.mediaAssetIds),
+  ).catch(() => new Map<string, RecommendationImage>());
+  const accounts = run.accounts.map((a) => toReviewAccount(a, images));
   const inProgress = IN_PROGRESS_STATUSES.includes(run.status);
   // While the AI is still producing there is nothing to read, so the live flow
   // stands in for the recommendation and swaps itself out when it is ready.
