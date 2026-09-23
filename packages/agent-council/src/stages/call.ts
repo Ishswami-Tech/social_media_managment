@@ -4,7 +4,7 @@
  * spend money without a reservation or without leaving a trace.
  */
 import type { AICapability, AIProviderName } from "@platform/types";
-import { parseJsonOutput, runAgent, type RoutingContext, type Tool, type Usage } from "@platform/ai-core";
+import { AIError, parseJsonOutput, runAgent, type RoutingContext, type Tool, type Usage } from "@platform/ai-core";
 import type { z } from "zod";
 import { estimateCallCents, estimateTokens, usageToCents } from "../budget";
 import type { PipelineContext } from "../contracts";
@@ -28,6 +28,14 @@ const MAX_RETRY_TOKENS = 64_000;
 export function isBudgetExhausted(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /max_tokens|maxOutputTokens|consumed the budget/i.test(message);
+}
+
+/** Error codes that describe the provider's day, not the request: another provider can take the call. */
+const FAILOVER_CODES = new Set(["RATE_LIMITED", "PROVIDER_UNAVAILABLE", "TIMEOUT"]);
+
+/** Quota exhausted, overloaded or unreachable provider; safe to hand the same call to another one. */
+export function isProviderFailure(error: unknown): boolean {
+  return error instanceof AIError && error.retryable && FAILOVER_CODES.has(error.code);
 }
 
 export type RoutingCtx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
@@ -92,9 +100,11 @@ export async function resolveProvider(
   ctx: PipelineContext,
   capability: "text" | "json",
   pref?: ProviderPreference,
+  excluded: ReadonlySet<AIProviderName> = new Set(),
 ): Promise<ModelDecision> {
   const seen = new Set<string>();
   for (const candidate of candidatePreferences(ctx, pref)) {
+    if (candidate?.provider && excluded.has(candidate.provider)) continue;
     const routing = await ctx.routing(capability, candidate);
     let provider: AIProviderName;
     let model: string;
@@ -106,7 +116,7 @@ export async function resolveProvider(
       continue;
     }
     const key = `${provider}::${model}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key) || excluded.has(provider)) continue;
     seen.add(key);
     if (await ctx.health.isOpen(provider)) continue;
     return {
@@ -175,11 +185,41 @@ async function executeWithBudget(
 /**
  * Reserve, call, settle; a STARTED and a SUCCEEDED/FAILED event either side and
  * the run cost ledger updated. Budget denial and an all-open breaker block the
- * run (they need a human); anything else bubbles up as retryable.
+ * run (they need a human). A provider that is out of quota, overloaded or
+ * unreachable hands the call to the next available provider; anything else
+ * bubbles up as retryable.
  */
 export async function callModel(ctx: PipelineContext, input: ModelCallInput): Promise<ModelCallResult> {
   const prompt = getPrompt(input.promptKey);
-  const decision = await resolveProvider(ctx, input.capability, input.pref);
+  const excluded = new Set<AIProviderName>();
+  for (;;) {
+    const decision = await resolveProvider(ctx, input.capability, input.pref, excluded);
+    try {
+      return await callProvider(ctx, input, prompt, decision);
+    } catch (error) {
+      excluded.add(decision.provider);
+      const alternative = ctx.availableProviders.some((p) => !excluded.has(p));
+      if (!isProviderFailure(error) || !alternative) throw error;
+      await ctx.store.addEvent(input.runId, {
+        step: input.step,
+        status: "STARTED",
+        provider: decision.provider,
+        model: decision.model,
+        promptKey: prompt.key,
+        promptVersion: prompt.version,
+        promptHash: prompt.hash,
+        validation: `${decision.provider} could not take the call (${errorMessage(error)}); trying another provider`,
+      });
+    }
+  }
+}
+
+async function callProvider(
+  ctx: PipelineContext,
+  input: ModelCallInput,
+  prompt: ReturnType<typeof getPrompt>,
+  decision: ModelDecision,
+): Promise<ModelCallResult> {
   const base = {
     step: input.step,
     provider: decision.provider,

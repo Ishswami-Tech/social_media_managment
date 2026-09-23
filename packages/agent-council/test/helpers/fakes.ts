@@ -1,5 +1,6 @@
 import type { AIProviderName } from "@platform/types";
 import {
+  AIError,
   AIExecutor,
   ModelRouter,
   type AIProvider,
@@ -51,9 +52,11 @@ export interface Script {
   writerCalls: number;
   /** Stages that should throw instead of answering. */
   failing: Set<string>;
+  /** Providers that answer every call with a 429 quota error. */
+  outOfQuota: Set<AIProviderName>;
 }
 
-export const createScript = (): Script => ({ calls: [], writerCalls: 0, failing: new Set() });
+export const createScript = (): Script => ({ calls: [], writerCalls: 0, failing: new Set(), outOfQuota: new Set() });
 
 /** Draft A is clean; draft B states a number no claim supports, so it must be revised. */
 export const WRITER_TEXTS = [
@@ -180,6 +183,7 @@ export function createScriptedProvider(name: AIProviderName, script: Script): AI
         json: req.json,
         hasTools: Boolean(req.tools?.length),
       });
+      if (script.outOfQuota.has(name)) throw AIError.fromHttp(name, 429, { error: { message: `${name} quota exceeded` } });
       if (script.failing.has(stage)) throw new Error(`scripted failure in ${stage}`);
       const text = answer(stage, system, script);
       return {

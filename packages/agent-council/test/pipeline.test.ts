@@ -166,6 +166,33 @@ describe("runPipelineToCompletion", () => {
     await expect(runPipelineToCompletion(ctx, "run_1")).rejects.toThrow(/providers unavailable/);
   });
 
+  it("hands a call to another provider when the first one is out of quota", async () => {
+    const { ctx, memory, script } = setup();
+    script.outOfQuota.add("GOOGLE");
+
+    await expect(runPipelineToCompletion(ctx, "run_1")).resolves.toEqual({ status: "ADAPTING", done: true });
+
+    const research = memory.events.filter((e) => e.step === "research" && e.promptKey);
+    expect(research.map((e) => e.status)).toEqual(["STARTED", "FAILED", "STARTED", "STARTED", "SUCCEEDED"]);
+    expect(research.slice(0, 3).map((e) => e.provider)).toEqual(["GOOGLE", "GOOGLE", "GOOGLE"]);
+    expect(research[3]!.provider).not.toBe("GOOGLE");
+    expect(research[4]!.provider).toBe(research[3]!.provider);
+    expect(research[1]!.error).toMatch(/quota exceeded/);
+    expect(String(research[2]!.validation)).toMatch(/trying another provider/);
+    expect(memory.recommendations).toHaveLength(2);
+    // Every auto-routed call tries Google first until the breaker opens (5 failures), then skips it.
+    const googleCalls = script.calls.filter((c) => c.provider === "GOOGLE").length;
+    expect(googleCalls).toBeGreaterThanOrEqual(1);
+    expect(googleCalls).toBeLessThanOrEqual(5);
+    expect(memory.events.filter((e) => e.provider === "GOOGLE" && e.status === "SUCCEEDED")).toHaveLength(0);
+  });
+
+  it("fails the call when every provider is out of quota", async () => {
+    const { ctx, script } = setup();
+    for (const provider of ctx.availableProviders) script.outOfQuota.add(provider);
+    await expect(runPipelineToCompletion(ctx, "run_1")).rejects.toThrow(/quota exceeded/);
+  });
+
   it("blocks the run when no draft survives the checks", async () => {
     const { ctx, script } = setup();
     script.failing.add("WRITER");
