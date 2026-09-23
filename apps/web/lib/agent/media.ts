@@ -10,6 +10,7 @@
  * The planning helpers are pure so they can be unit-tested; only
  * `generateRunMedia` touches providers and the database.
  */
+import { AIError } from "@platform/ai-core";
 import type { Platform } from "@platform/types";
 import { aiRuntime } from "@/lib/ai";
 import { prisma } from "@/lib/db";
@@ -22,7 +23,7 @@ const IMAGE_REQUIRED_PLATFORMS: ReadonlySet<string> = new Set<Platform>(["INSTAG
 /** Landscape for feeds that show wide cards, square where the feed is square. */
 const SQUARE_PLATFORMS: ReadonlySet<string> = new Set<Platform>(["INSTAGRAM", "PINTEREST"]);
 const MAX_CONCEPT_CHARS = 1_500;
-const MAX_ERROR_CHARS = 300;
+const MAX_ERROR_CHARS = 160;
 
 export type ImageSize = "1024x1024" | "1536x1024";
 
@@ -100,6 +101,19 @@ async function recordEvent(runId: string, runAccountId: string, status: "STARTED
   await prisma.agentRunEvent.create({ data: { runId, step: `media:${runAccountId}`, status, ...extra } });
 }
 
+/** What the person reads when an image could not be made; provider prose is kept out of the trail. */
+export function describeImageFailure(error: unknown): string {
+  if (error instanceof AIError) {
+    const who = error.provider ? `${error.provider.charAt(0)}${error.provider.slice(1).toLowerCase()}` : "The image provider";
+    if (error.code === "RATE_LIMITED") return `${who} is out of quota for images right now; try again later or add another image provider`;
+    if (error.code === "PROVIDER_UNAVAILABLE" || error.code === "TIMEOUT") return `${who} did not answer in time; try again later`;
+    if (error.code === "CONTENT_FILTERED") return `${who} declined to draw this concept`;
+    if (error.code === "AUTH") return `${who} rejected the image key; check the provider settings`;
+  }
+  const message = errorInfo(error).message;
+  return message.length > MAX_ERROR_CHARS ? `${message.slice(0, MAX_ERROR_CHARS)}…` : message;
+}
+
 async function fetchBytes(image: { base64?: string; url?: string }): Promise<Buffer> {
   if (image.base64) return Buffer.from(image.base64, "base64");
   if (!image.url) throw new Error("The image provider returned neither data nor a URL");
@@ -154,9 +168,8 @@ export async function generateRunMedia(runId: string, organizationId: string): P
       generated += 1;
     } catch (error) {
       failed += 1;
-      const { message } = errorInfo(error);
       log.warn("could not generate an image for a recommendation", { runAccountId: item.runAccountId, ...errorInfo(error) });
-      await recordEvent(runId, item.runAccountId, "FAILED", { error: message.slice(0, MAX_ERROR_CHARS), latencyMs: Date.now() - started });
+      await recordEvent(runId, item.runAccountId, "FAILED", { error: describeImageFailure(error), latencyMs: Date.now() - started });
     }
   }
   return { generated, failed };

@@ -104,6 +104,14 @@ actually wired into the run, so a model is never asked to call a search tool tha
 provider is out of quota, overloaded or unreachable, the Agent Council hands the same call to the next
 configured provider and records the switch in the run's event trail.
 
+### Images for agent posts
+
+The Home composer has a "Text only / With image" toggle. With it on, the Agent Council turns each
+account's media concept into a real image once the text is final (Instagram and Pinterest get one
+regardless, since they cannot post without media). The image is stored as an AI-generated media asset,
+shown next to the post on Home and Review, and published together with the text on approval. A failed
+image never fails the run: the written concept stays and the progress trail says why.
+
 ### Skills (importable playbooks)
 
 Settings → Skills imports Agent-Skills style playbooks (a `SKILL.md` with frontmatter plus optional

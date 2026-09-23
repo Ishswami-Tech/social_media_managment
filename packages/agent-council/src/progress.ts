@@ -243,6 +243,21 @@ function forAccount(ctx: Ctx, runAccountId: string | undefined): string {
   return ctx.many ? ` for ${nameOf(ctx, runAccountId)}` : "";
 }
 
+const MAX_REASON_CHARS = 140;
+
+/**
+ * Provider errors arrive as paragraphs with links and metrics; the person only
+ * needs the first sentence. Keeps everything short of a URL or a line break.
+ */
+export function shortReason(error: string | null | undefined): string {
+  if (!error) return "unknown reason";
+  const firstLine = error.split(/\r?\n/)[0] ?? error;
+  const beforeLink = firstLine.split(/\s+(?:https?:\/\/|\*\s)/)[0] ?? firstLine;
+  const sentence = beforeLink.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? beforeLink;
+  const trimmed = sentence.trim().replace(/[.,;:]+$/, "");
+  return trimmed.length > MAX_REASON_CHARS ? `${trimmed.slice(0, MAX_REASON_CHARS - 1).trimEnd()}…` : trimmed || "unknown reason";
+}
+
 function via(event: ProgressEvent): string {
   return event.provider ? ` via ${providerName(event.provider)}` : "";
 }
@@ -256,7 +271,7 @@ function researchLine(event: ProgressEvent, ctx: Ctx): string | null {
   if (head === "research") {
     if (event.status === "STARTED") return "Reading sources…";
     if (event.status === "SUCCEEDED") return `Sources read${took(event)}`;
-    if (event.status === "FAILED") return `Could not finish reading: ${event.error ?? "unknown reason"}`;
+    if (event.status === "FAILED") return `Could not finish reading: ${shortReason(event.error)}`;
     return null;
   }
   if (event.status === "STARTED") return "Picking out the facts…";
@@ -264,7 +279,7 @@ function researchLine(event: ProgressEvent, ctx: Ctx): string | null {
     return ctx.claimCount === undefined
       ? "Facts recorded"
       : `Recording ${ctx.claimCount} ${ctx.claimCount === 1 ? "fact" : "facts"}`;
-  if (event.status === "FAILED") return `Could not record the facts: ${event.error ?? "unknown reason"}`;
+  if (event.status === "FAILED") return `Could not record the facts: ${shortReason(event.error)}`;
   return null;
 }
 
@@ -272,7 +287,7 @@ function strategyLine(event: ProgressEvent, ctx: Ctx): string | null {
   const name = nameOf(ctx, parseStep(event.step).runAccountId);
   if (event.status === "STARTED") return `Choosing an angle for ${name}…`;
   if (event.status === "SUCCEEDED") return `Angle chosen for ${name}`;
-  if (event.status === "FAILED" || event.status === "SKIPPED") return `No angle for ${name}: ${event.error ?? "skipped"}`;
+  if (event.status === "FAILED" || event.status === "SKIPPED") return `No angle for ${name}: ${event.error ? shortReason(event.error) : "skipped"}`;
   return null;
 }
 
@@ -309,7 +324,7 @@ function reviewLine(event: ProgressEvent, ctx: Ctx): string | null {
       if (event.status === "SUCCEEDED") return `Second opinion on ${draft.toLowerCase()} done`;
       return null;
     case "draft-dropped":
-      return `${draft} dropped: ${event.error ?? "it did not pass the checks"}`;
+      return `${draft} dropped: ${event.error ? shortReason(event.error) : "it did not pass the checks"}`;
     case "review":
       return event.status === "SKIPPED" ? `Nothing passed the checks${forAccount(ctx, runAccountId)}` : null;
     default:
@@ -349,7 +364,7 @@ function adaptLine(event: ProgressEvent, ctx: Ctx): string | null {
   if (head === "media") {
     if (event.status === "STARTED") return `Creating an image${target}${via(event)}…`;
     if (event.status === "SUCCEEDED") return `Image ready${target}${took(event)}`;
-    if (event.status === "FAILED") return `Could not create an image${target}: ${event.error ?? "unknown reason"}`;
+    if (event.status === "FAILED") return `Could not create an image${target}: ${shortReason(event.error)}`;
     return null;
   }
   if (!label) return event.status === "SKIPPED" ? `Nothing to shape${forAccount(ctx, runAccountId)}` : null;

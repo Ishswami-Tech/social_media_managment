@@ -3,6 +3,7 @@ import {
   buildProgress,
   buildSummaryLine,
   formatDuration,
+  shortReason,
   stageOfStep,
   type ProgressAccount,
   type ProgressEvent,
@@ -206,6 +207,22 @@ describe("buildProgress: activity lines", () => {
     const adapt = stage(buildProgress("ADAPTING", events, accounts), "adapt");
     expect(adapt.label).toBe("Adapting for LinkedIn");
     expect(adapt.activity).toEqual(["Shaping it for LinkedIn…", "Final check passed"]);
+  });
+
+  it("keeps provider paragraphs down to one readable sentence", () => {
+    const quota =
+      "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. * Quota exceeded for metric: generate_content_free_tier_requests, limit: 20";
+    expect(shortReason(quota)).toBe("You exceeded your current quota, please check your plan and billing details");
+    expect(shortReason("Gemini returned no text (finishReason: MALFORMED_FUNCTION_CALL)")).toBe(
+      "Gemini returned no text (finishReason: MALFORMED_FUNCTION_CALL)",
+    );
+    expect(shortReason("first line\nsecond line")).toBe("first line");
+    expect(shortReason("x".repeat(200))).toHaveLength(140);
+    expect(shortReason(null)).toBe("unknown reason");
+    const events = [event("research", "FAILED", { error: quota })];
+    expect(stage(buildProgress("FAILED", events, accounts), "research").activity).toEqual([
+      "Could not finish reading: You exceeded your current quota, please check your plan and billing details",
+    ]);
   });
 
   it("reports image generation as part of the adaptation", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { imagePromptFor, imageSizeFor, planRunMedia } from "../lib/agent/media";
+import { AIError } from "@platform/ai-core";
+import { describeImageFailure, imagePromptFor, imageSizeFor, planRunMedia } from "../lib/agent/media";
 
 const li = { runAccountId: "acc_li", platform: "LINKEDIN", mediaConcept: "A carousel about cold brew", mediaAssetIds: [] };
 const ig = { runAccountId: "acc_ig", platform: "INSTAGRAM", mediaConcept: "Square hero shot", mediaAssetIds: [] };
@@ -27,5 +28,15 @@ describe("planRunMedia", () => {
     expect(prompt).toContain("linkedin post about: Cold brew season");
     expect(prompt).toContain("Visual brief: Bold title slide");
     expect(prompt).toContain("no text unless the brief asks");
+  });
+});
+
+describe("describeImageFailure", () => {
+  it("turns provider error codes into plain language and keeps other messages short", () => {
+    expect(describeImageFailure(AIError.fromHttp("GOOGLE", 429, { error: { message: "quota" } }))).toBe(
+      "Google is out of quota for images right now; try again later or add another image provider",
+    );
+    expect(describeImageFailure(AIError.fromHttp("GOOGLE", 503, "busy"))).toBe("Google did not answer in time; try again later");
+    expect(describeImageFailure(new Error("x".repeat(200)))).toHaveLength(161);
   });
 });
