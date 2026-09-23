@@ -11,6 +11,10 @@ const DEFAULT_MAX_RESULTS = 6;
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_SNIPPET_CHARS = 400;
 
+/** Grounding hands back redirect links on this host; the real page address sits behind one redirect. */
+const REDIRECT_HOST = "vertexaisearch.cloud.google.com";
+const REDIRECT_TIMEOUT_MS = 5_000;
+
 const FRESHNESS_HINT: Record<string, string> = {
   day: "from the last 24 hours",
   week: "from the last 7 days",
@@ -59,6 +63,31 @@ export function groundingToResults(data: GroundedResponse, maxResults: number): 
   return unique.slice(0, maxResults);
 }
 
+/**
+ * Replaces a grounding redirect link with the page it points to, so writers
+ * cite the real address. Best effort: the redirect link is kept on any failure.
+ */
+export async function resolveRedirect(url: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  let host: string;
+  try {
+    host = new URL(url).host;
+  } catch {
+    return url;
+  }
+  if (host !== REDIRECT_HOST) return url;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REDIRECT_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(url, { method: "HEAD", redirect: "manual", signal: controller.signal });
+    const location = res.headers.get("location");
+    return location && /^https?:\/\//i.test(location) ? location : url;
+  } catch {
+    return url;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class GeminiSearchConnector implements SearchConnector {
   readonly id = "GEMINI" as const;
   constructor(private readonly opts: GeminiSearchOptions) {}
@@ -83,7 +112,8 @@ export class GeminiSearchConnector implements SearchConnector {
       if (!res.ok) throw new Error(`Gemini search responded ${res.status}: ${text.slice(0, 200)}`);
       const data = JSON.parse(text) as GroundedResponse;
       if (data.promptFeedback?.blockReason) throw new Error(`Gemini blocked the search: ${data.promptFeedback.blockReason}`);
-      return groundingToResults(data, opts.maxResults ?? DEFAULT_MAX_RESULTS);
+      const results = groundingToResults(data, opts.maxResults ?? DEFAULT_MAX_RESULTS);
+      return Promise.all(results.map(async (r) => ({ ...r, url: await resolveRedirect(r.url, fetchImpl) })));
     } finally {
       clearTimeout(timer);
     }

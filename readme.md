@@ -94,6 +94,16 @@ the picker shows exactly what that gateway serves. The Super Admin catalogue onl
 automatic routing and acts as a fallback when a provider cannot be listed. Results are cached for ten
 minutes per endpoint.
 
+### Web research needs no extra key
+
+The research stage and the research skills search the web through whichever source the organization has:
+a Tavily or Brave key if one was added, otherwise Google Search grounding through the Gemini key (a Gemini
+"flash" model discovered from the account runs the search server-side and returns the pages it grounded on,
+with redirect links resolved to the real addresses). The research prompt only lists the tools that are
+actually wired into the run, so a model is never asked to call a search tool that does not exist. When a
+provider is out of quota, overloaded or unreachable, the Agent Council hands the same call to the next
+configured provider and records the switch in the run's event trail.
+
 ### Skills (importable playbooks)
 
 Settings → Skills imports Agent-Skills style playbooks (a `SKILL.md` with frontmatter plus optional

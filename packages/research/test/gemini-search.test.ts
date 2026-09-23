@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GeminiSearchConnector, groundingToResults } from "../src/index";
+import { GeminiSearchConnector, groundingToResults, resolveRedirect } from "../src/index";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,6 +58,35 @@ describe("GeminiSearchConnector", () => {
     expect(connector.id).toBe("GEMINI");
     expect(results).toHaveLength(1);
     expect(results[0]!.url).toBe("https://example.com/report");
+  });
+
+  it("replaces grounding redirect links with the page they point to, keeping the link when that fails", async () => {
+    const redirect = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc";
+    const dead = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/dead";
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        expect(init.redirect).toBe("manual");
+        if (url === redirect) return new Response(null, { status: 302, headers: { location: "https://real.example.com/report" } });
+        throw new Error("network down");
+      }
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { parts: [{ text: "x" }] },
+              groundingMetadata: {
+                groundingChunks: [{ web: { uri: redirect, title: "A" } }, { web: { uri: dead, title: "B" } }],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const connector = new GeminiSearchConnector({ apiKey: "k", model: "gemini-x", fetchImpl: fetchImpl as typeof fetch });
+    const results = await connector.search("q");
+    expect(results.map((r) => r.url)).toEqual(["https://real.example.com/report", dead]);
+    expect(await resolveRedirect("https://example.com/page", fetchImpl as typeof fetch)).toBe("https://example.com/page");
   });
 
   it("surfaces HTTP errors without leaking the key", async () => {
