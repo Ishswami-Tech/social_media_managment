@@ -9,6 +9,7 @@ import {
   type RoutingContext,
 } from "@platform/ai-core";
 import { AnthropicProvider } from "@platform/ai-anthropic";
+import { HuggingFaceProvider, PollinationsProvider } from "@platform/ai-free-images";
 import { GoogleProvider } from "@platform/ai-google";
 import { OpenAIProvider } from "@platform/ai-openai";
 import type { AICapability, AIProviderName } from "@platform/types";
@@ -21,6 +22,8 @@ const realProviders = new Map<AIProviderName, AIProvider>([
   ["OPENAI", new OpenAIProvider()],
   ["ANTHROPIC", new AnthropicProvider()],
   ["GOOGLE", new GoogleProvider()],
+  ["HUGGINGFACE", new HuggingFaceProvider()],
+  ["POLLINATIONS", new PollinationsProvider()],
 ]);
 
 function providerImpls(): Map<AIProviderName, AIProvider> {
@@ -61,6 +64,8 @@ export function normalizeProvider(name: string | null | undefined): AIProviderNa
   const n = (name ?? "").trim().toLowerCase();
   if (n.includes("anthropic") || n.includes("claude")) return "ANTHROPIC";
   if (n.includes("google") || n.includes("gemini")) return "GOOGLE";
+  if (n.includes("hugging") || n === "hf" || n.startsWith("hf ")) return "HUGGINGFACE";
+  if (n.includes("pollinations")) return "POLLINATIONS";
   return "OPENAI";
 }
 
@@ -131,9 +136,13 @@ export async function platformAISources(): Promise<PlatformAISource[]> {
     ["OPENAI", env.OPENAI_API_KEY, undefined],
     ["ANTHROPIC", env.ANTHROPIC_API_KEY, env.ANTHROPIC_BASE_URL],
     ["GOOGLE", env.GOOGLE_AI_API_KEY, undefined],
+    ["HUGGINGFACE", env.HUGGINGFACE_API_KEY, undefined],
+    // Pollinations needs no key: on by default as the image provider of last resort.
+    ["POLLINATIONS", env.POLLINATIONS_ENABLED === "false" ? undefined : (env.POLLINATIONS_API_KEY ?? ""), undefined],
   ];
   for (const [provider, apiKey, baseUrl] of envKeys) {
-    if (!apiKey || covered.has(provider)) continue;
+    if (apiKey === undefined || covered.has(provider)) continue;
+    if (!apiKey && provider !== "POLLINATIONS") continue;
     sources.push({
       origin: "env",
       provider,

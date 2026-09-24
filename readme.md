@@ -141,6 +141,15 @@ explicit preference on the account and the expected-reach estimate updates. On R
 instead** overrides the blind judge and runs the platform pass on that draft. After publishing, a live
 LinkedIn post's text can be edited in place (**Edit live post**), keeping its reactions and comments.
 
+### Free images
+
+Two image providers with a free tier ship built in. **Pollinations** needs no key at all and is on by
+default as the image provider of last resort (set `POLLINATIONS_ENABLED=false` to disable it, or add
+`POLLINATIONS_API_KEY` for higher limits). **Hugging Face** runs FLUX.1 schnell on a free account
+token (`HUGGINGFACE_API_KEY`, or add it under Super Admin → AI providers). Image routing tries the
+cheapest configured image model first and falls back across providers, so when Gemini's free tier
+is out of quota the picture still gets made.
+
 ### Images for agent posts
 
 The Home composer has a "Text only / With image" toggle. With it on, the Agent Council turns each

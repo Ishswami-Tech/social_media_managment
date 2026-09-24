@@ -226,6 +226,20 @@ describe("runPipelineToCompletion", () => {
     expect(writers.some((c) => c.system.includes("Contrarian:"))).toBe(true);
   });
 
+  it("spreads writers over different providers when their planned provider is down", async () => {
+    const { ctx, script } = createTestContext(baseRun({ accounts: [baseRun().accounts[0]!] }), {
+      availableProviders: ["GOOGLE", "OPENAI", "ANTHROPIC"],
+    });
+    script.outOfQuota.add("GOOGLE");
+    await runPipelineToCompletion(ctx, "run_1");
+    const writers = script.calls.filter((c) => c.stage === "WRITER");
+    const providers = writers.map((c) => c.provider);
+    // Three writers, two live providers: at most one pair may share a provider, and none may sit on Google.
+    expect(providers).not.toContain("GOOGLE");
+    expect(new Set(providers).size).toBe(2);
+    expect(writers.map((c) => c.system.match(/YOUR LANE[^\n]*\n(\w+):/)?.[1])).toEqual(["Story", "Evidence", "Contrarian"]);
+  });
+
   it("fails the call when every provider is out of quota", async () => {
     const { ctx, script } = setup();
     for (const provider of ctx.availableProviders) script.outOfQuota.add(provider);

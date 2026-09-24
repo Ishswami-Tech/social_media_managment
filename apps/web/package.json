@@ -18,6 +18,7 @@
     "@platform/agent-council": "workspace:*",
     "@platform/ai-anthropic": "workspace:*",
     "@platform/ai-core": "workspace:*",
+    "@platform/ai-free-images": "workspace:*",
     "@platform/ai-google": "workspace:*",
     "@platform/ai-openai": "workspace:*",
     "@platform/config": "workspace:*",

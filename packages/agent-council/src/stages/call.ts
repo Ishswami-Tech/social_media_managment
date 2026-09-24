@@ -86,6 +86,8 @@ export interface ModelCallInput {
   maxSteps?: number;
   /** "PROVIDER::model" pairs other writers of the same account use; avoided while any other model is available. */
   avoidModels?: readonly string[];
+  /** Providers other writers of the same account already use; avoided first, so drafts come from different houses. */
+  avoidProviders?: readonly AIProviderName[];
 }
 
 export interface ModelCallResult {
@@ -114,7 +116,10 @@ function candidatePreferences(ctx: PipelineContext, pref?: ProviderPreference): 
  * Resolves provider + model up front (so the breaker and the budget know what
  * they are dealing with) and skips providers whose breaker is open.
  */
-/** Prefers a model no sibling writer uses; when only those remain, uses them rather than failing. */
+/**
+ * Prefers a provider no sibling writer uses, then a model no sibling uses;
+ * when only those remain, uses them rather than failing.
+ */
 async function resolveProviderAvoiding(
   ctx: PipelineContext,
   input: ModelCallInput,
@@ -122,10 +127,15 @@ async function resolveProviderAvoiding(
   excludedModels: readonly string[],
   stayWith?: AIProviderName,
 ): Promise<ModelDecision> {
-  const avoid = (input.avoidModels ?? []).filter((m) => !excludedModels.includes(m));
-  if (avoid.length > 0) {
+  const avoidModels = (input.avoidModels ?? []).filter((m) => !excludedModels.includes(m));
+  const avoidProviders = (input.avoidProviders ?? []).filter((p) => !excluded.has(p));
+  const passes: { providers: ReadonlySet<AIProviderName>; models: readonly string[] }[] = [];
+  if (avoidProviders.length > 0) passes.push({ providers: new Set([...excluded, ...avoidProviders]), models: [...excludedModels, ...avoidModels] });
+  if (avoidModels.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels] });
+  for (const pass of passes) {
+    if (ctx.availableProviders.every((p) => pass.providers.has(p))) continue;
     try {
-      return await resolveProvider(ctx, input.capability, input.pref, excluded, [...excludedModels, ...avoid], stayWith);
+      return await resolveProvider(ctx, input.capability, input.pref, pass.providers, pass.models, stayWith && !pass.providers.has(stayWith) ? stayWith : undefined);
     } catch (error) {
       if (!(error instanceof PipelineBlocked)) throw error;
     }

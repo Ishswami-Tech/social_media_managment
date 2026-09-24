@@ -39,6 +39,11 @@ export const envSchema = z.object({
   ANTHROPIC_API_KEY: optionalString,
   ANTHROPIC_BASE_URL: optionalString,
   GOOGLE_AI_API_KEY: optionalString,
+  /** Free-tier image providers: a Hugging Face token (monthly credits) and an optional Pollinations token. */
+  HUGGINGFACE_API_KEY: optionalString,
+  POLLINATIONS_API_KEY: optionalString,
+  /** Set to "false" to stop using the keyless Pollinations image API as a last resort. */
+  POLLINATIONS_ENABLED: optionalString,
   TAVILY_API_KEY: optionalString,
   BRAVE_SEARCH_API_KEY: optionalString,
 

@@ -85,11 +85,23 @@ export function distinctModels(ctx: PipelineContext): ProviderPreference[] {
   return out.length > 0 ? out : ctx.availableProviders.map((provider) => ({ provider }));
 }
 
-/** "PROVIDER::model" of every other writer slot, so a failover never converges on a sibling's model. */
-function siblingModels(slots: readonly WriterSlot[], slot: WriterSlot): string[] {
-  return slots
-    .filter((s) => s.label !== slot.label && s.pref.provider && s.pref.model)
-    .map((s) => `${s.pref.provider}::${s.pref.model}`);
+/**
+ * What the other writers of this account are on: the models the remaining
+ * slots are planned for, plus the models and providers finished drafts
+ * actually used (a failover may have moved them). A writer steers clear of
+ * both so the judge compares work from different models.
+ */
+function siblingUsage(
+  slots: readonly WriterSlot[],
+  slot: WriterSlot,
+  done: readonly DraftCandidate[],
+): { models: string[]; providers: AIProviderName[] } {
+  const planned = slots.filter((s) => s.label !== slot.label && s.pref.provider && s.pref.model).map((s) => `${s.pref.provider}::${s.pref.model}`);
+  const used = done.map((d) => `${d.provider}::${d.model}`);
+  return {
+    models: [...new Set([...planned, ...used])],
+    providers: [...new Set(done.map((d) => d.provider))],
+  };
 }
 
 async function writeDraft(
@@ -98,7 +110,9 @@ async function writeDraft(
   account: RunAccountSnapshot,
   slot: WriterSlot,
   slots: readonly WriterSlot[] = [slot],
+  done: readonly DraftCandidate[] = [],
 ): Promise<DraftCandidate> {
+  const siblings = siblingUsage(slots, slot, done);
   const { value, call } = await callJson(
     ctx,
     {
@@ -107,7 +121,8 @@ async function writeDraft(
       step: stepName("writer", account, slot.label),
       promptKey: "writer",
       pref: slot.pref,
-      avoidModels: siblingModels(slots, slot),
+      avoidModels: siblings.models,
+      avoidProviders: siblings.providers,
       temperature: slot.temperature,
       expectedOutputTokens: WRITER_OUTPUT_TOKENS,
       system: withSkills(
@@ -149,10 +164,12 @@ export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Prom
   let written = 0;
   for (const account of run.accounts) {
     let perAccount = 0;
+    const done: DraftCandidate[] = [];
     for (const slot of slots) {
       try {
-        const draft = await writeDraft(ctx, run, account, slot, slots);
+        const draft = await writeDraft(ctx, run, account, slot, slots, done);
         await ctx.store.saveDraft(run.id, account.runAccountId, draft);
+        done.push(draft);
         perAccount += 1;
       } catch (error) {
         if (isPipelineBlocked(error)) throw error;

@@ -34,6 +34,18 @@ const PROVIDER_TYPES = [
     baseUrlRequired: false,
   },
   {
+    value: "HUGGINGFACE",
+    label: "Hugging Face (images, free tier)",
+    placeholder: "https://router.huggingface.co/hf-inference",
+    baseUrlRequired: false,
+  },
+  {
+    value: "POLLINATIONS",
+    label: "Pollinations (images, free; token optional)",
+    placeholder: "https://image.pollinations.ai",
+    baseUrlRequired: false,
+  },
+  {
     value: "GATEWAY",
     label: "OpenAI-compatible gateway",
     placeholder: "https://your-gateway.example.com/v1",
@@ -45,7 +57,7 @@ type ProviderType = (typeof PROVIDER_TYPES)[number]["value"];
 
 function typeFor(connection: ProviderConnection): ProviderType {
   const stored = connection.provider.toUpperCase();
-  if (stored === "ANTHROPIC" || stored === "GOOGLE") return stored;
+  if (stored === "ANTHROPIC" || stored === "GOOGLE" || stored === "HUGGINGFACE" || stored === "POLLINATIONS") return stored;
   return connection.baseUrl ? "GATEWAY" : "OPENAI";
 }
 

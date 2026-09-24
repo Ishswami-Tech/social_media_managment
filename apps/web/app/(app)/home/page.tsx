@@ -22,7 +22,28 @@ import { Reveal } from "@/components/ui/reveal";
 export const metadata = { title: "Home" };
 
 /** How much of the conversation the feed keeps in view. */
-const MAX_THREADS = 20;
+const MAX_THREADS = 10;
+/** Home shows what is live now or from the last day; everything older lives under Posts. */
+const RECENT_WINDOW_MS = 24 * 60 * 60_000;
+const LIVE_STATUSES = [
+  "QUEUED",
+  "RESEARCHING",
+  "STRATEGIZING",
+  "DRAFTING",
+  "REVIEWING",
+  "JUDGING",
+  "ADAPTING",
+  "AWAITING_APPROVAL",
+  "APPROVED",
+  "PUBLISHING",
+  "PAUSED",
+  "BLOCKED",
+] as const;
+
+/** Runs created after this moment still belong on Home even when finished. */
+function recentCutoff(): Date {
+  return new Date(Date.now() - RECENT_WINDOW_MS);
+}
 
 const EXAMPLE_PROMPTS = [
   "A lesson we learned shipping faster this quarter",
@@ -188,7 +209,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       orderBy: [{ platform: "asc" }, { displayName: "asc" }],
     }),
     prisma.agentRun.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        OR: [{ status: { in: [...LIVE_STATUSES] } }, { createdAt: { gte: recentCutoff() } }],
+      },
       select: threadSelect,
       orderBy: { createdAt: "desc" },
       take: MAX_THREADS,
@@ -241,9 +265,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <div className="flex min-h-[calc(100vh-8rem)] flex-col">
       <div className="mx-auto w-full max-w-3xl flex-1">
         <div className="flex items-center justify-between gap-3 pb-4">
-          <h1 className="text-sm font-medium text-muted-foreground">Your posts, start to finish</h1>
+          <h1 className="text-sm font-medium text-muted-foreground">Today and in progress</h1>
           <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-            See all posts
+            Earlier posts and history
           </Link>
         </div>
         <TodayBar stats={stats} />

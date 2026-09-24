@@ -1,4 +1,4 @@
-export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "GOOGLE"] as const;
+export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "GOOGLE", "HUGGINGFACE", "POLLINATIONS"] as const;
 export type AIProviderName = (typeof AI_PROVIDERS)[number];
 
 export const AI_OPERATIONS = [

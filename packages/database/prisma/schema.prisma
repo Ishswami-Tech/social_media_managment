@@ -553,6 +553,8 @@ enum AIProviderName {
   OPENAI
   ANTHROPIC
   GOOGLE
+  HUGGINGFACE
+  POLLINATIONS
 }
 
 /// Platform-level model catalogue managed by Super Admin.

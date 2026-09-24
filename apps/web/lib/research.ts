@@ -1,5 +1,6 @@
 import { runAgent, parseJsonOutput, type Tool } from "@platform/ai-core";
 import type { Prisma } from "@platform/database";
+import type { AIProviderName } from "@platform/types";
 import {
   BraveConnector,
   BriefSchema,
@@ -162,7 +163,7 @@ export interface RunSkillInput {
   input: string;
   platforms: string[];
   brandId?: string;
-  provider?: "OPENAI" | "ANTHROPIC" | "GOOGLE";
+  provider?: AIProviderName;
   model?: string;
 }
 
