@@ -44,20 +44,17 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/settings", label: "Settings", icon: "settings", capability: "org:settings" },
 ];
 
-/** Everything else, tucked behind a collapsed "More" group. */
+/**
+ * Everything else, tucked behind a collapsed "More" group. The manual
+ * composer, AI Studio and the WhatsApp module still exist at their URLs but
+ * are not part of the product's front door: the agents write, you approve.
+ */
 export const MORE_NAV: NavItem[] = [
-  { href: "/whatsapp/inbox", label: "Inbox", icon: "inbox", capability: "whatsapp:view" },
-  { href: "/create", label: "Write it yourself", icon: "create", capability: "content:create" },
-  { href: "/ai", label: "AI Studio", icon: "ai", capability: "ai:generate" },
   { href: "/analytics", label: "Analytics", icon: "analytics", capability: "analytics:view" },
 ];
 
-/** WhatsApp beyond the inbox; also shown inside "More". */
-export const WHATSAPP_NAV: NavItem[] = [
-  { href: "/whatsapp/contacts", label: "WhatsApp contacts", icon: "contacts", capability: "whatsapp:view" },
-  { href: "/whatsapp/templates", label: "WhatsApp templates", icon: "templates", capability: "whatsapp:view" },
-  { href: "/whatsapp/campaigns", label: "WhatsApp campaigns", icon: "campaigns", capability: "whatsapp:manage" },
-];
+/** WhatsApp is reachable by URL only until it earns a place in the loop. */
+export const WHATSAPP_NAV: NavItem[] = [];
 
 /** Team and Brand are tabs inside Settings now, so nothing is left here. */
 export const ORG_NAV: NavItem[] = [];

@@ -174,7 +174,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <div className="grid gap-4 py-10">
             <h2 className="text-2xl font-semibold tracking-tight">Tell me what to post about.</h2>
             <p className="max-w-prose text-sm text-muted-foreground">
-              I&rsquo;ll research it, write a few drafts, judge them blind and hand you the best one to approve.
+              One agent researches it with sources, one plans the angle, several writers on different models
+              draft it, a reviewer checks it for the platform, a blind judge picks the best, and you approve.
+              Want a whole month at once? Start on{" "}
+              <Link href="/plan" className="underline underline-offset-4">
+                Plan
+              </Link>
+              .
             </p>
             {canCreate && <ExamplePrompts prompts={EXAMPLE_PROMPTS} />}
           </div>
