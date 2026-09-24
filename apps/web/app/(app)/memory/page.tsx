@@ -3,6 +3,7 @@ import { listAccountMemories, listStories } from "@/lib/services/memory";
 import { PageHeader } from "@/components/app/page-header";
 import { MemoryForm } from "@/components/forms/memory-form";
 import { StoryBank } from "@/components/forms/story-bank";
+import { Reveal } from "@/components/ui/reveal";
 
 export const metadata = { title: "Memory" };
 
@@ -26,7 +27,11 @@ export default async function MemoryPage() {
       {memories.length === 0 ? (
         <p className="text-sm text-muted-foreground">Connect an account to give the AI something to remember.</p>
       ) : (
-        memories.map((memory) => <MemoryForm key={memory.account.id} memory={memory} canEdit={canEdit} />)
+        memories.map((memory, index) => (
+          <Reveal key={memory.account.id} index={index + 1}>
+            <MemoryForm memory={memory} canEdit={canEdit} />
+          </Reveal>
+        ))
       )}
     </div>
   );

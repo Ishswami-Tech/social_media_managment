@@ -12,6 +12,7 @@ import { Check, Loader2, Sparkles } from "lucide-react";
 import type { ContentPlanView, PlanItem } from "@/lib/agent/plan";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
+import { Reveal } from "@/components/ui/reveal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -164,9 +165,10 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
           </p>
         </div>
       </header>
-      <ol className="grid gap-2">
+      <div className="grid gap-2" role="list">
         {plan.items.map((item, index) => (
-          <li key={`${item.date}-${index}`} className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3">
+          <Reveal key={`${item.date}-${index}`} index={index}>
+            <div role="listitem" className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3">
             <div className="grid gap-1 text-xs text-muted-foreground">
               <span>{item.date}</span>
               <span className={cn("w-fit rounded-full border px-1.5", FUNNEL_CLASS[item.funnel])}>{FUNNEL_LABEL[item.funnel]}</span>
@@ -193,9 +195,10 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
                 </Button>
               ) : null}
             </div>
-          </li>
+            </div>
+          </Reveal>
         ))}
-      </ol>
+      </div>
     </section>
   );
 }

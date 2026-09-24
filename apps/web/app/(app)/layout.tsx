@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             impersonatedBy={ctx.impersonatedBy}
           />
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 bg-[radial-gradient(60rem_30rem_at_50%_-10rem,hsl(var(--primary)/0.07),transparent)] p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

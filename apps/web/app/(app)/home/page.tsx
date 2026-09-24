@@ -16,6 +16,7 @@ import {
   type ComposerBarModel,
 } from "@/components/home/composer-bar";
 import { Thread, type ThreadAccount, type ThreadProps } from "@/components/home/thread";
+import { Reveal } from "@/components/ui/reveal";
 
 export const metadata = { title: "Home" };
 
@@ -186,8 +187,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </div>
         ) : (
           <div className="grid gap-10 pb-6">
-            {threads.map((thread) => (
-              <Thread key={thread.runId} {...thread} />
+            {threads.map((thread, index) => (
+              <Reveal key={thread.runId} index={index}>
+                <Thread {...thread} />
+              </Reveal>
             ))}
           </div>
         )}
