@@ -16,6 +16,26 @@ function mockFetch(routes: Record<string, (init?: RequestInit) => Response>) {
 }
 
 describe("LinkedInProvider", () => {
+  it("edits a live post in place with a partial update of the commentary", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    mockFetch({
+      "https://api.linkedin.com/rest/posts/": (init) => {
+        calls.push({ url: "posts", init });
+        return new Response(null, { status: 204 });
+      },
+    });
+    await provider.updatePost("urn:li:share:123", "New text", {
+      credential: { accessToken: "tok", expiresAt: new Date(Date.now() + 3_600_000), scopes: [] },
+      externalAccountId: "me",
+      accountType: "PERSONAL",
+    } as never);
+    expect(calls).toHaveLength(1);
+    const init = calls[0]!.init!;
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["X-RestLi-Method"]).toBe("PARTIAL_UPDATE");
+    expect(JSON.parse(String(init.body))).toEqual({ patch: { $set: { commentary: "New text" } } });
+  });
+
   it("builds an authorization URL with state and scopes", async () => {
     const { url } = await provider.getAuthorizationUrl("https://app/cb", "st4te");
     const u = new URL(url);

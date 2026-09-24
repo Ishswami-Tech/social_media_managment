@@ -21,6 +21,7 @@ import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { CouncilFlow } from "@/components/agent/council-flow";
+import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -204,14 +205,22 @@ function ResultCard({
   onDecided: () => void;
 }) {
   const [text, setText] = useState(account.text);
+  const [savedText, setSavedText] = useState(account.text);
+  const [performance, setPerformance] = useState(account.performance);
   const [note, setNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  function applyEdit(edited: EditedAccount) {
+    setText(edited.text);
+    setSavedText(edited.text);
+    setPerformance(edited.performance);
+  }
+
   async function decide(decision: ThreadDecision) {
     if (decision === "PENDING") return;
     setBusy(true);
-    const edited = decision === "APPROVED" && text.trim() !== account.text.trim() ? { editedText: text } : {};
+    const edited = decision === "APPROVED" && text.trim() !== savedText.trim() ? { editedText: text } : {};
     const { ok, message } = await post(`/api/agent/runs/${runId}/decide`, {
       accountIds: [account.id],
       decision,
@@ -274,7 +283,11 @@ function ResultCard({
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
 
-      {account.performance && <PerformanceBadge {...account.performance} />}
+      {performance && <PerformanceBadge {...performance} />}
+
+      {!decided && canDecide && account.text && runStatus === "AWAITING_APPROVAL" && (
+        <EditTools runId={runId} accountId={account.id} text={text} savedText={savedText} disabled={busy} onUpdated={applyEdit} />
+      )}
 
       {account.image && (
         <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">

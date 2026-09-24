@@ -383,10 +383,13 @@ export async function applyAccountDecision(
   const now = new Date();
   await prisma.$transaction(
     targets.map((a) => {
+      // A saved draft survives an approval that does not resend the text.
       const edited =
         input.decision === "APPROVED" && input.editedText !== undefined && input.editedText.trim() !== (a.finalText ?? "").trim()
           ? input.editedText
-          : null;
+          : input.decision === "APPROVED"
+            ? a.editedText
+            : null;
       return prisma.agentRunAccount.update({
         where: { id: a.id },
         data: {
@@ -426,7 +429,7 @@ export async function applyAccountDecision(
   // Learning signals: edits and rejection comments become account preferences.
   for (const a of targets) {
     const before = a.finalText ?? "";
-    const after = input.decision === "APPROVED" && input.editedText !== undefined ? input.editedText : before;
+    const after = input.decision === "APPROVED" ? (input.editedText ?? a.editedText ?? before) : before;
     const isEdit = after.trim() !== before.trim();
     const hasComment = Boolean(input.comment?.trim());
     if (!isEdit && !hasComment) continue;

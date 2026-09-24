@@ -86,20 +86,25 @@ async function adaptDraft(
   return { draft, mediaConcept: value.mediaConcept ?? account.strategy?.mediaConcept };
 }
 
-async function adaptAccount(ctx: PipelineContext, run: RunSnapshot, account: RunAccountSnapshot): Promise<boolean> {
-  const candidates = selectCandidates(ctx, run, account);
-  if (candidates.length === 0) {
-    await ctx.store.addEvent(run.id, {
-      step: stepName("adapt", account),
-      status: "SKIPPED",
-      error: "no valid draft to adapt for this account",
-    });
-    return false;
-  }
-  const winnerLabel = account.verdict?.winner;
-  const winner = candidates.find((d) => d.label === winnerLabel) ?? candidates[0]!;
-  const synthesized = await synthesizeDraft(ctx, run, account, winner, account.verdict);
-  const { draft, mediaConcept } = await adaptDraft(ctx, run, account, synthesized);
+export interface AdaptedRecommendation {
+  text: string;
+  hashtags: string[];
+  mediaConcept?: string;
+}
+
+/**
+ * The platform pass on one draft, then the final gate, then the
+ * recommendation. Shared by the stage (judge's pick, synthesised) and by a
+ * person overriding the judge with another draft.
+ */
+export async function finishWithDraft(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  account: RunAccountSnapshot,
+  source: DraftCandidate,
+  winner: DraftCandidate,
+): Promise<AdaptedRecommendation> {
+  const { draft, mediaConcept } = await adaptDraft(ctx, run, account, source);
   const checks = runChecks(checkInputFor(ctx, run, account, draft, Boolean(mediaConcept)));
   const id = await ctx.store.saveDraft(run.id, account.runAccountId, draft, { checks });
   await ctx.store.addEvent(run.id, {
@@ -124,6 +129,38 @@ async function adaptAccount(ctx: PipelineContext, run: RunSnapshot, account: Run
     winnerDraftLabel: winner.label,
     winnerDraftId: winner.id,
   });
+  return { text: draft.text, hashtags: draft.hashtags, ...(mediaConcept ? { mediaConcept } : {}) };
+}
+
+/** A person's override of the judge: this draft, straight through the platform pass. */
+export async function adaptChosenDraft(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  account: RunAccountSnapshot,
+  draft: DraftCandidate,
+): Promise<AdaptedRecommendation> {
+  await ctx.store.addEvent(run.id, {
+    step: stepName("choose-draft", account, draft.label),
+    status: "SUCCEEDED",
+    output: { draftId: draft.id, label: draft.label },
+  });
+  return finishWithDraft(ctx, run, account, draft, draft);
+}
+
+async function adaptAccount(ctx: PipelineContext, run: RunSnapshot, account: RunAccountSnapshot): Promise<boolean> {
+  const candidates = selectCandidates(ctx, run, account);
+  if (candidates.length === 0) {
+    await ctx.store.addEvent(run.id, {
+      step: stepName("adapt", account),
+      status: "SKIPPED",
+      error: "no valid draft to adapt for this account",
+    });
+    return false;
+  }
+  const winnerLabel = account.verdict?.winner;
+  const winner = candidates.find((d) => d.label === winnerLabel) ?? candidates[0]!;
+  const synthesized = await synthesizeDraft(ctx, run, account, winner, account.verdict);
+  await finishWithDraft(ctx, run, account, synthesized, winner);
   return true;
 }
 

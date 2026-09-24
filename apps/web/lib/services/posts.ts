@@ -387,6 +387,46 @@ export async function unpublishPost(ctx: OrgContext, postId: string) {
   return { post: updated, removed, failures };
 }
 
+/**
+ * Edits the text of one live variant in place through the provider (LinkedIn
+ * supports it; the post keeps its URN, reactions and comments), then records
+ * the new text. Validated against the platform limits first.
+ */
+export async function editPublishedVariant(ctx: OrgContext, postId: string, variantId: string, text: string) {
+  const post = await getPost(ctx, postId);
+  const variant = post.variants.find((v) => v.id === variantId);
+  if (!variant) throw notFound("Post variant");
+  if (variant.status !== "PUBLISHED" || !variant.externalPostId) throw conflict("Only a live post can be edited in place");
+  const provider = providers().get(variant.platform);
+  if (!provider.updatePost) throw conflict(`${variant.platform} does not support editing a live post through its API`);
+  const validation = await provider.validatePost({
+    idempotencyKey: `edit:${variantId}`,
+    text,
+    media: [],
+    platformOptions: (variant.platformOptions as Record<string, unknown>) ?? {},
+  });
+  if (!validation.ok)
+    throw badRequest(
+      validation.issues
+        .filter((i) => i.severity === "error")
+        .map((i) => i.message)
+        .join("; "),
+    );
+  const credential = await loadSocialCredential(prisma, keyring(), variant.socialAccountId);
+  if (!credential) throw conflict(`${variant.socialAccount.displayName}: no stored credential`);
+  const account = await prisma.socialAccount.findUniqueOrThrow({ where: { id: variant.socialAccountId } });
+  const providerCtx: ProviderContext = {
+    credential,
+    externalAccountId: account.externalAccountId,
+    accountType: account.accountType,
+    metadata: (account.metadata as Record<string, unknown>) ?? undefined,
+  };
+  await provider.updatePost(variant.externalPostId, text, providerCtx);
+  const updated = await prisma.postVariant.update({ where: { id: variantId }, data: { text }, select: { id: true, text: true, platform: true } });
+  await audit(ctx, "post.variant.edit_live", "Post", postId, { variantId, platform: variant.platform, externalPostId: variant.externalPostId });
+  return updated;
+}
+
 export interface PostHistoryEvent {
   id: string;
   at: Date;
@@ -398,6 +438,7 @@ export interface PostHistoryEvent {
 const ACTION_LABELS: Record<string, string> = {
   "post.create": "Created",
   "post.update": "Edited",
+  "post.variant.edit_live": "Edited the live post",
   "post.submit": "Submitted for approval",
   "post.approve": "Approved",
   "post.reject": "Rejected",

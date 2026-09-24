@@ -59,6 +59,8 @@ export interface Script {
   skillPicks: string[];
   /** Draft text fragments the scripted platform reviewer sends back for a fix. */
   reviseOnReview: string[];
+  /** The scripted editor answers a revise request with text far over any limit. */
+  overlongRevision: boolean;
 }
 
 export const createScript = (): Script => ({
@@ -68,6 +70,7 @@ export const createScript = (): Script => ({
   outOfQuota: new Set(),
   skillPicks: [],
   reviseOnReview: [],
+  overlongRevision: false,
 });
 
 /** Draft A is clean; draft B states a number no claim supports, so it must be revised. */
@@ -144,6 +147,13 @@ function answer(stage: string, system: string, script: Script): string {
     }
     case "REVISION":
       return JSON.stringify({ text: REVISED_TEXT, hashtags: ["#onboarding"], claimIds: [] });
+    case "REVISE REQUEST":
+      return JSON.stringify({
+        text: script.overlongRevision ? "x".repeat(5_000) : "Shorter. Fewer steps before the first win.\n\nWhat would you change first?",
+        hashtags: ["#onboarding"],
+        claimIds: [],
+        note: "Cut it to the point.",
+      });
     case "SKILLS":
       return JSON.stringify({ picks: script.skillPicks.map((id) => ({ id, why: "fits the platform" })) });
     case "PLATFORM REVIEW": {

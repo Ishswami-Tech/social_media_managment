@@ -141,6 +141,8 @@ export interface SocialProvider {
   getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus>;
   /** Remove a published post from the platform. Absent when the platform API cannot delete posts. */
   deletePost?(externalPostId: string, ctx: ProviderContext): Promise<void>;
+  /** Edit the text of a published post in place (reactions and comments survive). Absent when unsupported. */
+  updatePost?(externalPostId: string, text: string, ctx: ProviderContext): Promise<void>;
   /** Post-level metrics; resolves to null when the platform/account type does not expose them. */
   getPostMetrics?(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null>;
   /** Account-level metrics (followers etc.); null when unsupported. */

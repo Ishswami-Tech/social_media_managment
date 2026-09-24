@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PostPreview } from "@/components/preview/post-preview";
 import { PostActions } from "@/components/forms/post-actions";
+import { EditPublishedText } from "@/components/forms/edit-published-text";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -84,6 +85,9 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                     alt: m.mediaAsset.altText,
                   }))}
                 />
+                {v.status === "PUBLISHED" && v.externalPostId && v.platform === "LINKEDIN" && ctx.can("content:publish") && (
+                  <EditPublishedText postId={post.id} variantId={v.id} text={v.text} maxLength={3000} />
+                )}
                 {v.lastError && <p className="text-xs text-destructive">{v.lastError}</p>}
                 {v.publishJobs[0]?.attempts.length ? (
                   <div className="text-xs text-muted-foreground">

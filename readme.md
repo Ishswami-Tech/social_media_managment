@@ -132,6 +132,15 @@ the blind judge, which still sees text only.
   Writers, Reviewer, Judge, Editor, You) with a dashed path flowing toward whoever is working, built with
   Framer Motion, GSAP and a Three.js particle field; it respects `prefers-reduced-motion`.
 
+### Editing a finished post
+
+Before approval, on Home and Review: type into the post and **Save draft** (kept without approving), or
+**Revise with AI** ("shorter", "drop the second number", "rewrite the hook") and the editor agent applies
+it with the same claims ledger, playbooks and checks the pipeline used; the instruction is learned as an
+explicit preference on the account and the expected-reach estimate updates. On Review, **Use draft B
+instead** overrides the blind judge and runs the platform pass on that draft. After publishing, a live
+LinkedIn post's text can be edited in place (**Edit live post**), keeping its reactions and comments.
+
 ### Images for agent posts
 
 The Home composer has a "Text only / With image" toggle. With it on, the Agent Council turns each

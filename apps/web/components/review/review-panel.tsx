@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
+import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,21 +115,32 @@ function AccountBlock({
   sources,
   unverifiedCount,
   canDecide,
+  editable,
 }: {
   runId: string;
   account: ReviewAccount;
   sources: ReviewSource[];
   unverifiedCount: number;
   canDecide: boolean;
+  /** The run is waiting for approval, so the text may still change. */
+  editable: boolean;
 }) {
   const router = useRouter();
   const [text, setText] = useState(account.text);
+  const [savedText, setSavedText] = useState(account.text);
+  const [performance, setPerformance] = useState(account.performance);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
 
+  function applyEdit(edited: EditedAccount) {
+    setText(edited.text);
+    setSavedText(edited.text);
+    setPerformance(edited.performance);
+  }
+
   async function decide(decision: "APPROVED" | "REJECTED") {
     setBusy(true);
-    const edited = decision === "APPROVED" && text.trim() !== account.text.trim() ? { editedText: text } : {};
+    const edited = decision === "APPROVED" && text.trim() !== savedText.trim() ? { editedText: text } : {};
     const { ok, message } = await post(`/api/agent/runs/${runId}/decide`, {
       accountIds: [account.id],
       decision,
@@ -176,7 +188,11 @@ function AccountBlock({
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
 
-      {account.performance && <PerformanceBadge {...account.performance} />}
+      {performance && <PerformanceBadge {...performance} />}
+
+      {canDecide && editable && account.text && (
+        <EditTools runId={runId} accountId={account.id} text={text} savedText={savedText} disabled={busy} onUpdated={applyEdit} />
+      )}
 
       {account.image && (
         <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">
@@ -218,8 +234,8 @@ function AccountBlock({
               Reject
             </Button>
           </div>
-          {text.trim() !== account.text.trim() && (
-            <p className="text-xs text-muted-foreground">Your edit is saved with the approval.</p>
+          {text.trim() !== savedText.trim() && (
+            <p className="text-xs text-muted-foreground">Your edit goes out with the approval.</p>
           )}
         </div>
       )}
@@ -271,6 +287,7 @@ export function ReviewPanel({
             sources={sources}
             unverifiedCount={unverifiedCount}
             canDecide={canDecide && a.decision === "PENDING"}
+            editable={status === "AWAITING_APPROVAL"}
           />
         ))}
 

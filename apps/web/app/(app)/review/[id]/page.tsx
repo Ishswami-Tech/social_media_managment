@@ -13,6 +13,7 @@ import { buildSummaryLine, detailToRunInitial } from "@/lib/agent/progress";
 import { IN_PROGRESS_STATUSES, isProducing, isReady, showsLiveFlow, statusLabel } from "@/components/home/labels";
 import { RefreshTimer } from "@/components/home/refresh-timer";
 import { ReviewPanel, type ReviewAccount, type ReviewSource } from "@/components/review/review-panel";
+import { UseDraftButton } from "@/components/agent/use-draft-button";
 import { PageHeader } from "@/components/app/page-header";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/app/status-badge";
@@ -76,7 +77,7 @@ function toReviewAccount(a: RunAccount, images: ReadonlyMap<string, Recommendati
   };
 }
 
-function DraftList({ account }: { account: RunAccount }) {
+function DraftList({ account, runId, canChoose }: { account: RunAccount; runId: string; canChoose: boolean }) {
   if (account.drafts.length === 0) return null;
   return (
     <div className="grid gap-2">
@@ -103,6 +104,11 @@ function DraftList({ account }: { account: RunAccount }) {
               <span className="font-medium">Verdict: </span>
               {d.judgeRationale}
             </p>
+          )}
+          {canChoose && d.id !== account.winnerDraftId && (d.role === "WRITER" || d.role === "REVISION") && (
+            <div className="mt-2">
+              <UseDraftButton runId={runId} accountId={account.id} draftId={d.id} label={d.label} />
+            </div>
           )}
         </div>
       ))}
@@ -227,7 +233,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {run.accounts.every((a) => a.drafts.length === 0) ? (
               <p className="text-sm text-muted-foreground">No alternatives were written.</p>
             ) : (
-              run.accounts.map((a) => <DraftList key={a.id} account={a} />)
+              run.accounts.map((a) => (
+                <DraftList
+                  key={a.id}
+                  account={a}
+                  runId={run.id}
+                  canChoose={canDecide && run.status === "AWAITING_APPROVAL" && a.decision === "PENDING"}
+                />
+              ))
             )}
           </section>
 

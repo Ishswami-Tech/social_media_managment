@@ -267,6 +267,20 @@ export class LinkedInProvider implements SocialProvider {
     }
   }
 
+  /**
+   * Versioned Posts API partial update: only the commentary changes, so the
+   * post keeps its URN, reactions and comments.
+   */
+  async updatePost(externalPostId: string, text: string, ctx: ProviderContext): Promise<void> {
+    const res = await this.apiRaw(ctx.credential, `/rest/posts/${encodeURIComponent(externalPostId)}`, {
+      method: "POST",
+      headers: { "X-RestLi-Method": "PARTIAL_UPDATE" },
+      body: { patch: { $set: { commentary: text } } },
+    });
+    if (res.status !== 204 && res.status !== 200)
+      throw new ProviderError(`LinkedIn responded ${res.status} editing the post`, "UNKNOWN", false, res.status);
+  }
+
   async getPublishStatus(externalPostId: string, ctx: ProviderContext): Promise<PublishStatus> {
     try {
       const post = await this.api<{ lifecycleState?: string }>(
@@ -427,11 +441,11 @@ export class LinkedInProvider implements SocialProvider {
   private async apiRaw(
     credential: OAuthCredential,
     path: string,
-    init: { method?: string; body?: unknown },
+    init: { method?: string; body?: unknown; headers?: Record<string, string> },
   ): Promise<Response> {
     const res = await (this.opts.fetchImpl ?? fetch)(`${API}${path}`, {
       method: init.method ?? "GET",
-      headers: { ...this.headers(credential), "content-type": "application/json" },
+      headers: { ...this.headers(credential), "content-type": "application/json", ...(init.headers ?? {}) },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     });
     if (!res.ok) {
