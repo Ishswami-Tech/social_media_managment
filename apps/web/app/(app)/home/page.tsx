@@ -18,6 +18,8 @@ import {
 import { Thread, type ThreadAccount, type ThreadProps, type PostResults } from "@/components/home/thread";
 import { TodayBar, type TodayStats } from "@/components/home/today-bar";
 import { ProviderStrip, type ProviderStatus } from "@/components/home/provider-strip";
+import { DashboardRail } from "@/components/home/dashboard-rail";
+import { loadHomeRail, metric } from "@/lib/home/rail";
 import { providerHealthSummary } from "@/lib/agent/provider-health";
 import { resolveAuth } from "@/lib/ai";
 import { Reveal } from "@/components/ui/reveal";
@@ -141,9 +143,6 @@ function toThreadAccount(
   };
 }
 
-const metric = (m: unknown, key: string): number | undefined =>
-  isRecord(m) && typeof m[key] === "number" ? (m[key] as number) : undefined;
-
 /** Latest analytics for the published variants behind these posts, keyed by `postId:socialAccountId`. */
 async function loadResults(postIds: string[]): Promise<Map<string, PostResults>> {
   const ids = [...new Set(postIds)];
@@ -254,7 +253,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
-  const [images, results, stats, providers] = await Promise.all([
+  const [images, results, stats, providers, rail] = await Promise.all([
     loadRecommendationImages(
       organizationId,
       runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
@@ -262,6 +261,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     loadResults(runs.flatMap((run) => run.accounts.flatMap((a) => (a.postId ? [a.postId] : [])))),
     loadTodayStats(organizationId),
     providerStatuses(organizationId).catch(() => [] as ProviderStatus[]),
+    loadHomeRail(organizationId),
   ]);
 
   // Oldest at the top, newest just above the composer — like any conversation.
@@ -282,7 +282,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col">
-      <div className="mx-auto w-full max-w-3xl flex-1">
+      <div className="mx-auto grid w-full max-w-6xl flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="mx-auto w-full max-w-3xl min-w-0">
         <div className="flex items-center justify-between gap-3 pb-4">
           <h1 className="text-sm font-medium text-muted-foreground">Today and in progress</h1>
           <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
@@ -316,11 +317,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <div className="grid gap-10 pb-6">
             {threads.map((thread, index) => (
               <Reveal key={thread.runId} index={index}>
-                <Thread {...thread} />
+                <div id={`run-${thread.runId}`} className="scroll-mt-20">
+                  <Thread {...thread} />
+                </div>
               </Reveal>
             ))}
           </div>
         )}
+      </div>
+      <div className="hidden xl:block">
+        <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-1">
+          <DashboardRail rail={rail} />
+        </div>
+      </div>
       </div>
 
       {canCreate ? (
