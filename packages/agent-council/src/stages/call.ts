@@ -38,6 +38,22 @@ export function isProviderFailure(error: unknown): boolean {
   return error instanceof AIError && error.retryable && FAILOVER_CODES.has(error.code);
 }
 
+/**
+ * The model, not the provider, is the problem (retired, closed to this account,
+ * no tool support): a 4xx other than 429 that the provider layer still marked
+ * retryable. Such failures do not count against the provider's circuit breaker.
+ */
+export function isModelFailure(error: unknown): boolean {
+  return (
+    error instanceof AIError &&
+    error.code === "PROVIDER_UNAVAILABLE" &&
+    typeof error.status === "number" &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 429
+  );
+}
+
 export type RoutingCtx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
 
 export interface ProviderPreference {
@@ -68,6 +84,8 @@ export interface ModelCallInput {
   /** Tool-use loop (research stage only). */
   tools?: readonly Tool[];
   maxSteps?: number;
+  /** "PROVIDER::model" pairs other writers of the same account use; avoided while any other model is available. */
+  avoidModels?: readonly string[];
 }
 
 export interface ModelCallResult {
@@ -96,27 +114,58 @@ function candidatePreferences(ctx: PipelineContext, pref?: ProviderPreference): 
  * Resolves provider + model up front (so the breaker and the budget know what
  * they are dealing with) and skips providers whose breaker is open.
  */
+/** Prefers a model no sibling writer uses; when only those remain, uses them rather than failing. */
+async function resolveProviderAvoiding(
+  ctx: PipelineContext,
+  input: ModelCallInput,
+  excluded: ReadonlySet<AIProviderName>,
+  excludedModels: readonly string[],
+  stayWith?: AIProviderName,
+): Promise<ModelDecision> {
+  const avoid = (input.avoidModels ?? []).filter((m) => !excludedModels.includes(m));
+  if (avoid.length > 0) {
+    try {
+      return await resolveProvider(ctx, input.capability, input.pref, excluded, [...excludedModels, ...avoid], stayWith);
+    } catch (error) {
+      if (!(error instanceof PipelineBlocked)) throw error;
+    }
+  }
+  return resolveProvider(ctx, input.capability, input.pref, excluded, excludedModels, stayWith);
+}
+
+/** How many models of one provider a single call may burn before moving to the next provider. */
+const MODELS_PER_PROVIDER = 2;
+
 export async function resolveProvider(
   ctx: PipelineContext,
   capability: "text" | "json",
   pref?: ProviderPreference,
   excluded: ReadonlySet<AIProviderName> = new Set(),
+  excludedModels: readonly string[] = [],
+  /** Provider that just failed on one model: tried first again, with its next model. */
+  stayWith?: AIProviderName,
 ): Promise<ModelDecision> {
   const seen = new Set<string>();
-  for (const candidate of candidatePreferences(ctx, pref)) {
+  const dead = ctx.deadModels ? [...ctx.deadModels] : [];
+  excludedModels = dead.length > 0 ? [...new Set([...excludedModels, ...dead])] : excludedModels;
+  const order = stayWith && !excluded.has(stayWith) ? [{ provider: stayWith }, ...candidatePreferences(ctx, pref)] : candidatePreferences(ctx, pref);
+  for (const candidate of order) {
     if (candidate?.provider && excluded.has(candidate.provider)) continue;
     const routing = await ctx.routing(capability, candidate);
     let provider: AIProviderName;
     let model: string;
     try {
-      const decision = ctx.router.route({ ...routing, requiredCapability: capability });
+      // A pinned model that already failed must not be re-picked: drop the pin and let auto choose within the provider.
+      const pinned = candidate?.model ? `${candidate.provider}::${candidate.model}` : undefined;
+      const user = pinned && excludedModels.includes(pinned) ? { provider: candidate?.provider } : routing.user;
+      const decision = ctx.router.route({ ...routing, user, requiredCapability: capability, excludeModels: excludedModels });
       provider = decision.provider;
       model = decision.model;
     } catch {
       continue;
     }
     const key = `${provider}::${model}`;
-    if (seen.has(key) || excluded.has(provider)) continue;
+    if (seen.has(key) || excluded.has(provider) || excludedModels.includes(key)) continue;
     seen.add(key);
     if (await ctx.health.isOpen(provider)) continue;
     return {
@@ -192,14 +241,33 @@ async function executeWithBudget(
 export async function callModel(ctx: PipelineContext, input: ModelCallInput): Promise<ModelCallResult> {
   const prompt = getPrompt(input.promptKey);
   const excluded = new Set<AIProviderName>();
+  const excludedModels: string[] = [];
+  const burned = new Map<AIProviderName, number>();
+  let stayWith: AIProviderName | undefined;
+  let lastError: unknown;
   for (;;) {
-    const decision = await resolveProvider(ctx, input.capability, input.pref, excluded);
+    let decision: ModelDecision;
+    try {
+      decision = await resolveProviderAvoiding(ctx, input, excluded, excludedModels, stayWith);
+    } catch (error) {
+      // Nothing left to try: the provider's own error explains it better than "unavailable".
+      if (lastError !== undefined && error instanceof PipelineBlocked) throw lastError;
+      throw error;
+    }
     try {
       return await callProvider(ctx, input, prompt, decision);
     } catch (error) {
-      excluded.add(decision.provider);
+      if (!isProviderFailure(error)) throw error;
+      lastError = error;
+      excludedModels.push(`${decision.provider}::${decision.model}`);
+      if (isModelFailure(error)) ctx.deadModels?.add(`${decision.provider}::${decision.model}`);
+      const tries = (burned.get(decision.provider) ?? 0) + 1;
+      burned.set(decision.provider, tries);
+      // Same provider, next model, until it has burned its share; then the next provider.
+      if (tries >= MODELS_PER_PROVIDER) excluded.add(decision.provider);
+      stayWith = excluded.has(decision.provider) ? undefined : decision.provider;
       const alternative = ctx.availableProviders.some((p) => !excluded.has(p));
-      if (!isProviderFailure(error) || !alternative) throw error;
+      if (!alternative) throw error;
       await ctx.store.addEvent(input.runId, {
         step: input.step,
         status: "STARTED",
@@ -208,7 +276,7 @@ export async function callModel(ctx: PipelineContext, input: ModelCallInput): Pr
         promptKey: prompt.key,
         promptVersion: prompt.version,
         promptHash: prompt.hash,
-        validation: `${decision.provider} could not take the call (${errorMessage(error)}); trying another provider`,
+        validation: `${decision.model} could not take the call (${errorMessage(error)}); trying ${stayWith ? "another model" : "another provider"}`,
       });
     }
   }
@@ -270,7 +338,7 @@ async function callProvider(
       promptHash: prompt.hash,
     };
   } catch (error) {
-    await ctx.health.recordFailure(decision.provider, errorMessage(error));
+    if (!isModelFailure(error)) await ctx.health.recordFailure(decision.provider, errorMessage(error));
     await ctx.budget.release(reservation.reservationId);
     await ctx.store.addEvent(input.runId, { ...base, status: "FAILED", error: errorMessage(error) });
     throw error;

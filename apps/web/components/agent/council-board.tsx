@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Award, Loader2, ShieldCheck, Sparkles } from "lucide-react";
-import type { AgentBoard, AgentSeat } from "@platform/agent-council/progress";
+import { WRITER_LANES, type AgentBoard, type AgentSeat } from "@platform/agent-council/progress";
 import { AGENTS, stageOfSeat } from "@/components/agent/agents";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +97,14 @@ function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
         <span className="font-semibold">
           {identity.name} {seat.label}
         </span>
+        {seat.label && WRITER_LANES[seat.label] && (
+          <span
+            className="rounded-full border border-white/60 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:border-white/10"
+            title={WRITER_LANES[seat.label]!.brief}
+          >
+            {WRITER_LANES[seat.label]!.name} lane
+          </span>
+        )}
         <StateDot state={seat.state} />
         <ModelChip seat={seat} />
         <span className="ml-auto text-[11px] text-muted-foreground">{seat.detail}</span>

@@ -173,18 +173,57 @@ describe("runPipelineToCompletion", () => {
     await expect(runPipelineToCompletion(ctx, "run_1")).resolves.toEqual({ status: "ADAPTING", done: true });
 
     const research = memory.events.filter((e) => e.step === "research" && e.promptKey);
-    expect(research.map((e) => e.status)).toEqual(["STARTED", "FAILED", "STARTED", "STARTED", "SUCCEEDED"]);
-    expect(research.slice(0, 3).map((e) => e.provider)).toEqual(["GOOGLE", "GOOGLE", "GOOGLE"]);
-    expect(research[3]!.provider).not.toBe("GOOGLE");
-    expect(research[4]!.provider).toBe(research[3]!.provider);
+    // Both Google models are tried (quota is per provider, but the call cannot know that), then another provider.
+    expect(research.map((e) => e.status)).toEqual(["STARTED", "FAILED", "STARTED", "STARTED", "FAILED", "STARTED", "STARTED", "SUCCEEDED"]);
+    expect(research.slice(0, 6).every((e) => e.provider === "GOOGLE")).toBe(true);
+    expect(research[6]!.provider).not.toBe("GOOGLE");
+    expect(research[7]!.provider).toBe(research[6]!.provider);
     expect(research[1]!.error).toMatch(/quota exceeded/);
-    expect(String(research[2]!.validation)).toMatch(/trying another provider/);
+    expect(String(research[2]!.validation)).toMatch(/trying another model/);
+    expect(String(research[5]!.validation)).toMatch(/trying another provider/);
     expect(memory.recommendations).toHaveLength(2);
     // Every auto-routed call tries Google first until the breaker opens (5 failures), then skips it.
     const googleCalls = script.calls.filter((c) => c.provider === "GOOGLE").length;
     expect(googleCalls).toBeGreaterThanOrEqual(1);
     expect(googleCalls).toBeLessThanOrEqual(5);
     expect(memory.events.filter((e) => e.provider === "GOOGLE" && e.status === "SUCCEEDED")).toHaveLength(0);
+  });
+
+  it("tries the provider's next model before leaving the provider", async () => {
+    const { ctx, memory, script } = createTestContext(baseRun(), {
+      allowedModels: ["OPENAI::gpt-test"],
+      availableProviders: ["GOOGLE", "OPENAI"],
+    });
+    script.brokenModels.add("GOOGLE::gemini-test");
+
+    await expect(runPipelineToCompletion(ctx, "run_1")).resolves.toEqual({ status: "ADAPTING", done: true });
+
+    const research = memory.events.filter((e) => e.step === "research" && e.promptKey);
+    expect(research.slice(0, 2).map((e) => [e.status, e.model])).toEqual([
+      ["STARTED", "gemini-test"],
+      ["FAILED", "gemini-test"],
+    ]);
+    expect(String(research[2]!.validation)).toMatch(/trying another model/);
+    expect(research[3]).toMatchObject({ status: "STARTED", provider: "GOOGLE", model: "gemini-test-2" });
+    expect(research[4]!.status).toBe("SUCCEEDED");
+  });
+
+  it("puts every writer on a different model and keeps them apart when one fails over", async () => {
+    const { ctx, script } = createTestContext(baseRun(), { availableProviders: ["GOOGLE", "OPENAI", "ANTHROPIC"] });
+    expect(planWriters(ctx).map((s) => `${s.pref.provider}::${s.pref.model}`)).toEqual([
+      "GOOGLE::gemini-test",
+      "OPENAI::gpt-test",
+      "ANTHROPIC::claude-test",
+    ]);
+    // Google's first model is broken: writer A moves to Google's second model, not to a sibling's model.
+    script.brokenModels.add("GOOGLE::gemini-test");
+    await runPipelineToCompletion(ctx, "run_1");
+    const writers = script.calls.filter((c) => c.stage === "WRITER" && c.system.includes("PLATFORM: LINKEDIN"));
+    const used = writers.map((c) => `${c.provider}::${c.model}`);
+    expect(used).toContain("GOOGLE::gemini-test-2");
+    expect(new Set(used.filter((m) => m !== "GOOGLE::gemini-test")).size).toBe(3);
+    expect(writers.some((c) => c.system.includes("YOUR LANE") && c.system.includes("Story:"))).toBe(true);
+    expect(writers.some((c) => c.system.includes("Contrarian:"))).toBe(true);
   });
 
   it("fails the call when every provider is out of quota", async () => {

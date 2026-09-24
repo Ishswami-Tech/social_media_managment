@@ -32,6 +32,7 @@ import { createCircuitBreaker } from "../../src/circuit-breaker";
 
 export const CATALOGUE: ModelInfo[] = [
   { provider: "GOOGLE", model: "gemini-test", capabilities: ["text", "json"], inputCostPerM: 0.5, outputCostPerM: 1 },
+  { provider: "GOOGLE", model: "gemini-test-2", capabilities: ["text", "json"], inputCostPerM: 0.8, outputCostPerM: 1.5 },
   { provider: "OPENAI", model: "gpt-test", capabilities: ["text", "json"], inputCostPerM: 1, outputCostPerM: 2 },
   { provider: "ANTHROPIC", model: "claude-test", capabilities: ["text", "json"], inputCostPerM: 2, outputCostPerM: 4 },
 ];
@@ -61,6 +62,8 @@ export interface Script {
   reviseOnReview: string[];
   /** The scripted editor answers a revise request with text far over any limit. */
   overlongRevision: boolean;
+  /** "PROVIDER::model" pairs that answer with a 400 "function calling is not enabled" error. */
+  brokenModels: Set<string>;
 }
 
 export const createScript = (): Script => ({
@@ -71,6 +74,7 @@ export const createScript = (): Script => ({
   skillPicks: [],
   reviseOnReview: [],
   overlongRevision: false,
+  brokenModels: new Set(),
 });
 
 /** Draft A is clean; draft B states a number no claim supports, so it must be revised. */
@@ -214,6 +218,8 @@ export function createScriptedProvider(name: AIProviderName, script: Script): AI
         hasTools: Boolean(req.tools?.length),
       });
       if (script.outOfQuota.has(name)) throw AIError.fromHttp(name, 429, { error: { message: `${name} quota exceeded` } });
+      if (script.brokenModels.has(`${name}::${req.model}`))
+        throw AIError.fromHttp(name, 400, { error: { message: "Function calling is not enabled for this model" } });
       if (script.failing.has(stage)) throw new Error(`scripted failure in ${stage}`);
       const text = answer(stage, system, script);
       return {
@@ -398,6 +404,7 @@ export function createTestContext(
     allowedModels: options.allowedModels,
     researchTools: [NOOP_TOOL],
     ...(options.skills ? { skills: options.skills } : {}),
+    deadModels: new Set<string>(),
     store: memory.store,
     budget: money.budget,
     health: createCircuitBreaker(),

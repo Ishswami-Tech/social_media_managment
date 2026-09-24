@@ -11,6 +11,22 @@
  * account id).
  */
 
+/** What each writer is asked to lean into; shown next to the writer and sent in its prompt. */
+export const WRITER_LANES: Record<string, { name: string; brief: string }> = {
+  A: {
+    name: "Story",
+    brief: "Lead with a concrete moment or scene from the brief or the story bank, then draw the lesson. Prefer first person where the account is a person.",
+  },
+  B: {
+    name: "Evidence",
+    brief: "Lead with the strongest number or fact from the allowed claims, then explain what it changes. Short declarative sentences, no anecdote opener.",
+  },
+  C: {
+    name: "Contrarian",
+    brief: "Open by challenging a common belief the audience holds, then make the case. End with a question that invites disagreement.",
+  },
+};
+
 export const PROGRESS_STAGE_KEYS = [
   "research",
   "strategy",

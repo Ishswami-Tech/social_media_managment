@@ -2,7 +2,7 @@ import { definePrompt } from "./registry";
 
 export const WRITER_PROMPT = definePrompt(
   "writer",
-  2,
+  3,
   `STAGE: WRITER
 You are one of several writers on an Agent Council. Write ONE publish-ready {{platform}} post for the account below, following the strategy exactly. Your draft will be checked by deterministic rules and judged blind against other drafts, so quality and discipline both matter.
 
@@ -15,6 +15,9 @@ Capabilities and limits: {{capabilities}}
 
 STRATEGY (follow it)
 {{strategy}}
+
+YOUR LANE (other writers take other lanes; the judge compares the results)
+{{lane}}
 
 ALLOWED CLAIMS (the ONLY facts, numbers and sources you may use; cite by id)
 {{claims}}

@@ -20,9 +20,11 @@ export class ModelRouter {
   constructor(private readonly catalogue: ModelInfo[]) {}
 
   route(ctx: RoutingContext): RouteDecision {
+    const excluded = new Set(ctx.excludeModels ?? []);
     const candidates = this.catalogue
       .filter((m) => m.capabilities.includes(ctx.requiredCapability))
       .filter((m) => ctx.availableProviders.includes(m.provider))
+      .filter((m) => !excluded.has(`${m.provider}::${m.model}`))
       .sort((a, b) => costOf(a) - costOf(b));
     if (candidates.length === 0) {
       throw new AIError(`No available model with capability "${ctx.requiredCapability}"`, "INVALID_REQUEST", false);
@@ -50,6 +52,14 @@ export class ModelRouter {
       reason: "auto",
       fallbacks: this.fallbacksFor(auto, candidates, ctx),
     };
+  }
+
+  /** Models with a capability among the given providers, in automatic-routing order (cheapest, then catalogue order). */
+  candidates(capability: AICapability, providers: readonly AIProviderName[]): { provider: AIProviderName; model: string }[] {
+    return this.catalogue
+      .filter((m) => m.capabilities.includes(capability) && providers.includes(m.provider))
+      .sort((a, b) => costOf(a) - costOf(b))
+      .map((m) => ({ provider: m.provider, model: m.model }));
   }
 
   private fallbacksFor(chosen: ModelInfo, candidates: ModelInfo[], ctx: RoutingContext) {

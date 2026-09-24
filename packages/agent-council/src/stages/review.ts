@@ -171,6 +171,7 @@ async function reviewDraft(
         step: stepName("review", account, draft.label),
         promptKey: "review",
         pref: other ? { provider: other } : undefined,
+        avoidModels: [`${draft.provider}::${draft.model}`],
         temperature: 0.2,
         expectedOutputTokens: REVIEW_OUTPUT_TOKENS,
         system: withSkills(

@@ -97,6 +97,7 @@ async function judgeAccount(
       step: stepName("judge", account),
       promptKey: "judge",
       pref: judgePreference(ctx, drafts),
+      avoidModels: [...new Set(drafts.map((d) => `${d.provider}::${d.model}`))],
       temperature: 0.2,
       expectedOutputTokens: JUDGE_OUTPUT_TOKENS,
       system,

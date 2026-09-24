@@ -143,6 +143,8 @@ export interface RoutingContext {
   availableProviders: AIProviderName[];
   /** Enable failover to the next candidate on transient errors */
   allowFallback?: boolean;
+  /** "PROVIDER::model" pairs that already failed for this call; routing skips them. */
+  excludeModels?: readonly string[];
 }
 
 export interface RouteDecision {

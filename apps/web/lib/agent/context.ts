@@ -78,6 +78,7 @@ export async function buildPipelineContext(organizationId: string, runId?: strin
     availableProviders: ai.available,
     allowedModels,
     skills,
+    deadModels: new Set<string>(),
     researchTools: [...researchTools, ...plugins],
     store: createPrismaRunStore(),
     budget: createPrismaBudget(),

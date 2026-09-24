@@ -282,6 +282,12 @@ export interface PipelineContext {
    */
   skills?: SkillCard[];
   /**
+   * Additive: "PROVIDER::model" pairs that failed for a model-level reason
+   * (retired, no tool support) during this job. Shared by every stage of the
+   * run so no later agent tries them again; never persisted.
+   */
+  deadModels?: Set<string>;
+  /**
    * Additive: skill playbooks attached to this campaign. Appended to the system
    * prompt of every stage that writes text (writer, revision, synthesis, adapt).
    */

@@ -1,7 +1,8 @@
 export type AIErrorCode =
   "AUTH" | "RATE_LIMITED" | "CONTENT_FILTERED" | "INVALID_REQUEST" | "PROVIDER_UNAVAILABLE" | "TIMEOUT" | "UNKNOWN";
 
-const RETIRED_MODEL_RE = /no longer available|not available to new users|has been (retired|deprecated|shut down)|is deprecated|model .* not found|does not exist/i;
+const RETIRED_MODEL_RE =
+  /no longer available|not available to new users|has been (retired|deprecated|shut down)|is deprecated|model .* not found|does not exist|(function|tool) calling is not (enabled|supported)|does not support (tools|function|json)|unsupported (model|tool)/i;
 
 export class AIError extends Error {
   constructor(

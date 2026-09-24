@@ -7,6 +7,7 @@ import { AI_PROVIDERS, type AIProviderName } from "@platform/types";
 import type { DraftCandidate, PipelineContext, RunSnapshot } from "../contracts";
 import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
+import { WRITER_LANES } from "../progress";
 import { callJson, type ProviderPreference } from "./call";
 import {
   accountVars,
@@ -54,8 +55,7 @@ export function parseAllowedModels(
  */
 export function planWriters(ctx: PipelineContext): WriterSlot[] {
   const allowed = parseAllowedModels(ctx.allowedModels, ctx.availableProviders);
-  const prefs: ProviderPreference[] =
-    allowed.length > 0 ? allowed : ctx.availableProviders.map((provider) => ({ provider }));
+  const prefs: ProviderPreference[] = allowed.length > 0 ? allowed : distinctModels(ctx);
   const pool = prefs.length > 0 ? prefs : [{}];
   const distinct = new Set(pool.map((p) => p.provider)).size;
   const count = pool.length === 1 ? DRAFT_LABELS.length : Math.min(DRAFT_LABELS.length, pool.length);
@@ -66,11 +66,38 @@ export function planWriters(ctx: PipelineContext): WriterSlot[] {
   }));
 }
 
+/**
+ * Distinct models for the writers, spread across providers: the best model of
+ * each provider first, then each provider's next model, so no two writers share
+ * a model while the organization has enough of them.
+ */
+export function distinctModels(ctx: PipelineContext): ProviderPreference[] {
+  const byProvider = new Map<AIProviderName, ProviderPreference[]>();
+  for (const c of ctx.router.candidates("json", ctx.availableProviders)) {
+    const list = byProvider.get(c.provider) ?? [];
+    if (list.length < DRAFT_LABELS.length) byProvider.set(c.provider, [...list, { provider: c.provider, model: c.model }]);
+  }
+  const lists = ctx.availableProviders.map((p) => byProvider.get(p) ?? []).filter((l) => l.length > 0);
+  const out: ProviderPreference[] = [];
+  for (let round = 0; out.length < DRAFT_LABELS.length && lists.some((l) => l.length > round); round++) {
+    for (const list of lists) if (list[round] && out.length < DRAFT_LABELS.length) out.push(list[round]!);
+  }
+  return out.length > 0 ? out : ctx.availableProviders.map((provider) => ({ provider }));
+}
+
+/** "PROVIDER::model" of every other writer slot, so a failover never converges on a sibling's model. */
+function siblingModels(slots: readonly WriterSlot[], slot: WriterSlot): string[] {
+  return slots
+    .filter((s) => s.label !== slot.label && s.pref.provider && s.pref.model)
+    .map((s) => `${s.pref.provider}::${s.pref.model}`);
+}
+
 async function writeDraft(
   ctx: PipelineContext,
   run: RunSnapshot,
   account: RunAccountSnapshot,
   slot: WriterSlot,
+  slots: readonly WriterSlot[] = [slot],
 ): Promise<DraftCandidate> {
   const { value, call } = await callJson(
     ctx,
@@ -80,6 +107,7 @@ async function writeDraft(
       step: stepName("writer", account, slot.label),
       promptKey: "writer",
       pref: slot.pref,
+      avoidModels: siblingModels(slots, slot),
       temperature: slot.temperature,
       expectedOutputTokens: WRITER_OUTPUT_TOKENS,
       system: withSkills(
@@ -88,6 +116,7 @@ async function writeDraft(
           ...accountVars(account),
           strategy: strategyText(account.strategy),
           claims: claimsText(supportedClaims(run.claims)),
+          lane: WRITER_LANES[slot.label] ? `${WRITER_LANES[slot.label]!.name}: ${WRITER_LANES[slot.label]!.brief}` : "Your own best angle within the strategy.",
         }),
         run,
         account.platform,
@@ -122,7 +151,7 @@ export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Prom
     let perAccount = 0;
     for (const slot of slots) {
       try {
-        const draft = await writeDraft(ctx, run, account, slot);
+        const draft = await writeDraft(ctx, run, account, slot, slots);
         await ctx.store.saveDraft(run.id, account.runAccountId, draft);
         perAccount += 1;
       } catch (error) {
