@@ -37,6 +37,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/posts", label: "Posts", icon: "posts" },
   { href: "/whatsapp/inbox", label: "Inbox", icon: "inbox", capability: "whatsapp:view" },
   { href: "/accounts", label: "Accounts", icon: "accounts", capability: "accounts:view" },
+  { href: "/plan", label: "Plan", icon: "calendar", capability: "ai:generate" },
   { href: "/memory", label: "Memory", icon: "memory", capability: "accounts:view" },
   { href: "/settings", label: "Settings", icon: "settings", capability: "org:settings" },
 ];

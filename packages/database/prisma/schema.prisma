@@ -143,6 +143,7 @@ model Organization {
   skills          OrganizationSkill[]
   plugins         OrganizationPlugin[]
   agentRuns       AgentRun[]
+  contentPlans    ContentPlan[]
   accountProfiles AccountProfile[]
   budgetReservations BudgetReservation[]
   researchBriefs  ResearchBrief[]
@@ -790,6 +791,25 @@ enum CircuitState {
   CLOSED
   OPEN
   HALF_OPEN
+}
+
+/// A month (or so) of post ideas the planning agent proposed; items become AgentRuns when started.
+model ContentPlan {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById    String
+  theme          String
+  audience       String?
+  platforms      Platform[]
+  startDate      DateTime
+  days           Int
+  /// [{ date, platform, title, idea, goal, format, funnel, runId? }]
+  items          Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, createdAt])
 }
 
 model AgentRun {
