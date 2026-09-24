@@ -120,15 +120,18 @@ describe("images and model listing", () => {
     expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-pro"));
     expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-flash-lite"));
     expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-flash-preview"));
+    expect(rankGeminiModel("gemini-2.5-flash")).toBeGreaterThan(rankGeminiModel("gemma-4-26b-a4b-it"));
     mockFetch({
       models: [
+        { name: "models/gemma-4-26b-a4b-it", supportedGenerationMethods: ["generateContent"] },
         { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/gemini-3.6-flash-tts", supportedGenerationMethods: ["generateContent"] },
         { name: "models/gemini-3.6-pro", supportedGenerationMethods: ["generateContent"] },
         { name: "models/gemini-3.6-flash", supportedGenerationMethods: ["generateContent"] },
       ],
     });
     const models = await provider.listModels(auth);
-    expect(models.map((m) => m.id)).toEqual(["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash"]);
+    expect(models.map((m) => m.id)).toEqual(["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash", "gemma-4-26b-a4b-it"]);
   });
 
   it("tags capabilities by model id and drops embedding models", async () => {

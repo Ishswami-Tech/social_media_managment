@@ -290,7 +290,7 @@ export class GoogleProvider implements AIProvider {
         const id = m.name.replace(/^models\//, "");
         return { id, displayName: m.displayName ?? id, capabilities: capabilitiesFor(id) };
       })
-      .filter((m) => !m.capabilities.includes("embedding"))
+      .filter((m) => !m.capabilities.includes("embedding") && !NON_TEXT_RE.test(m.id))
       .sort((a, b) => rankGeminiModel(b.id) - rankGeminiModel(a.id));
   }
 }
@@ -300,14 +300,20 @@ export class GoogleProvider implements AIProvider {
  * everything else, stable releases over previews, "lite" last within a tier.
  */
 export function rankGeminiModel(id: string): number {
-  const version = /(\d+(?:\.\d+)?)/.exec(id.replace(/^gemini-|^imagen-/, ""));
-  const generation = version ? Number.parseFloat(version[1]!) : 0;
   const lower = id.toLowerCase();
+  // Only the Gemini and Imagen families carry a generation that should win; Gemma, LearnLM and
+  // other experiments sort after every Gemini so automatic routing never lands on them first.
+  const family = /^(gemini|imagen)-/.exec(lower)?.[1];
+  const version = family ? /(\d+(?:\.\d+)?)/.exec(lower.slice(family.length + 1)) : null;
+  const generation = version ? Number.parseFloat(version[1]!) : 0;
   let tier = 0;
   if (lower.includes("flash")) tier = 30;
   else if (lower.includes("pro")) tier = 20;
   else tier = 10;
   if (lower.includes("lite")) tier -= 5;
   if (lower.includes("preview") || lower.includes("exp")) tier -= 2;
-  return generation * 100 + tier;
+  return (family ? generation * 100 : 0) + tier;
 }
+
+/** Models that speak or listen rather than write: never text candidates. */
+const NON_TEXT_RE = /tts|audio|live|veo|robotics|aqa|computer-use/i;
