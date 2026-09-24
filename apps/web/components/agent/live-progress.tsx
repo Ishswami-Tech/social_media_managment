@@ -31,6 +31,7 @@ import {
   type ProgressStage,
   type ProgressStageKey,
   type RunProgress,
+  progressOutput,
 } from "@platform/agent-council/progress";
 import { formatCents } from "@/components/agent/format";
 import { isSettled } from "@/components/home/labels";
@@ -102,16 +103,6 @@ const POLL_FALLBACK_MS = 5_000;
 const MAX_STREAM_ERRORS = 2;
 /** Plenty for the view; keeps a long campaign from growing without bound. */
 const MAX_EVENTS = 400;
-const VERDICT_STEP = "judge.verdict";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function winnerOf(step: string, output: unknown): { winner?: string } | undefined {
-  if (step !== VERDICT_STEP || !isRecord(output)) return undefined;
-  return typeof output.winner === "string" ? { winner: output.winner } : undefined;
-}
 
 function fromPoll(run: NonNullable<RunPollPayload["run"]>): RunSnapshot {
   return {
@@ -128,7 +119,7 @@ function fromPoll(run: NonNullable<RunPollPayload["run"]>): RunSnapshot {
       hasRecommendation: Boolean(a.editedText ?? a.finalText),
     })),
     events: run.events.slice(-MAX_EVENTS).map((e) => {
-      const output = winnerOf(e.step, e.output);
+      const output = progressOutput(e.step, e.output);
       return {
         id: e.id,
         step: e.step,

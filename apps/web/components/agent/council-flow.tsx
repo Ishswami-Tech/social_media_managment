@@ -12,8 +12,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import gsap from "gsap";
-import { BookOpenText, Check, Compass, Gavel, PenLine, ScanSearch, Send, Wand2, type LucideIcon } from "lucide-react";
+import { Check } from "lucide-react";
 import type { ProgressStage, ProgressStageKey } from "@platform/agent-council/progress";
+import { AGENTS } from "@/components/agent/agents";
 import { cn } from "@/lib/utils";
 
 const AmbientCanvas = dynamic(() => import("./ambient-canvas"), { ssr: false });
@@ -22,26 +23,6 @@ const WIDTH = 820;
 const HEIGHT = 270;
 const RADIUS = 30;
 const LABEL_MAX_CHARS = 34;
-
-const AGENT_NAMES: Record<ProgressStageKey, string> = {
-  research: "Researcher",
-  strategy: "Strategist",
-  drafting: "Writers",
-  review: "Reviewer",
-  judge: "Judge",
-  adapt: "Editor",
-  ready: "You",
-};
-
-const AGENT_ICONS: Record<ProgressStageKey, LucideIcon> = {
-  research: ScanSearch,
-  strategy: Compass,
-  drafting: PenLine,
-  review: BookOpenText,
-  judge: Gavel,
-  adapt: Wand2,
-  ready: Send,
-};
 
 interface NodePoint {
   x: number;
@@ -75,40 +56,31 @@ export interface CouncilFlowProps {
   stages: ProgressStage[];
   /** True while agents are working; drives the flow speed and the particles. */
   working: boolean;
+  /** The model behind each stage, shown above the agent once known. */
+  models?: Partial<Record<ProgressStageKey, string>>;
+  /** Highlighted agent, and what to do when one is clicked. */
+  selected?: ProgressStageKey | null;
+  onSelect?: (key: ProgressStageKey) => void;
   className?: string;
 }
 
-function fillFor(state: ProgressStage["state"]): string {
-  switch (state) {
-    case "active":
-      return "url(#council-active)";
-    case "done":
-      return "url(#council-done)";
-    case "failed":
-      return "url(#council-failed)";
-    default:
-      return "var(--color-card)";
-  }
+function fillFor(key: ProgressStageKey, state: ProgressStage["state"]): string {
+  if (state === "failed") return "url(#council-failed)";
+  if (state === "active" || state === "done") return `url(#agent-${key})`;
+  return "var(--color-card)";
 }
 
-function strokeClass(state: ProgressStage["state"]): string {
-  switch (state) {
-    case "active":
-      return "stroke-brand";
-    case "done":
-      return "stroke-emerald-500";
-    case "failed":
-      return "stroke-destructive";
-    default:
-      return "stroke-border";
-  }
+function strokeFor(key: ProgressStageKey, state: ProgressStage["state"]): string | undefined {
+  if (state === "failed") return "#f43f5e";
+  if (state === "active" || state === "done") return AGENTS[key].to;
+  return undefined;
 }
 
 function iconClass(state: ProgressStage["state"]): string {
   return state === "pending" || state === "skipped" ? "text-muted-foreground" : "text-white";
 }
 
-export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
+export function CouncilFlow({ stages, working, models = {}, selected = null, onSelect, className }: CouncilFlowProps) {
   const reduced = useReducedMotion();
   const svg = useRef<SVGSVGElement>(null);
   // Motion styles differ between server and client, so the picture only draws after mount.
@@ -155,14 +127,12 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
       <AmbientCanvas active={working} className="pointer-events-none absolute inset-0 opacity-60" />
       <svg ref={svg} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="relative w-full" role="img" aria-label="Agents working on this post">
         <defs>
-          <linearGradient id="council-active" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--brand)" />
-            <stop offset="100%" stopColor="var(--brand-2)" />
-          </linearGradient>
-          <linearGradient id="council-done" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#0ea5a5" />
-          </linearGradient>
+          {stages.map((s) => (
+            <linearGradient key={s.key} id={`agent-${s.key}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={AGENTS[s.key].from} />
+              <stop offset="100%" stopColor={AGENTS[s.key].to} />
+            </linearGradient>
+          ))}
           <linearGradient id="council-failed" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#f43f5e" />
             <stop offset="100%" stopColor="#f97316" />
@@ -200,7 +170,8 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
         })}
         {stages.map((stage, i) => {
           const p = points[i]!;
-          const Icon = AGENT_ICONS[stage.key];
+          const identity = AGENTS[stage.key];
+          const Icon = identity.icon;
           const last = stage.activity.at(-1);
           const isActive = stage.state === "active";
           return (
@@ -209,25 +180,32 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
               initial={reduced ? false : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: reduced ? 0 : i * 0.06, duration: 0.4 }}
+              role={onSelect ? "button" : undefined}
+              tabIndex={onSelect ? 0 : undefined}
+              aria-pressed={onSelect ? selected === stage.key : undefined}
+              aria-label={onSelect ? `${identity.name}, ${identity.role}: ${last ?? stage.label}` : undefined}
+              onClick={onSelect ? () => onSelect(stage.key) : undefined}
+              onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(stage.key); } } : undefined}
+              className={cn(onSelect && "cursor-pointer outline-none", selected === stage.key && "[&_circle]:drop-shadow-[0_0_10px_color-mix(in_oklch,var(--brand)_60%,transparent)]")}
             >
               <text
                 x={p.x}
                 y={p.y - RADIUS - 14}
                 textAnchor="middle"
-                className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-[0.18em]"
+                className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-[0.14em]"
               >
-                Agent {i + 1}
+                {identity.role}
               </text>
               {isActive && !reduced && (
                 <>
-                  <circle cx={p.x} cy={p.y} r={RADIUS + 6} fill="url(#council-active)" opacity={0.35} filter="url(#council-glow)" />
+                  <circle cx={p.x} cy={p.y} r={RADIUS + 6} fill={`url(#agent-${stage.key})`} opacity={0.35} filter="url(#council-glow)" />
                   <motion.circle
                     cx={p.x}
                     cy={p.y}
                     r={RADIUS}
                     fill="none"
                     strokeWidth={1.5}
-                    className="stroke-brand"
+                    stroke={identity.to}
                     initial={{ scale: 1, opacity: 0.7 }}
                     animate={{ scale: 1.8, opacity: 0 }}
                     transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
@@ -240,8 +218,9 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
                 cy={p.y}
                 r={RADIUS}
                 strokeWidth={1.5}
-                fill={fillFor(stage.state)}
-                className={cn("drop-shadow-sm transition-colors", strokeClass(stage.state))}
+                fill={fillFor(stage.key, stage.state)}
+                stroke={strokeFor(stage.key, stage.state)}
+                className={cn("drop-shadow-sm transition-colors", !strokeFor(stage.key, stage.state) && "stroke-border")}
                 animate={isActive && !reduced ? { scale: [1, 1.06, 1] } : { scale: 1 }}
                 transition={isActive ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" } : { duration: 0.3 }}
                 style={{ transformOrigin: `${p.x}px ${p.y}px` }}
@@ -263,10 +242,10 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
                 </motion.g>
               )}
               <text x={p.x} y={p.y + RADIUS + 20} textAnchor="middle" className="fill-foreground text-[13.5px] font-semibold">
-                {AGENT_NAMES[stage.key]}
+                {identity.name}
               </text>
               <text x={p.x} y={p.y + RADIUS + 36} textAnchor="middle" className="fill-muted-foreground text-[11px]">
-                {truncate(last ?? stage.label)}
+                {truncate(models[stage.key] && stage.state !== "pending" ? `${models[stage.key]} · ${last ?? stage.label}` : (last ?? stage.label))}
               </text>
             </motion.g>
           );

@@ -2,6 +2,7 @@ import { isSuperAdmin, requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { Aurora } from "@/components/app/aurora";
 import { Sidebar } from "@/components/app/sidebar";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { UserMenu } from "@/components/app/user-menu";
 import { MAIN_NAV, MORE_NAV, ORG_NAV, WHATSAPP_NAV, type NavItem } from "@/components/app/nav";
 
@@ -30,11 +31,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl md:px-6">
           <div className="text-sm text-muted-foreground md:hidden">{ctx.organization.name}</div>
           <div className="hidden md:block" />
-          <UserMenu
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <UserMenu
             user={{ name: ctx.user.name, email: ctx.user.email, image: ctx.user.image }}
             role={ctx.role ?? (ctx.actor.isSuperAdmin ? "SUPER ADMIN" : undefined)}
-            impersonatedBy={ctx.impersonatedBy}
-          />
+              impersonatedBy={ctx.impersonatedBy}
+            />
+          </div>
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>

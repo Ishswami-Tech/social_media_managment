@@ -39,8 +39,69 @@ export interface ProgressEvent {
   error?: string | null;
   /** ISO timestamp. */
   at: string;
-  /** Carried for `judge.verdict` (winning draft), `skills` (chosen playbooks) and `review` (verdict). */
-  output?: { winner?: string; skills?: string[]; verdict?: string; issues?: string[]; fixed?: boolean } | null;
+  /**
+   * Carried for `judge.verdict` (winner and scores), `skills` (chosen playbooks),
+   * `review` (verdict) and `writer` / `revision` / `synthesis` / `adapt` (a preview of the text).
+   */
+  output?: {
+    winner?: string;
+    scores?: { label: string; score: number; rationale?: string }[];
+    skills?: string[];
+    verdict?: string;
+    issues?: string[];
+    fixed?: boolean;
+    draft?: string;
+  } | null;
+}
+
+const DRAFT_PREVIEW_CHARS = 700;
+const VERDICT_STEP = "judge.verdict";
+
+const strings = (value: unknown): string[] | undefined =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : undefined;
+
+/** A model call's stored output is the JSON it returned (possibly truncated); the post text inside it is the preview. */
+function draftPreview(output: unknown): string | undefined {
+  if (typeof output !== "string") return undefined;
+  const match = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(output);
+  if (!match) return undefined;
+  try {
+    return (JSON.parse(`"${match[1]}"`) as string).slice(0, DRAFT_PREVIEW_CHARS);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Only the outputs the progress views read travel to the browser: the judge's
+ * winner and scores, the chosen playbook names, a platform review's verdict and
+ * a preview of the text a writing step produced. Pure, so the server (SSR and
+ * the stream) and the browser (polling fallback) parse events identically.
+ */
+export function progressOutput(step: string, output: unknown): ProgressEvent["output"] {
+  const head = step.split(":")[0] ?? "";
+  if (head === "writer" || head === "revision" || head === "synthesis" || head === "adapt") {
+    const draft = draftPreview(output);
+    return draft ? { draft } : undefined;
+  }
+  if (typeof output !== "object" || output === null || Array.isArray(output)) return undefined;
+  const record = output as Record<string, unknown>;
+  if (step === VERDICT_STEP) {
+    const scores = Array.isArray(record.scores)
+      ? record.scores.flatMap((s) => {
+          if (typeof s !== "object" || s === null) return [];
+          const { label, score, rationale } = s as { label?: unknown; score?: unknown; rationale?: unknown };
+          return typeof label === "string" && typeof score === "number"
+            ? [{ label, score, ...(typeof rationale === "string" ? { rationale } : {}) }]
+            : [];
+        })
+      : [];
+    return typeof record.winner === "string" ? { winner: record.winner, scores } : undefined;
+  }
+  if (step === "skills") return { skills: strings(record.skills) ?? [] };
+  if (step.startsWith("review:") && typeof record.verdict === "string")
+    return { verdict: record.verdict, issues: strings(record.issues) ?? [], fixed: record.fixed === true };
+  return undefined;
 }
 
 /** One social account taking part, as the progress view needs it. */
@@ -575,6 +636,183 @@ export function buildProgress(
   return {
     stages,
     overall: { label, percent: Math.round((completed / PROGRESS_STAGE_KEYS.length) * 100) },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Live board: who is doing what, with which model
+// ---------------------------------------------------------------------------
+
+export type SeatRole = "research" | "strategy" | "writer" | "review" | "judge" | "adapt";
+
+export interface AgentSeat {
+  role: SeatRole;
+  /** "Researcher", "Writer B", … */
+  name: string;
+  /** Draft label for writers. */
+  label?: string;
+  provider?: string;
+  model?: string;
+  /** Short display name of the model, e.g. "Gemini 2.5 Flash". */
+  modelLabel?: string;
+  state: ProgressStageState;
+  /** Latest plain-language line for this seat. */
+  detail: string;
+  latencyMs?: number;
+  /** Writers: a preview of the draft as soon as it exists. */
+  draft?: string;
+  /** Writers: the blind judge's score (0-60) and reason once judged. */
+  score?: number;
+  rationale?: string;
+  /** Writers: the platform reviewer's verdict once reviewed. */
+  reviewVerdict?: string;
+  reviewIssues?: number;
+  winner?: boolean;
+}
+
+export interface AgentBoard {
+  /** Single-seat agents in pipeline order. */
+  seats: AgentSeat[];
+  /** One seat per writer label, in label order. */
+  writers: AgentSeat[];
+  /** The model behind each stage, for the arc's captions. */
+  modelsByStage: Partial<Record<ProgressStageKey, string>>;
+}
+
+const MODEL_WORDS: Record<string, string> = {
+  gemini: "Gemini",
+  claude: "Claude",
+  gpt: "GPT",
+  fable: "Fable",
+  opus: "Opus",
+  sonnet: "Sonnet",
+  haiku: "Haiku",
+  flash: "Flash",
+  pro: "Pro",
+  lite: "Lite",
+  mini: "Mini",
+  preview: "Preview",
+};
+
+/** "claude-fable-5-1" → "Claude Fable 5.1", "gemini-2.5-flash" → "Gemini 2.5 Flash". */
+export function modelLabel(model: string | null | undefined, provider?: string | null): string | undefined {
+  if (!model) return provider ? providerName(provider) : undefined;
+  const bare = model.replace(/^.*\//, "").replace(/-\d{8}$/, "");
+  const words = bare.split(/[-_]/).filter(Boolean);
+  const out: string[] = [];
+  for (const w of words) {
+    const lower = w.toLowerCase();
+    if (MODEL_WORDS[lower]) {
+      out.push(MODEL_WORDS[lower]);
+    } else if (/^\d+$/.test(w) && out.length > 0 && /^\d+(\.\d+)?$/.test(out[out.length - 1] ?? "")) {
+      out[out.length - 1] = `${out[out.length - 1]}.${w}`;
+    } else if (/^\d/.test(w)) {
+      out.push(w);
+    } else {
+      out.push(w.charAt(0).toUpperCase() + w.slice(1));
+    }
+  }
+  return out.join(" ");
+}
+
+function seatState(status: string): ProgressStageState {
+  if (status === "STARTED") return "active";
+  if (status === "SUCCEEDED") return "done";
+  if (status === "FAILED") return "failed";
+  return "skipped";
+}
+
+function singleSeat(role: SeatRole, name: string, key: ProgressStageKey, heads: readonly string[], stage: ProgressStage | undefined, ordered: readonly ProgressEvent[]): AgentSeat {
+  const own = ordered.filter((e) => heads.includes(parseStep(e.step).head) && e.provider);
+  const last = own[own.length - 1];
+  return {
+    role,
+    name,
+    provider: last?.provider ?? undefined,
+    model: last?.model ?? undefined,
+    modelLabel: modelLabel(last?.model, last?.provider),
+    state: stage?.state ?? "pending",
+    detail: stage?.activity.at(-1) ?? stage?.label ?? "",
+    ...(last?.latencyMs ? { latencyMs: last.latencyMs } : {}),
+    ...(stage?.key === key ? {} : {}),
+  };
+}
+
+/**
+ * The live board behind the arc: which model sits in each seat, every writer
+ * with its draft as it lands, then the reviewer's verdict and the judge's
+ * score on each. Same inputs as `buildProgress`, so the two never disagree.
+ */
+export function buildBoard(status: string, events: readonly ProgressEvent[], accounts: readonly ProgressAccount[]): AgentBoard {
+  const ordered = latestAttempt([...events].sort(byTime));
+  const progress = buildProgress(status, events, accounts);
+  const stage = (key: ProgressStageKey) => progress.stages.find((s) => s.key === key);
+
+  const seats: AgentSeat[] = [
+    singleSeat("research", "Researcher", "research", ["research", "claims"], stage("research"), ordered),
+    singleSeat("strategy", "Strategist", "strategy", ["strategy", "skills"], stage("strategy"), ordered),
+    singleSeat("review", "Reviewer", "review", ["review", "cross-review"], stage("review"), ordered),
+    singleSeat("judge", "Judge", "judge", ["judge"], stage("judge"), ordered),
+    singleSeat("adapt", "Editor", "adapt", ["adapt", "synthesis", "media"], stage("adapt"), ordered),
+  ];
+
+  const writers = new Map<string, AgentSeat>();
+  for (const e of ordered) {
+    const { head, label, suffix } = parseStep(e.step);
+    if (head === "judge.verdict" && e.output) {
+      for (const s of e.output.scores ?? []) {
+        const current = writers.get(s.label);
+        if (current) writers.set(s.label, { ...current, score: s.score, rationale: s.rationale, winner: e.output.winner === s.label });
+      }
+      if (e.output.winner && !(e.output.scores ?? []).length) {
+        const current = writers.get(e.output.winner);
+        if (current) writers.set(e.output.winner, { ...current, winner: true });
+      }
+      continue;
+    }
+    if (!label) continue;
+    if (head === "writer" || (head === "revision" && !suffix) || (head === "revision" && suffix === "review-fix")) {
+      const current = writers.get(label) ?? { role: "writer" as const, name: `Writer ${label}`, label, state: "pending" as ProgressStageState, detail: "" };
+      const isWriter = head === "writer";
+      writers.set(label, {
+        ...current,
+        provider: isWriter ? (e.provider ?? current.provider) : current.provider,
+        model: isWriter ? (e.model ?? current.model) : current.model,
+        modelLabel: isWriter ? modelLabel(e.model ?? current.model, e.provider ?? current.provider) : current.modelLabel,
+        state: isWriter ? seatState(e.status) : current.state,
+        detail: isWriter
+          ? e.status === "STARTED"
+            ? "Drafting…"
+            : e.status === "SUCCEEDED"
+              ? `Draft ready${e.latencyMs ? ` · ${formatDuration(e.latencyMs)}` : ""}`
+              : "Did not finish"
+          : e.status === "SUCCEEDED"
+            ? suffix === "review-fix"
+              ? "Fixed after the platform review"
+              : "Fixed after the checks"
+            : current.detail,
+        ...(isWriter && e.latencyMs ? { latencyMs: e.latencyMs } : {}),
+        ...(e.status === "SUCCEEDED" && e.output?.draft ? { draft: e.output.draft } : {}),
+      });
+    }
+    if (head === "review" && e.status === "SUCCEEDED" && e.output?.verdict) {
+      const current = writers.get(label);
+      if (current) writers.set(label, { ...current, reviewVerdict: e.output.verdict, reviewIssues: e.output.issues?.length ?? 0 });
+    }
+  }
+
+  const modelsByStage: Partial<Record<ProgressStageKey, string>> = {};
+  for (const seat of seats) {
+    const key: ProgressStageKey = seat.role === "research" ? "research" : seat.role === "strategy" ? "strategy" : seat.role === "review" ? "review" : seat.role === "judge" ? "judge" : "adapt";
+    if (seat.modelLabel) modelsByStage[key] = seat.modelLabel;
+  }
+  const writerModels = [...new Set([...writers.values()].map((w) => w.modelLabel).filter(Boolean))] as string[];
+  if (writerModels.length > 0) modelsByStage.drafting = writerModels.length === 1 ? writerModels[0] : `${writerModels.length} models`;
+
+  return {
+    seats,
+    writers: [...writers.values()].sort((a, b) => (a.label ?? "").localeCompare(b.label ?? "")),
+    modelsByStage,
   };
 }
 

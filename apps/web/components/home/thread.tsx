@@ -14,7 +14,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, MinusCircle, XCircle } from "lucide-react";
-import { formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { buildBoard, formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { CouncilBoard } from "@/components/agent/council-board";
 import { formatCents } from "@/components/agent/format";
 import { useRunProgress, type RunInitial } from "@/components/agent/live-progress";
 import { isProducing, isSettled } from "@/components/home/labels";
@@ -455,6 +456,11 @@ export function Thread({
 
   const status = snapshot.status;
   const working = !isSettled(status) || status === "APPROVED";
+  const board = useMemo(() => buildBoard(snapshot.status, snapshot.events, snapshot.accounts), [snapshot]);
+  const [showWork, setShowWork] = useState(false);
+  const [selectedStage, setSelectedStage] = useState<ProgressStage["key"] | null>(null);
+  const selectedDetail = selectedStage ? progress.stages.find((s) => s.key === selectedStage) : undefined;
+  const boardOpen = working || showWork;
   const ready = rows.some((a) => a.text) && !isProducing(status);
 
   // After an approval the post is created in the background, so we keep asking
@@ -556,7 +562,49 @@ export function Thread({
 
       {/* What the AI did about it: the council at a glance, then the detail. */}
       <div className="grid max-w-[95%] gap-2">
-        <CouncilFlow stages={progress.stages} working={working} />
+        <CouncilFlow
+          stages={progress.stages}
+          working={working}
+          models={board.modelsByStage}
+          selected={selectedStage}
+          onSelect={(key) => setSelectedStage((cur) => (cur === key ? null : key))}
+        />
+        {selectedDetail && (
+          <div className="grid gap-1 rounded-xl border border-brand/30 bg-brand/5 p-3 text-sm backdrop-blur-xl">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{selectedDetail.label}</span>
+              <span className="text-xs text-muted-foreground">
+                {board.modelsByStage[selectedDetail.key] ? `${board.modelsByStage[selectedDetail.key]} · ` : ""}
+                {selectedDetail.durationMs ? formatDuration(selectedDetail.durationMs) : selectedDetail.state}
+                {selectedDetail.costCents > 0 ? ` · ${formatCents(selectedDetail.costCents)}` : ""}
+              </span>
+            </div>
+            {selectedDetail.activity.length > 0 ? (
+              <ol className="grid gap-0.5 text-xs text-muted-foreground">
+                {selectedDetail.activity.map((line, i) => (
+                  <li key={`${i}-${line}`}>{line}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-xs text-muted-foreground">Nothing yet.</p>
+            )}
+          </div>
+        )}
+        {board.writers.length > 0 && (
+          <div className="grid gap-2">
+            {!working && (
+              <button
+                type="button"
+                onClick={() => setShowWork((v) => !v)}
+                className="w-fit text-xs text-muted-foreground underline-offset-4 hover:underline"
+                aria-expanded={boardOpen}
+              >
+                {boardOpen ? "Hide the writers' work" : `Show the writers' work (${board.writers.length} drafts)`}
+              </button>
+            )}
+            {boardOpen && <CouncilBoard board={board} working={working} />}
+          </div>
+        )}
         <ol className="grid gap-0.5">
           {progress.stages.map((stage) => (
             <ActivityRow key={stage.key} stage={stage} />
