@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Building2, Cpu, Flag, HeartPulse, ListChecks, PackageX, Plug, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, Cpu, Flag, HeartPulse, ListChecks, PackageX, Plug, ScrollText, Users, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
@@ -14,6 +14,7 @@ const ITEMS = [
   { href: "/admin/queues", label: "Queues & webhooks", icon: ListChecks },
   { href: "/admin/dead-letter", label: "Dead letters", icon: PackageX },
   { href: "/admin/provider-health", label: "Provider health", icon: HeartPulse },
+  { href: "/admin/prompts", label: "Prompt lab", icon: FlaskConical },
   { href: "/admin/feature-flags", label: "Feature flags", icon: Flag },
   { href: "/admin/audit-logs", label: "Audit logs", icon: ScrollText },
 ];

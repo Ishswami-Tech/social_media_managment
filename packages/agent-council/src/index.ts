@@ -8,3 +8,4 @@ export * from "./stages";
 export * from "./pipeline";
 export * from "./progress";
 export * from "./scoring";
+export * from "./lab";
