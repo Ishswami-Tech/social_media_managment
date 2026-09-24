@@ -23,6 +23,7 @@ import {
   type PlatformCapabilities,
 } from "@platform/types";
 import { prisma } from "@/lib/db";
+import { storiesForWriters } from "@/lib/services/memory";
 import { logger } from "@/lib/logger";
 import { providers } from "@/lib/providers";
 
@@ -187,6 +188,7 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
         select: { step: true, input: true, output: true },
       });
       const annotations = accountAnnotations(events);
+      const stories = await storiesForWriters(run.organizationId);
       const brief: CampaignBrief = {
         topic: run.topic,
         goal: run.goal,
@@ -213,7 +215,7 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
           displayName: a.socialAccount.displayName,
           accountType: a.socialAccount.accountType,
           capabilities: capabilitiesFor(a.platform, a.socialAccount.capabilities),
-          profile: profileToBrain(a.socialAccount.profile),
+          profile: { ...profileToBrain(a.socialAccount.profile), ...(stories.length ? { stories } : {}) },
         };
         const recommendation: AccountRecommendation | undefined =
           a.finalText !== null

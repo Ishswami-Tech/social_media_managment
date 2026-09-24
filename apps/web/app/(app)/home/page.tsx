@@ -4,6 +4,7 @@ import { requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { composeFinalText } from "@/lib/agent/apply";
 import { loadRecommendationImages, type RecommendationImage } from "@/lib/agent/media";
+import { performanceFor } from "@/lib/agent/performance";
 import { runProgressSelect, toRunInitial } from "@/lib/agent/progress";
 import { selectableModels } from "@/lib/ai";
 import { pluginSummaries } from "@/lib/plugins";
@@ -44,6 +45,9 @@ const threadSelect = {
       strategy: true,
       mediaAssetIds: true,
       postId: true,
+      winnerDraftId: true,
+      drafts: { select: { id: true, judgeScore: true } },
+      socialAccount: { select: { displayName: true, profile: true } },
     },
     orderBy: { createdAt: "asc" },
   },
@@ -78,6 +82,7 @@ function toThreadAccount(
     text: base ? composeFinalText(base, account.finalHashtags) : "",
     why: readAngle(account.strategy),
     image: imageId ? (images.get(imageId) ?? null) : null,
+    performance: performanceFor(account),
     decision: account.decision,
     postId: account.postId,
   };

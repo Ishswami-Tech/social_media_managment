@@ -19,6 +19,7 @@ import { formatCents } from "@/components/agent/format";
 import { useRunProgress, type RunInitial } from "@/components/agent/live-progress";
 import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
+import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,6 +42,8 @@ export interface ThreadAccount {
   why: string | null;
   /** Generated image attached to the recommendation, when there is one. */
   image: { url: string; alt: string } | null;
+  /** Expected-reach estimate once the text is final. */
+  performance: PerformanceBadgeProps | null;
   decision: ThreadDecision;
   postId: string | null;
 }
@@ -269,6 +272,8 @@ function ResultCard({
       ) : (
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
+
+      {account.performance && <PerformanceBadge {...account.performance} />}
 
       {account.image && (
         <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">

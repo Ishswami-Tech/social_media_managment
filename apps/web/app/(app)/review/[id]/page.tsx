@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/errors";
 import { getRun, type AgentRunDetail } from "@/lib/agent/runs";
 import { composeFinalText } from "@/lib/agent/apply";
 import { loadRecommendationImages, type RecommendationImage } from "@/lib/agent/media";
+import { performanceFor } from "@/lib/agent/performance";
 import { formatCents, formatLatency } from "@/components/agent/format";
 import { LiveProgress } from "@/components/agent/live-progress";
 import { RunReplay, type ReplayEvent } from "@/components/agent/run-replay";
@@ -67,6 +68,7 @@ function toReviewAccount(a: RunAccount, images: ReadonlyMap<string, Recommendati
     text: base ? composeFinalText(base, a.finalHashtags) : "",
     why: readAngle(a.strategy),
     image: imageId ? (images.get(imageId) ?? null) : null,
+    performance: performanceFor(a),
     decision: a.decision,
     decisionComment: a.decisionComment,
     postId: a.postId,

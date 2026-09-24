@@ -61,6 +61,8 @@ export interface AccountBrain {
   humanFeedback?: {
     preferences?: { text: string; weight: number; source: "edit" | "rejection" | "comment" | "explicit"; at: string }[];
   };
+  /** Story bank: real moments, numbers and lessons the organization recorded for the writers to draw from. */
+  stories?: { title?: string; text: string }[];
 }
 
 // ---------------------------------------------------------------------------

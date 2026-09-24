@@ -19,6 +19,7 @@ import {
   Sparkles,
   Users,
   Users2,
+  Brain,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   accounts: Plug,
   brand: Palette,
   team: Users,
+  memory: Brain,
   settings: Settings,
 };
 

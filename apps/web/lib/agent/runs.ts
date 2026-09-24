@@ -92,7 +92,15 @@ const runDetailInclude = {
     orderBy: { createdAt: "asc" },
     include: {
       socialAccount: {
-        select: { id: true, platform: true, displayName: true, avatarUrl: true, status: true, agentAutoPublish: true },
+        select: {
+          id: true,
+          platform: true,
+          displayName: true,
+          avatarUrl: true,
+          status: true,
+          agentAutoPublish: true,
+          profile: true,
+        },
       },
       drafts: { orderBy: [{ role: "asc" }, { label: "asc" }] },
     },
