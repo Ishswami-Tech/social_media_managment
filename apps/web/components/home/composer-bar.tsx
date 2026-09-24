@@ -68,6 +68,7 @@ interface Props {
    * typed-in settings and pulls the new thread into the feed.
    */
   onCreated?: (runId: string) => void;
+  placement?: "top" | "bottom";
 }
 
 interface CreateResponse {
@@ -156,7 +157,15 @@ const TRIGGER_CLASS =
 // Composer
 // ---------------------------------------------------------------------------
 
-export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Props) {
+/** Sticky bar at the bottom (chat style) or the opening box at the top of Home. */
+type Placement = "top" | "bottom";
+
+const WRAPPER: Record<Placement, string> = {
+  bottom: "sticky bottom-0 z-10 -mx-4 border-t bg-background/85 px-4 py-3 backdrop-blur md:-mx-6 md:px-6",
+  top: "mb-6",
+};
+
+export function ComposerBar({ accounts, skills, plugins, models, onCreated, placement = "bottom" }: Props) {
   const router = useRouter();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
@@ -253,12 +262,13 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
     window.setTimeout(grow, 0);
     if (onCreated) onCreated(data.run.id);
     else router.refresh();
-    window.setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), SCROLL_DELAY_MS);
+    if (placement === "bottom")
+      window.setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), SCROLL_DELAY_MS);
   }
 
   if (accounts.length === 0) {
     return (
-      <div className="sticky bottom-0 z-10 -mx-4 border-t bg-background/85 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+      <div className={WRAPPER[placement]}>
         <p className="text-sm text-muted-foreground">
           Connect a social account and I can research, write and publish for you.{" "}
           <a href="/accounts" className="underline underline-offset-4">
@@ -270,7 +280,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
   }
 
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 border-t bg-background/85 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+    <div className={WRAPPER[placement]}>
       <div className="mx-auto grid max-w-3xl gap-2">
         {(selectedSkills.length > 0 || selectedAccounts.length > 0) && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -309,7 +319,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
                 void submit();
               }
             }}
-            placeholder="What do you want to post about?"
+            placeholder={placement === "top" ? "What's on your mind? Tell me what to post about." : "What do you want to post about?"}
             aria-label="What do you want to post about?"
             className="max-h-[200px] min-h-9 resize-none border-0 bg-transparent px-2 py-1.5 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
           />

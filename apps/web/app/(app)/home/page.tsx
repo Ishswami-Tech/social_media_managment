@@ -18,17 +18,18 @@ import {
 import { Thread, type ThreadAccount, type ThreadProps, type PostResults } from "@/components/home/thread";
 import { TodayBar, type TodayStats } from "@/components/home/today-bar";
 import { ProviderStrip, type ProviderStatus } from "@/components/home/provider-strip";
-import { DashboardRail } from "@/components/home/dashboard-rail";
-import { loadHomeRail, metric } from "@/lib/home/rail";
+import { AlsoWaiting } from "@/components/home/also-waiting";
+import { ModelsToday } from "@/components/home/models-today";
+import { loadAlsoWaiting, loadModelsToday } from "@/lib/home/overview";
 import { providerHealthSummary } from "@/lib/agent/provider-health";
 import { resolveAuth } from "@/lib/ai";
 import { Reveal } from "@/components/ui/reveal";
 
 export const metadata = { title: "Home" };
 
-/** How much of the conversation the feed keeps in view. */
-const MAX_THREADS = 10;
-/** Home shows what is live now or finished in the last two hours; everything older lives under Posts. */
+/** Home is the opening screen: the one post being worked on right now. Everything else lives under Posts. */
+const MAX_THREADS = 1;
+/** A finished post stays on Home for this long after it was started; older ones live under Posts. */
 const RECENT_WINDOW_MS = 2 * 60 * 60_000;
 /** Errors older than this no longer colour a provider chip. */
 const PROVIDER_ERROR_WINDOW_MS = 30 * 60_000;
@@ -119,6 +120,9 @@ function bestWindows(profile: { performance: Prisma.JsonValue | null } | null): 
   if (!isRecord(perf) || !Array.isArray(perf.bestPostingWindows)) return [];
   return perf.bestPostingWindows.filter((w): w is string => typeof w === "string").slice(0, 3);
 }
+
+const metric = (m: unknown, key: string): number | undefined =>
+  isRecord(m) && typeof m[key] === "number" ? (m[key] as number) : undefined;
 
 function toThreadAccount(
   account: ThreadRow["accounts"][number],
@@ -253,7 +257,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
-  const [images, results, stats, providers, rail] = await Promise.all([
+  const currentRunId = runs[0]?.id;
+  const [images, results, stats, providers, alsoWaiting, modelsToday] = await Promise.all([
     loadRecommendationImages(
       organizationId,
       runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
@@ -261,7 +266,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     loadResults(runs.flatMap((run) => run.accounts.flatMap((a) => (a.postId ? [a.postId] : [])))),
     loadTodayStats(organizationId),
     providerStatuses(organizationId).catch(() => [] as ProviderStatus[]),
-    loadHomeRail(organizationId),
+    loadAlsoWaiting(organizationId, currentRunId).catch(() => []),
+    loadModelsToday(organizationId).catch(() => []),
   ]);
 
   // Oldest at the top, newest just above the composer — like any conversation.
@@ -281,69 +287,60 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   }));
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
-      <div className="mx-auto grid w-full max-w-6xl flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="mx-auto w-full max-w-3xl min-w-0">
-        <div className="flex items-center justify-between gap-3 pb-4">
-          <h1 className="text-sm font-medium text-muted-foreground">Today and in progress</h1>
-          <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-            Earlier posts and history
-          </Link>
-        </div>
-        <TodayBar stats={stats} />
-        <ProviderStrip providers={providers} />
+    <div className="mx-auto w-full max-w-3xl">
+      <div className="flex items-center justify-between gap-3 pb-4">
+        <h1 className="text-sm font-medium text-muted-foreground">Today</h1>
+        <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+          Earlier posts and history
+        </Link>
+      </div>
+      <TodayBar stats={stats} />
+      <ProviderStrip providers={providers} />
+      <ModelsToday models={modelsToday} />
 
-        {forbidden && (
-          <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            That page is not available to your role. Ask someone who owns this workspace.
-          </p>
-        )}
-
-        {threads.length === 0 ? (
-          <div className="grid gap-4 py-10">
-            <h2 className="text-2xl font-semibold tracking-tight">Tell me what to post about.</h2>
-            <p className="max-w-prose text-sm text-muted-foreground">
-              One agent researches it with sources, one plans the angle, several writers on different models
-              draft it, a reviewer checks it for the platform, a blind judge picks the best, and you approve.
-              Want a whole month at once? Start on{" "}
-              <Link href="/plan" className="underline underline-offset-4">
-                Plan
-              </Link>
-              .
-            </p>
-            {canCreate && <ExamplePrompts prompts={EXAMPLE_PROMPTS} />}
-          </div>
-        ) : (
-          <div className="grid gap-10 pb-6">
-            {threads.map((thread, index) => (
-              <Reveal key={thread.runId} index={index}>
-                <div id={`run-${thread.runId}`} className="scroll-mt-20">
-                  <Thread {...thread} />
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="hidden xl:block">
-        <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-1">
-          <DashboardRail rail={rail} />
-        </div>
-      </div>
-      </div>
+      {forbidden && (
+        <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          That page is not available to your role. Ask someone who owns this workspace.
+        </p>
+      )}
 
       {canCreate ? (
         <ComposerBar
+          placement="top"
           accounts={composerAccounts}
           skills={customSkills}
           plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
           models={composerModels}
         />
       ) : (
-        <p className="sticky bottom-0 -mx-4 border-t bg-background/85 px-4 py-3 text-sm text-muted-foreground backdrop-blur md:-mx-6 md:px-6">
-          Your role can read posts but not write them.
-        </p>
+        <p className="mb-6 text-sm text-muted-foreground">Your role can read posts but not write them.</p>
       )}
+
+      {threads.length === 0 ? (
+        <div className="grid gap-4 py-6">
+          <h2 className="text-xl font-semibold tracking-tight">Nothing in progress. Tell me what to post about.</h2>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            One agent researches it with sources, one plans the angle, several writers on different models
+            draft it, a reviewer checks it for the platform, a blind judge picks the best, and you approve.
+            Want a whole month at once? Start on{" "}
+            <Link href="/plan" className="underline underline-offset-4">
+              Plan
+            </Link>
+            .
+          </p>
+          {canCreate && <ExamplePrompts prompts={EXAMPLE_PROMPTS} />}
+        </div>
+      ) : (
+        <div className="grid gap-6 pb-6">
+          {threads.map((thread, index) => (
+            <Reveal key={thread.runId} index={index}>
+              <Thread {...thread} />
+            </Reveal>
+          ))}
+        </div>
+      )}
+
+      <AlsoWaiting items={alsoWaiting} />
     </div>
   );
 }
