@@ -23,7 +23,7 @@ import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent
 import { CouncilFlow } from "@/components/agent/council-flow";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { PostPreview } from "@/components/preview/post-preview";
-import { Pencil, Eye } from "lucide-react";
+import { CalendarClock, Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,12 +35,25 @@ import { cn } from "@/lib/utils";
 
 export type ThreadDecision = "PENDING" | "APPROVED" | "REJECTED";
 
+export interface PostResults {
+  publishedAt: string | null;
+  externalUrl: string | null;
+  impressions?: number;
+  likes?: number;
+  comments?: number;
+  capturedAt: string | null;
+}
+
 export interface ThreadAccount {
   /** AgentRunAccount id — what the decide route expects. */
   id: string;
   platform: string;
   displayName: string;
   avatarUrl: string | null;
+  /** Posting windows that have worked for this account, e.g. "tue morning (UTC)". */
+  bestWindows: string[];
+  /** Live numbers once the post is out (latest analytics snapshot), or null. */
+  results: PostResults | null;
   /** Final text with hashtags; empty while it is still being written. */
   text: string;
   /** One line explaining the angle that was chosen. */
@@ -214,6 +227,8 @@ function ResultCard({
   const [rejecting, setRejecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [publishAt, setPublishAt] = useState("");
   // After a refresh (judge override, another person's edit) the server's text wins.
   const [seen, setSeen] = useState(account.text);
   if (seen !== account.text) {
@@ -233,19 +248,22 @@ function ResultCard({
     if (decision === "PENDING") return;
     setBusy(true);
     const edited = decision === "APPROVED" && text.trim() !== savedText.trim() ? { editedText: text } : {};
+    const when = decision === "APPROVED" && scheduling && publishAt ? { publishAt: new Date(publishAt).toISOString() } : {};
     const { ok, message } = await post(`/api/agent/runs/${runId}/decide`, {
       accountIds: [account.id],
       decision,
       ...(note.trim() ? { comment: note.trim() } : {}),
       ...edited,
+      ...when,
     });
     setBusy(false);
     if (!ok) {
       toast.error(message ?? "That did not work. Try again.");
       return;
     }
-    toast.success(decision === "APPROVED" ? "Approved" : "Rejected");
+    toast.success(decision === "APPROVED" ? (scheduling && publishAt ? "Approved and scheduled" : "Approved") : "Rejected");
     setRejecting(false);
+    setScheduling(false);
     setNote("");
     onDecided();
   }
@@ -261,10 +279,18 @@ function ResultCard({
         {account.decision === "REJECTED" && <span className="text-xs text-muted-foreground">Rejected</span>}
         {account.decision === "APPROVED" &&
           (published ? (
-            <span className="text-xs text-muted-foreground">
-              Published ·{" "}
+            <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <span>Published</span>
+              {account.results?.impressions !== undefined && <span className="font-medium text-foreground">{account.results.impressions.toLocaleString()} views</span>}
+              {account.results?.likes !== undefined && <span>{account.results.likes} reactions</span>}
+              {account.results?.comments !== undefined && <span>{account.results.comments} comments</span>}
+              {account.results?.externalUrl && (
+                <a href={account.results.externalUrl} target="_blank" rel="noreferrer" className="underline underline-offset-4">
+                  Open on {account.platform.toLowerCase() === "linkedin" ? "LinkedIn" : "platform"}
+                </a>
+              )}
               <Link href={`/posts/${account.postId}`} className="underline underline-offset-4">
-                View post
+                Details
               </Link>
             </span>
           ) : (
@@ -341,9 +367,31 @@ function ResultCard({
               autoFocus
             />
           )}
+          {scheduling && (
+            <div className="grid gap-1 rounded-lg border border-white/60 bg-white/50 p-2 text-xs backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+              <label className="grid gap-1">
+                <span className="text-muted-foreground">Publish at (your local time)</span>
+                <Input type="datetime-local" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} className="h-8 w-56 text-xs" />
+              </label>
+              {account.bestWindows.length > 0 && (
+                <p className="text-muted-foreground">
+                  Has worked for this account: <span className="text-foreground">{account.bestWindows.join(", ")}</span>
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void decide("APPROVED")}>
-              Approve
+            <Button size="sm" disabled={busy || (scheduling && !publishAt)} onClick={() => void decide("APPROVED")}>
+              {scheduling ? "Approve for that time" : "Approve"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setScheduling((v) => !v)}
+              title={scheduling ? "Publish right away instead" : "Pick when it goes out"}
+            >
+              <CalendarClock aria-hidden /> {scheduling ? "Publish now" : "Pick a time"}
             </Button>
             <Button
               size="sm"

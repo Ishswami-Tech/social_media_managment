@@ -15,7 +15,8 @@ import {
   type ComposerBarAccount,
   type ComposerBarModel,
 } from "@/components/home/composer-bar";
-import { Thread, type ThreadAccount, type ThreadProps } from "@/components/home/thread";
+import { Thread, type ThreadAccount, type ThreadProps, type PostResults } from "@/components/home/thread";
+import { TodayBar, type TodayStats } from "@/components/home/today-bar";
 import { Reveal } from "@/components/ui/reveal";
 
 export const metadata = { title: "Home" };
@@ -46,6 +47,7 @@ const threadSelect = {
       strategy: true,
       mediaAssetIds: true,
       postId: true,
+      socialAccountId: true,
       winnerDraftId: true,
       drafts: { select: { id: true, judgeScore: true } },
       socialAccount: { select: { displayName: true, avatarUrl: true, profile: true } },
@@ -70,9 +72,17 @@ function readAngle(value: unknown): string | null {
   return null;
 }
 
+/** Learned posting windows from the account profile, in plain words. */
+function bestWindows(profile: { performance: Prisma.JsonValue | null } | null): string[] {
+  const perf = profile?.performance;
+  if (!isRecord(perf) || !Array.isArray(perf.bestPostingWindows)) return [];
+  return perf.bestPostingWindows.filter((w): w is string => typeof w === "string").slice(0, 3);
+}
+
 function toThreadAccount(
   account: ThreadRow["accounts"][number],
   images: ReadonlyMap<string, RecommendationImage>,
+  results: ReadonlyMap<string, PostResults>,
 ): ThreadAccount {
   const base = account.editedText ?? account.finalText ?? "";
   const imageId = account.mediaAssetIds.find((id) => images.has(id));
@@ -81,12 +91,79 @@ function toThreadAccount(
     platform: account.platform,
     displayName: account.socialAccount.displayName,
     avatarUrl: account.socialAccount.avatarUrl,
+    bestWindows: bestWindows(account.socialAccount.profile),
+    results: account.postId ? (results.get(`${account.postId}:${account.socialAccountId}`) ?? null) : null,
     text: base ? composeFinalText(base, account.finalHashtags) : "",
     why: readAngle(account.strategy),
     image: imageId ? (images.get(imageId) ?? null) : null,
     performance: performanceFor(account),
     decision: account.decision,
     postId: account.postId,
+  };
+}
+
+const metric = (m: unknown, key: string): number | undefined =>
+  isRecord(m) && typeof m[key] === "number" ? (m[key] as number) : undefined;
+
+/** Latest analytics for the published variants behind these posts, keyed by `postId:socialAccountId`. */
+async function loadResults(postIds: string[]): Promise<Map<string, PostResults>> {
+  const ids = [...new Set(postIds)];
+  if (ids.length === 0) return new Map();
+  const variants = await prisma.postVariant.findMany({
+    where: { postId: { in: ids }, status: "PUBLISHED" },
+    select: {
+      postId: true,
+      socialAccountId: true,
+      publishedAt: true,
+      externalUrl: true,
+      snapshots: { orderBy: { capturedAt: "desc" }, take: 1, select: { metrics: true, capturedAt: true } },
+    },
+  });
+  return new Map(
+    variants.map((v) => {
+      const snap = v.snapshots[0];
+      return [
+        `${v.postId}:${v.socialAccountId}`,
+        {
+          publishedAt: v.publishedAt?.toISOString() ?? null,
+          externalUrl: v.externalUrl,
+          impressions: metric(snap?.metrics, "impressions"),
+          likes: metric(snap?.metrics, "likes"),
+          comments: metric(snap?.metrics, "comments"),
+          capturedAt: snap?.capturedAt.toISOString() ?? null,
+        },
+      ];
+    }),
+  );
+}
+
+/** The numbers on the Today bar: what waits, what went out, what is next, what did best. */
+async function loadTodayStats(organizationId: string): Promise<TodayStats> {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const [awaiting, publishedThisMonth, next, snapshots] = await Promise.all([
+    prisma.agentRun.count({ where: { organizationId, status: "AWAITING_APPROVAL" } }),
+    prisma.postVariant.count({ where: { post: { organizationId }, status: "PUBLISHED", publishedAt: { gte: monthStart } } }),
+    prisma.post.findFirst({
+      where: { organizationId, status: { in: ["SCHEDULED", "APPROVED", "QUEUED"] }, scheduledAt: { gt: new Date() } },
+      orderBy: { scheduledAt: "asc" },
+      select: { scheduledAt: true },
+    }),
+    prisma.analyticsSnapshot.findMany({
+      where: { organizationId, scope: "POST", capturedAt: { gte: monthStart }, postVariant: { status: "PUBLISHED" } },
+      select: { metrics: true, postVariant: { select: { postId: true } } },
+    }),
+  ]);
+  const top = snapshots
+    .map((s) => ({ impressions: metric(s.metrics, "impressions") ?? 0, postId: s.postVariant?.postId ?? "" }))
+    .filter((s) => s.postId && s.impressions > 0)
+    .sort((a, b) => b.impressions - a.impressions)[0];
+  return {
+    awaiting,
+    publishedThisMonth,
+    nextScheduledAt: next?.scheduledAt?.toISOString() ?? null,
+    topReach: top ?? null,
   };
 }
 
@@ -135,17 +212,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
-  const images = await loadRecommendationImages(
-    organizationId,
-    runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
-  ).catch(() => new Map<string, RecommendationImage>());
+  const [images, results, stats] = await Promise.all([
+    loadRecommendationImages(
+      organizationId,
+      runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
+    ).catch(() => new Map<string, RecommendationImage>()),
+    loadResults(runs.flatMap((run) => run.accounts.flatMap((a) => (a.postId ? [a.postId] : [])))),
+    loadTodayStats(organizationId),
+  ]);
 
   // Oldest at the top, newest just above the composer — like any conversation.
   const threads: ThreadProps[] = [...runs].reverse().map((run) => ({
     runId: run.id,
     topic: run.topic,
     initial: toRunInitial(run),
-    accounts: run.accounts.map((a) => toThreadAccount(a, images)),
+    accounts: run.accounts.map((a) => toThreadAccount(a, images, results)),
     skills: run.skillIds.map(skillName),
     model: modelChip(run.preferredModel, composerModels),
     assurance: run.assurance,
@@ -165,6 +246,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             See all posts
           </Link>
         </div>
+        <TodayBar stats={stats} />
 
         {forbidden && (
           <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">

@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .map((i) => ({ ...i, hidden: i.href.startsWith("/whatsapp") && !hasWhatsApp }));
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar
         main={prepare(MAIN_NAV)}
         more={prepare(MORE_NAV)}
@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         isSuperAdmin={isSuperAdmin(ctx.user)}
         organizationName={ctx.organization.name}
       />
-      <div className="relative flex min-w-0 flex-1 flex-col">
+      <div className="relative flex h-screen min-w-0 flex-1 flex-col overflow-y-auto">
         <Aurora />
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl md:px-6">
           <div className="text-sm text-muted-foreground md:hidden">{ctx.organization.name}</div>

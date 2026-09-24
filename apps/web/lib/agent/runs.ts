@@ -67,6 +67,8 @@ export const decideInput = z.object({
   comment: z.string().trim().max(2000).optional(),
   /** Only meaningful for a single account; the approver's edited final text. */
   editedText: z.string().max(65_000).optional(),
+  /** When to publish (ISO, in the future). Omitted: the run's own schedule, else right away. */
+  publishAt: z.string().datetime({ offset: true }).optional(),
 });
 export type DecideInput = z.infer<typeof decideInput>;
 
@@ -439,6 +441,13 @@ export async function applyAccountDecision(
       comment: input.comment,
       source: isEdit ? "edit" : input.decision === "REJECTED" ? "rejection" : "comment",
     }).catch(() => undefined);
+  }
+
+  if (input.decision === "APPROVED" && input.publishAt) {
+    const publishAt = new Date(input.publishAt);
+    if (Number.isNaN(publishAt.getTime()) || publishAt.getTime() < Date.now() - 60_000)
+      throw badRequest("Pick a publish time in the future");
+    await prisma.agentRun.update({ where: { id: runId }, data: { scheduledAt: publishAt } });
   }
 
   await settleRunAfterDecision(runId, actor.organizationId);
