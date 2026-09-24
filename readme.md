@@ -116,6 +116,22 @@ draft gets a platform review: a reader for that platform, armed with the convent
 playbooks, lists what a person would notice and asks for one fix pass when needed. The notes travel to
 the blind judge, which still sees text only.
 
+### Memory, Plan and the council view
+
+- **Memory** (`/memory`): the story bank (real moments, numbers, lessons) shared by every account, and
+  one editable Account Brain per connected account: who it is, who it talks to, how it sounds, what it
+  talks about. Next to it, what the learning loop found from results and from your edits and rejections
+  (each learned preference can be forgotten). Stories ride inside every Account Brain the writers see.
+- **Plan** (`/plan`): describe what a month should achieve; the planner lays out posts on weekday slots
+  with a goal each, shaped as a funnel (awareness → trust → offer) and fed by the story bank and any
+  planning playbooks. "Write it" turns an item into a campaign that publishes on its date after approval.
+- **Expected reach**: every finished post carries an explainable estimate (hook, rhythm, length band,
+  hashtags, call to action, clichés, forbidden words, the blind judge, and the account's own history
+  once it has some). It is an estimate to help you edit, never a promise.
+- **The council at a glance**: each Home thread shows the agents on an arc (Researcher, Strategist,
+  Writers, Reviewer, Judge, Editor, You) with a dashed path flowing toward whoever is working, built with
+  Framer Motion, GSAP and a Three.js particle field; it respects `prefers-reduced-motion`.
+
 ### Images for agent posts
 
 The Home composer has a "Text only / With image" toggle. With it on, the Agent Council turns each

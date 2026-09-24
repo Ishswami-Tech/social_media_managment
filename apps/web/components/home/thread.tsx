@@ -20,6 +20,7 @@ import { useRunProgress, type RunInitial } from "@/components/agent/live-progres
 import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
+import { CouncilFlow } from "@/components/agent/council-flow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -466,8 +467,9 @@ export function Thread({
         </div>
       </div>
 
-      {/* What the AI did about it. */}
+      {/* What the AI did about it: the council at a glance, then the detail. */}
       <div className="grid max-w-[95%] gap-2">
+        <CouncilFlow stages={progress.stages} working={working} />
         <ol className="grid gap-0.5">
           {progress.stages.map((stage) => (
             <ActivityRow key={stage.key} stage={stage} />
