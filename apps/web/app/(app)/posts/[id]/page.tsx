@@ -119,6 +119,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
               canPublish: ctx.can("content:publish"),
               canApprove: ctx.can("content:approve"),
               canEdit: ctx.can("content:edit_any") || post.createdById === ctx.user.id,
+              canDelete: ctx.can("content:delete") || post.createdById === ctx.user.id,
               isOwnPost: post.createdById === ctx.user.id,
               isAdmin: ctx.role === "OWNER" || ctx.role === "ADMIN",
             }}

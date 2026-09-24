@@ -11,6 +11,7 @@ import { CalendarView } from "@/components/posts/calendar-view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DeletePostButton } from "@/components/forms/delete-post-button";
 
 export const metadata = { title: "Posts" };
 
@@ -126,6 +127,8 @@ async function PostList({
     mine: !canSeeAll,
   });
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const canDeleteAny = ctx.can("content:delete");
+  const canPublish = ctx.can("content:publish");
   const pageHref = (n: number, key: FilterKey) => `/posts?${key === "all" ? "" : `filter=${key}&`}page=${n}`;
 
   return (
@@ -147,12 +150,15 @@ async function PostList({
                 <TableHead>Status</TableHead>
                 <TableHead>Scheduled</TableHead>
                 <TableHead>Author</TableHead>
+                <TableHead className="w-10 text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     Nothing here yet.
                   </TableCell>
                 </TableRow>
@@ -178,6 +184,11 @@ async function PostList({
                     {formatDate(p.scheduledAt, { dateStyle: "medium", timeStyle: "short" }, p.timezone)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{p.createdBy.name}</TableCell>
+                  <TableCell className="text-right">
+                    {(canDeleteAny || p.createdById === ctx.user.id) && (
+                      <DeletePostButton postId={p.id} status={p.status} canRemoveFromPlatforms={canPublish} compact />
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

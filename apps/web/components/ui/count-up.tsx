@@ -1,13 +1,16 @@
 "use client";
 
 /** A number that counts up to its value on first paint; instant under reduced motion. */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useReducedMotion } from "framer-motion";
 
 const DURATION_MS = 700;
+const subscribeNever = (): (() => void) => () => {};
 
 export function CountUp({ value, className }: { value: number; className?: string }) {
   const reduced = useReducedMotion();
+  // The server prints the final value; the count-up only runs once the browser has taken over.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const [shown, setShown] = useState(0);
   useEffect(() => {
     if (reduced || value === 0) return;
@@ -22,5 +25,5 @@ export function CountUp({ value, className }: { value: number; className?: strin
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [value, reduced]);
-  return <span className={className}>{reduced || value === 0 ? value : shown}</span>;
+  return <span className={className}>{!mounted || reduced || value === 0 ? value : shown}</span>;
 }

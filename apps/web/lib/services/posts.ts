@@ -158,13 +158,29 @@ export async function updatePost(ctx: OrgContext, postId: string, input: z.infer
   return updated;
 }
 
-export async function deletePost(ctx: OrgContext, postId: string) {
+export interface DeletePostOptions {
+  /** For a live post: take it down on the platforms first. Needs publish rights (checked by the route). */
+  removeFromPlatforms?: boolean;
+}
+
+/** Statuses in which a worker may be mid-flight, so the record must not vanish under it. */
+export const UNDELETABLE_STATUSES: readonly PostStatus[] = ["QUEUED", "PUBLISHING"];
+
+/**
+ * Deletes the post record with its variants and jobs. A published post stays
+ * live on the platform unless `removeFromPlatforms` is set, in which case the
+ * platform removal runs first and a total failure there stops the delete.
+ */
+export async function deletePost(ctx: OrgContext, postId: string, opts: DeletePostOptions = {}) {
   const post = await getPost(ctx, postId);
   if (post.createdById !== ctx.user.id && !ctx.can("content:delete"))
     throw new ApiError(403, "Not allowed to delete this post", "forbidden");
-  if (["QUEUED", "PUBLISHING"].includes(post.status)) throw conflict("Cancel the post before deleting it");
+  if (UNDELETABLE_STATUSES.includes(post.status)) throw conflict("Cancel the post before deleting it");
+  const wasLive = post.status === "PUBLISHED";
+  const removed = wasLive && opts.removeFromPlatforms ? (await unpublishPost(ctx, postId)).removed : [];
   await prisma.post.delete({ where: { id: postId } });
-  await audit(ctx, "post.delete", "Post", postId);
+  await audit(ctx, "post.delete", "Post", postId, { wasLive, removed });
+  return { removed, stillLive: wasLive && removed.length === 0 };
 }
 
 async function setStatus(postId: string, status: PostStatus, extra: Prisma.PostUpdateInput = {}) {

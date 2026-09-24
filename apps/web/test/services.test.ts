@@ -25,3 +25,11 @@ describe("input schemas", () => {
     expect(t.find((x) => x.platform === "INSTAGRAM")?.maxLength).toBe(2200);
   });
 });
+
+describe("deleting posts", () => {
+  it("refuses states where a worker may still be publishing", async () => {
+    const { UNDELETABLE_STATUSES } = await import("@/lib/services/posts");
+    expect(UNDELETABLE_STATUSES).toEqual(["QUEUED", "PUBLISHING"]);
+    expect(UNDELETABLE_STATUSES).not.toContain("PUBLISHED");
+  });
+});

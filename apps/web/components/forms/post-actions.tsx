@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DeletePostButton } from "@/components/forms/delete-post-button";
 
 interface Props {
   post: {
@@ -20,7 +21,14 @@ interface Props {
     autoPublishOnApproval: boolean;
   };
   needsApproval: boolean;
-  permissions: { canPublish: boolean; canApprove: boolean; canEdit: boolean; isOwnPost: boolean; isAdmin: boolean };
+  permissions: {
+    canPublish: boolean;
+    canApprove: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+    isOwnPost: boolean;
+    isAdmin: boolean;
+  };
 }
 
 function toLocalInput(iso: string | null) {
@@ -156,7 +164,15 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
             Edit content
           </Button>
         )}
-        {!canSubmit && !canReview && !canSchedule && !canCancel && !canUnpublish && (
+        {permissions.canDelete && (
+          <DeletePostButton
+            postId={post.id}
+            status={s}
+            canRemoveFromPlatforms={permissions.canPublish}
+            redirectTo="/posts"
+          />
+        )}
+        {!canSubmit && !canReview && !canSchedule && !canCancel && !canUnpublish && !permissions.canDelete && (
           <p className="text-sm text-muted-foreground">No actions available for your role in this state.</p>
         )}
       </CardContent>
