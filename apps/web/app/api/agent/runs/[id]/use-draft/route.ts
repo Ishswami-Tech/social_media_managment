@@ -1,5 +1,5 @@
 import { json, parseBody, withOrg } from "@/lib/api";
-import { useDraftInput, useDraftInstead } from "@/lib/agent/editing";
+import { useDraftInput, chooseDraftInstead } from "@/lib/agent/editing";
 import { enforceAiRateLimit } from "@/lib/rate-limit";
 
 type Params = { params: Promise<{ id: string }> };
@@ -10,5 +10,5 @@ export const POST = (req: Request, { params }: Params) =>
     const { id } = await params;
     const input = await parseBody(req, useDraftInput);
     await enforceAiRateLimit(ctx, "use-draft");
-    return json({ account: await useDraftInstead(ctx, id, input) });
+    return json({ account: await chooseDraftInstead(ctx, id, input) });
   });

@@ -141,7 +141,7 @@ export async function reviseWithAi(ctx: OrgContext, runId: string, input: z.infe
 }
 
 /** Overrides the judge with another draft of this account and runs the platform pass on it. */
-export async function useDraftInstead(ctx: OrgContext, runId: string, input: z.infer<typeof useDraftInput>): Promise<EditedRecommendation> {
+export async function chooseDraftInstead(ctx: OrgContext, runId: string, input: z.infer<typeof useDraftInput>): Promise<EditedRecommendation> {
   const account = await loadEditable(ctx, runId, input.accountId);
   const [pipeline, snapshot] = await Promise.all([buildPipelineContext(ctx.organization.id, runId), createPrismaRunStore().load(runId)]);
   const runAccount = snapshot.accounts.find((a) => a.runAccountId === account.id);
