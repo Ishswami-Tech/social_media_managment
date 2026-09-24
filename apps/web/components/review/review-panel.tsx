@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
+import { PostPreview } from "@/components/preview/post-preview";
+import { Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +24,7 @@ export interface ReviewAccount {
   id: string;
   platform: string;
   displayName: string;
+  avatarUrl: string | null;
   /** Final text with hashtags, ready to edit. Empty while the text is still being written. */
   text: string;
   /** One line explaining the angle that was chosen. */
@@ -131,6 +134,7 @@ function AccountBlock({
   const [performance, setPerformance] = useState(account.performance);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   // After a refresh (judge override, another person's edit) the server's text wins.
   const [seen, setSeen] = useState(account.text);
   if (seen !== account.text) {
@@ -183,15 +187,36 @@ function AccountBlock({
       </header>
 
       {account.text ? (
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={10}
-          maxLength={65000}
-          aria-label={`Post text for ${account.displayName}`}
-          readOnly={!canDecide}
-          className="text-base"
-        />
+        <div className="grid gap-2">
+          {editing ? (
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={12}
+              maxLength={65000}
+              aria-label={`Post text for ${account.displayName}`}
+              readOnly={!canDecide}
+              className="text-base"
+            />
+          ) : (
+            <PostPreview
+              platform={account.platform}
+              account={{ displayName: account.displayName, avatarUrl: account.avatarUrl }}
+              text={text}
+              media={account.image ? [{ id: "image", url: account.image.url, alt: account.image.alt }] : []}
+            />
+          )}
+          {canDecide && (
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {editing ? <Eye className="size-3.5" aria-hidden /> : <Pencil className="size-3.5" aria-hidden />}
+              {editing ? "Preview" : "Edit text"}
+            </button>
+          )}
+        </div>
       ) : (
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
@@ -200,13 +225,6 @@ function AccountBlock({
 
       {canDecide && editable && account.text && (
         <EditTools runId={runId} accountId={account.id} text={text} savedText={savedText} disabled={busy} onUpdated={applyEdit} />
-      )}
-
-      {account.image && (
-        <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">
-          {/* eslint-disable-next-line @next/next/no-img-element -- storage URLs are signed and short-lived */}
-          <img src={account.image.url} alt={account.image.alt} className="max-h-64 rounded-md border object-cover" />
-        </a>
       )}
 
       {account.why && (

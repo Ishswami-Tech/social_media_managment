@@ -292,7 +292,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated }: Pr
           </div>
         )}
 
-        <div className="grid gap-2 rounded-2xl border bg-background p-2 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-[0_0_0_4px_hsl(var(--primary)/0.12),0_12px_40px_-12px_hsl(var(--primary)/0.35)]">
+        <div className="grid gap-2 rounded-2xl border border-white/70 bg-white/70 p-2 shadow-[0_18px_50px_-24px_rgba(80,60,200,0.45)] backdrop-blur-xl transition-[box-shadow,border-color] focus-within:border-brand/50 focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--brand)_14%,transparent),0_18px_50px_-20px_color-mix(in_oklch,var(--brand)_45%,transparent)] dark:border-white/10 dark:bg-white/[0.05]">
           <Textarea
             ref={textarea}
             value={text}

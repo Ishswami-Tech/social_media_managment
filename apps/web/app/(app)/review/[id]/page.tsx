@@ -66,6 +66,7 @@ function toReviewAccount(a: RunAccount, images: ReadonlyMap<string, Recommendati
     id: a.id,
     platform: a.platform,
     displayName: a.socialAccount.displayName,
+    avatarUrl: a.socialAccount.avatarUrl,
     text: base ? composeFinalText(base, a.finalHashtags) : "",
     why: readAngle(a.strategy),
     image: imageId ? (images.get(imageId) ?? null) : null,

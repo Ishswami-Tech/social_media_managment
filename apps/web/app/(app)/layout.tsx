@@ -1,5 +1,6 @@
 import { isSuperAdmin, requireOrg } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { Aurora } from "@/components/app/aurora";
 import { Sidebar } from "@/components/app/sidebar";
 import { UserMenu } from "@/components/app/user-menu";
 import { MAIN_NAV, MORE_NAV, ORG_NAV, WHATSAPP_NAV, type NavItem } from "@/components/app/nav";
@@ -24,8 +25,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         isSuperAdmin={isSuperAdmin(ctx.user)}
         organizationName={ctx.organization.name}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur md:px-6">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <Aurora />
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl md:px-6">
           <div className="text-sm text-muted-foreground md:hidden">{ctx.organization.name}</div>
           <div className="hidden md:block" />
           <UserMenu
@@ -34,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             impersonatedBy={ctx.impersonatedBy}
           />
         </header>
-        <main className="flex-1 bg-[radial-gradient(60rem_30rem_at_50%_-10rem,hsl(var(--primary)/0.07),transparent)] p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

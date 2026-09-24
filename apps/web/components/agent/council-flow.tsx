@@ -19,8 +19,8 @@ import { cn } from "@/lib/utils";
 const AmbientCanvas = dynamic(() => import("./ambient-canvas"), { ssr: false });
 
 const WIDTH = 820;
-const HEIGHT = 250;
-const RADIUS = 27;
+const HEIGHT = 270;
+const RADIUS = 30;
 const LABEL_MAX_CHARS = 34;
 
 const AGENT_NAMES: Record<ProgressStageKey, string> = {
@@ -43,14 +43,6 @@ const AGENT_ICONS: Record<ProgressStageKey, LucideIcon> = {
   ready: Send,
 };
 
-const STATE_CLASS: Record<ProgressStage["state"], string> = {
-  pending: "fill-muted stroke-border",
-  active: "fill-primary/15 stroke-primary",
-  done: "fill-emerald-500/15 stroke-emerald-500",
-  failed: "fill-destructive/15 stroke-destructive",
-  skipped: "fill-muted stroke-border",
-};
-
 interface NodePoint {
   x: number;
   y: number;
@@ -64,7 +56,7 @@ function arcPoints(count: number): NodePoint[] {
     const t = count === 1 ? 0.5 : i / (count - 1);
     const x = margin + usable * t;
     const lift = Math.sin(t * Math.PI);
-    return { x, y: 150 - lift * 70 };
+    return { x, y: 160 - lift * 74 };
   });
 }
 
@@ -86,6 +78,36 @@ export interface CouncilFlowProps {
   className?: string;
 }
 
+function fillFor(state: ProgressStage["state"]): string {
+  switch (state) {
+    case "active":
+      return "url(#council-active)";
+    case "done":
+      return "url(#council-done)";
+    case "failed":
+      return "url(#council-failed)";
+    default:
+      return "var(--color-card)";
+  }
+}
+
+function strokeClass(state: ProgressStage["state"]): string {
+  switch (state) {
+    case "active":
+      return "stroke-brand";
+    case "done":
+      return "stroke-emerald-500";
+    case "failed":
+      return "stroke-destructive";
+    default:
+      return "stroke-border";
+  }
+}
+
+function iconClass(state: ProgressStage["state"]): string {
+  return state === "pending" || state === "skipped" ? "text-muted-foreground" : "text-white";
+}
+
 export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
   const reduced = useReducedMotion();
   const svg = useRef<SVGSVGElement>(null);
@@ -103,7 +125,7 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
     const ctx = gsap.context(() => {
       const flowing = root.querySelectorAll<SVGPathElement>("path[data-flow='true']");
       const drawing = root.querySelectorAll<SVGPathElement>("path[data-draw='true']");
-      gsap.to(flowing, { strokeDashoffset: -24, duration: working ? 1.2 : 3, ease: "none", repeat: -1 });
+      gsap.to(flowing, { strokeDashoffset: -28, duration: working ? 1.1 : 3, ease: "none", repeat: -1 });
       drawing.forEach((path) => {
         const length = path.getTotalLength();
         gsap.fromTo(path, { strokeDasharray: length, strokeDashoffset: length }, { strokeDashoffset: 0, duration: 0.9, ease: "power2.out" });
@@ -112,14 +134,51 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
     return () => ctx.revert();
   }, [reached, working, reduced, mounted]);
 
-  if (!mounted) {
-    return <div className={cn("aspect-[820/250] w-full rounded-xl border bg-gradient-to-b from-primary/5 to-transparent", className)} aria-hidden />;
-  }
+  const frame = cn(
+    "relative overflow-hidden rounded-2xl border border-white/60 bg-white/55 shadow-[0_20px_60px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl",
+    "dark:border-white/10 dark:bg-white/[0.04]",
+    className,
+  );
+
+  if (!mounted) return <div className={cn(frame, "aspect-[820/270] w-full")} aria-hidden />;
 
   return (
-    <div className={cn("relative overflow-hidden rounded-xl border bg-gradient-to-b from-primary/5 to-transparent", className)}>
-      <AmbientCanvas active={working} className="pointer-events-none absolute inset-0 opacity-70" />
+    <div className={frame}>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklch,var(--brand)_18%,transparent),transparent_60%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(var(--color-border)_1px,transparent_1px)] [background-size:18px_18px]"
+      />
+      <AmbientCanvas active={working} className="pointer-events-none absolute inset-0 opacity-60" />
       <svg ref={svg} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="relative w-full" role="img" aria-label="Agents working on this post">
+        <defs>
+          <linearGradient id="council-active" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--brand)" />
+            <stop offset="100%" stopColor="var(--brand-2)" />
+          </linearGradient>
+          <linearGradient id="council-done" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#10b981" />
+            <stop offset="100%" stopColor="#0ea5a5" />
+          </linearGradient>
+          <linearGradient id="council-failed" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#f43f5e" />
+            <stop offset="100%" stopColor="#f97316" />
+          </linearGradient>
+          <linearGradient id="council-path" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--brand)" />
+            <stop offset="100%" stopColor="var(--brand-2)" />
+          </linearGradient>
+          <filter id="council-glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="8" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         {points.slice(0, -1).map((a, i) => {
           const b = points[i + 1]!;
           const crossed = i < reached;
@@ -129,12 +188,13 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
               key={`seg-${i}`}
               d={segmentPath(a, b)}
               fill="none"
-              strokeWidth={2}
-              strokeDasharray="6 6"
+              strokeWidth={crossed ? 2.5 : 1.75}
+              strokeDasharray="7 7"
               strokeLinecap="round"
+              stroke={crossed ? "url(#council-path)" : undefined}
               data-flow={crossed && !drawing ? "true" : undefined}
               data-draw={drawing ? "true" : undefined}
-              className={cn(crossed ? "stroke-primary/70" : "stroke-border")}
+              className={cn(!crossed && "stroke-border")}
             />
           );
         })}
@@ -150,57 +210,62 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: reduced ? 0 : i * 0.06, duration: 0.4 }}
             >
-              <text x={p.x} y={p.y - RADIUS - 14} textAnchor="middle" className="fill-muted-foreground text-[10px] uppercase tracking-wide">
+              <text
+                x={p.x}
+                y={p.y - RADIUS - 14}
+                textAnchor="middle"
+                className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-[0.18em]"
+              >
                 Agent {i + 1}
               </text>
+              {isActive && !reduced && (
+                <>
+                  <circle cx={p.x} cy={p.y} r={RADIUS + 6} fill="url(#council-active)" opacity={0.35} filter="url(#council-glow)" />
+                  <motion.circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={RADIUS}
+                    fill="none"
+                    strokeWidth={1.5}
+                    className="stroke-brand"
+                    initial={{ scale: 1, opacity: 0.7 }}
+                    animate={{ scale: 1.8, opacity: 0 }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                    style={{ transformOrigin: `${p.x}px ${p.y}px` }}
+                  />
+                </>
+              )}
               <motion.circle
                 cx={p.x}
                 cy={p.y}
                 r={RADIUS}
                 strokeWidth={1.5}
-                className={cn("transition-colors", STATE_CLASS[stage.state])}
-                animate={isActive && !reduced ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+                fill={fillFor(stage.state)}
+                className={cn("drop-shadow-sm transition-colors", strokeClass(stage.state))}
+                animate={isActive && !reduced ? { scale: [1, 1.06, 1] } : { scale: 1 }}
                 transition={isActive ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" } : { duration: 0.3 }}
                 style={{ transformOrigin: `${p.x}px ${p.y}px` }}
               />
-              {isActive && !reduced && (
-                <motion.circle
-                  cx={p.x}
-                  cy={p.y}
-                  r={RADIUS}
-                  fill="none"
-                  strokeWidth={1.5}
-                  className="stroke-primary"
-                  initial={{ scale: 1, opacity: 0.6 }}
-                  animate={{ scale: 1.7, opacity: 0 }}
-                  transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
-                  style={{ transformOrigin: `${p.x}px ${p.y}px` }}
-                />
-              )}
-              <foreignObject x={p.x - 12} y={p.y - 12} width={24} height={24} className="pointer-events-none">
-                <Icon
-                  className={cn(
-                    "size-6",
-                    stage.state === "active" && "text-primary",
-                    stage.state === "done" && "text-emerald-600",
-                    stage.state === "failed" && "text-destructive",
-                    (stage.state === "pending" || stage.state === "skipped") && "text-muted-foreground",
-                  )}
-                  aria-hidden
-                />
+              <foreignObject x={p.x - 13} y={p.y - 13} width={26} height={26} className="pointer-events-none">
+                <Icon className={cn("size-[26px]", iconClass(stage.state))} strokeWidth={1.75} aria-hidden />
               </foreignObject>
               {stage.state === "done" && (
-                <motion.g initial={reduced ? false : { scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 18 }} style={{ transformOrigin: `${p.x + 19}px ${p.y - 19}px` }}>
-                  <circle cx={p.x + 19} cy={p.y - 19} r={8} className="fill-emerald-500" />
-                  <foreignObject x={p.x + 13} y={p.y - 25} width={12} height={12} className="pointer-events-none">
-                    <Check className="size-3 text-white" aria-hidden />
+                <motion.g
+                  initial={reduced ? false : { scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 18 }}
+                  style={{ transformOrigin: `${p.x + 21}px ${p.y - 21}px` }}
+                >
+                  <circle cx={p.x + 21} cy={p.y - 21} r={9} className="fill-emerald-500 stroke-background" strokeWidth={2} />
+                  <foreignObject x={p.x + 15} y={p.y - 27} width={12} height={12} className="pointer-events-none">
+                    <Check className="size-3 text-white" strokeWidth={3} aria-hidden />
                   </foreignObject>
                 </motion.g>
               )}
-              <text x={p.x} y={p.y + RADIUS + 18} textAnchor="middle" className="fill-foreground text-[13px] font-medium">
+              <text x={p.x} y={p.y + RADIUS + 20} textAnchor="middle" className="fill-foreground text-[13.5px] font-semibold">
                 {AGENT_NAMES[stage.key]}
               </text>
-              <text x={p.x} y={p.y + RADIUS + 34} textAnchor="middle" className="fill-muted-foreground text-[11px]">
+              <text x={p.x} y={p.y + RADIUS + 36} textAnchor="middle" className="fill-muted-foreground text-[11px]">
                 {truncate(last ?? stage.label)}
               </text>
             </motion.g>

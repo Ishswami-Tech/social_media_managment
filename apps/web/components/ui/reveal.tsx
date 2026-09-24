@@ -5,14 +5,18 @@
  * index, once per element. Static under prefers-reduced-motion.
  */
 import { motion, useReducedMotion } from "framer-motion";
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 const STAGGER_S = 0.05;
 const MAX_DELAY_S = 0.4;
+const subscribeNever = (): (() => void) => () => {};
 
 export function Reveal({ children, index = 0, className }: { children: ReactNode; index?: number; className?: string }) {
   const reduced = useReducedMotion();
-  if (reduced) return <div className={className}>{children}</div>;
+  // The server (and the first client paint) render plain markup, so nothing is
+  // ever invisible before hydration and there is no style mismatch to patch.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
+  if (!mounted || reduced) return <div className={className}>{children}</div>;
   return (
     <motion.div
       className={className}

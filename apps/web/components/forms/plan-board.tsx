@@ -89,7 +89,7 @@ function PlanForm({ accounts, onCreated }: { accounts: PlanAccount[]; onCreated:
   }
 
   return (
-    <section className="grid gap-3 rounded-xl border bg-card p-4">
+    <section className="grid gap-3 rounded-2xl border border-white/60 bg-white/55 p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
       <h2 className="text-base font-semibold">Plan a month</h2>
       <Textarea
         value={theme}
@@ -156,7 +156,7 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
 
   const started = plan.items.filter((i) => i.runId).length;
   return (
-    <section className="grid gap-3 rounded-xl border bg-card p-4">
+    <section className="grid gap-3 rounded-2xl border border-white/60 bg-white/55 p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">{plan.theme}</h2>
@@ -165,12 +165,13 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
           </p>
         </div>
       </header>
-      <div className="grid gap-2" role="list">
+      <div className="relative grid gap-3 pl-6 before:absolute before:bottom-3 before:left-[9px] before:top-3 before:w-px before:bg-gradient-to-b before:from-brand/60 before:via-border before:to-brand-2/60" role="list">
         {plan.items.map((item, index) => (
           <Reveal key={`${item.date}-${index}`} index={index}>
-            <div role="listitem" className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3">
+            <div role="listitem" className="relative grid gap-1 rounded-xl border border-white/60 bg-white/60 p-3 text-sm shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-md md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3 dark:border-white/10 dark:bg-white/[0.04]">
+            <span aria-hidden className={cn("absolute -left-6 top-4 size-[11px] rounded-full ring-4 ring-background", item.runId ? "bg-emerald-500" : "bg-gradient-to-br from-brand to-brand-2")} />
             <div className="grid gap-1 text-xs text-muted-foreground">
-              <span>{item.date}</span>
+              <span className="font-medium text-foreground">{item.date}</span>
               <span className={cn("w-fit rounded-full border px-1.5", FUNNEL_CLASS[item.funnel])}>{FUNNEL_LABEL[item.funnel]}</span>
               <span className="inline-flex items-center gap-1">
                 <PlatformIcon platform={item.platform} className="size-4 text-[8px]" /> {item.format}

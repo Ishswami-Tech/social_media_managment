@@ -55,7 +55,7 @@ interface Props {
   organizationName: string;
 }
 
-const LINK_BASE = "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition";
+const LINK_BASE = "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition";
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -66,11 +66,12 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       className={cn(
         LINK_BASE,
         active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          ? "bg-gradient-to-r from-brand/15 to-brand-2/10 font-medium text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--brand)_25%,transparent)]"
           : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
       )}
     >
-      <Icon className="size-4" />
+      {active && <span aria-hidden className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-brand to-brand-2" />}
+      <Icon className={cn("size-4", active && "text-brand")} />
       {item.label}
     </Link>
   );
@@ -87,9 +88,9 @@ export function Sidebar({ main, more, whatsapp = [], org = [], isSuperAdmin, org
   const moreOpen = secondary.some((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-      <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold">
-        <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar/70 text-sidebar-foreground backdrop-blur-xl md:flex">
+      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border/60 px-4 font-semibold">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-2 text-white shadow-[0_6px_16px_-6px_color-mix(in_oklch,var(--brand)_70%,transparent)]">
           <Sparkles className="size-4" />
         </span>
         <span className="truncate">{organizationName}</span>

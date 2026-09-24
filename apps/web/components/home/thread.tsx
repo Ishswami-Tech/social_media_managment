@@ -22,6 +22,8 @@ import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { CouncilFlow } from "@/components/agent/council-flow";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
+import { PostPreview } from "@/components/preview/post-preview";
+import { Pencil, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +40,7 @@ export interface ThreadAccount {
   id: string;
   platform: string;
   displayName: string;
+  avatarUrl: string | null;
   /** Final text with hashtags; empty while it is still being written. */
   text: string;
   /** One line explaining the angle that was chosen. */
@@ -210,6 +213,7 @@ function ResultCard({
   const [note, setNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   // After a refresh (judge override, another person's edit) the server's text wins.
   const [seen, setSeen] = useState(account.text);
   if (seen !== account.text) {
@@ -250,7 +254,7 @@ function ResultCard({
   const published = Boolean(account.postId);
 
   return (
-    <article className="grid gap-2 rounded-xl border bg-card p-3">
+    <article className="grid gap-3 rounded-2xl border border-white/60 bg-white/60 p-3 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
       <header className="flex flex-wrap items-center gap-2">
         <PlatformIcon platform={account.platform} />
         <span className="text-sm font-medium">{account.displayName}</span>
@@ -278,15 +282,36 @@ function ResultCard({
       </header>
 
       {account.text ? (
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={7}
-          maxLength={65000}
-          readOnly={!canDecide || decided}
-          aria-label={`Post text for ${account.displayName}`}
-          className="text-sm"
-        />
+        <div className="grid gap-2">
+          {editing ? (
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={9}
+              maxLength={65000}
+              readOnly={!canDecide || decided}
+              aria-label={`Post text for ${account.displayName}`}
+              className="text-sm"
+            />
+          ) : (
+            <PostPreview
+              platform={account.platform}
+              account={{ displayName: account.displayName, avatarUrl: account.avatarUrl }}
+              text={text}
+              media={account.image ? [{ id: "image", url: account.image.url, alt: account.image.alt }] : []}
+            />
+          )}
+          {canDecide && !decided && (
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {editing ? <Eye className="size-3.5" aria-hidden /> : <Pencil className="size-3.5" aria-hidden />}
+              {editing ? "Preview" : "Edit text"}
+            </button>
+          )}
+        </div>
       ) : (
         <p className="text-sm text-muted-foreground">The text is still being written.</p>
       )}
@@ -295,13 +320,6 @@ function ResultCard({
 
       {!decided && canDecide && account.text && runStatus === "AWAITING_APPROVAL" && (
         <EditTools runId={runId} accountId={account.id} text={text} savedText={savedText} disabled={busy} onUpdated={applyEdit} />
-      )}
-
-      {account.image && (
-        <a href={account.image.url} target="_blank" rel="noreferrer" className="block w-fit" title="Open the image">
-          {/* eslint-disable-next-line @next/next/no-img-element -- storage URLs are signed and short-lived */}
-          <img src={account.image.url} alt={account.image.alt} className="max-h-48 rounded-md border object-cover" />
-        </a>
       )}
 
       {account.why && (
@@ -467,9 +485,9 @@ export function Thread({
     <section className="grid gap-3" aria-label={topic}>
       {/* What you asked for. */}
       <div className="flex justify-end">
-        <div className="grid max-w-[85%] gap-1.5 rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2">
+        <div className="grid max-w-[85%] gap-1.5 rounded-2xl rounded-br-sm bg-gradient-to-br from-brand to-brand-2 px-3.5 py-2.5 text-white shadow-[0_12px_30px_-14px_color-mix(in_oklch,var(--brand)_70%,transparent)]">
           <p className="text-sm whitespace-pre-wrap">{topic}</p>
-          <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-white/80">
             <span className="flex -space-x-1">
               {chips.platforms.map((platform) => (
                 <PlatformIcon key={platform} platform={platform} className="size-4 text-[8px] ring-2 ring-background" />
