@@ -38,6 +38,19 @@ const catalogue: ModelInfo[] = [
   { provider: "OPENAI", model: "gpt-image-1", capabilities: ["image"], imageCost: 0.04 },
 ];
 
+describe("AIError.fromHttp", () => {
+  it("treats a retired or closed model as a provider problem so the call fails over", () => {
+    const retired = AIError.fromHttp("GOOGLE", 400, {
+      error: { message: "This model models/gemini-2.5-flash is no longer available to new users. Please update your code." },
+    });
+    expect(retired.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(retired.retryable).toBe(true);
+    const bad = AIError.fromHttp("GOOGLE", 400, { error: { message: "Invalid JSON payload" } });
+    expect(bad.code).toBe("INVALID_REQUEST");
+    expect(bad.retryable).toBe(false);
+  });
+});
+
 describe("ModelRouter", () => {
   const router = new ModelRouter(catalogue);
   const all = ["OPENAI", "ANTHROPIC", "GOOGLE"] as const;

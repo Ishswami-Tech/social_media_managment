@@ -271,7 +271,11 @@ export class GoogleProvider implements AIProvider {
     }
   }
 
-  /** Lists generateContent/predict-capable models; image and embedding models are tagged by id. */
+  /**
+   * Lists generateContent/predict-capable models, newest generation first and
+   * "flash" ahead of "pro" within a generation, so automatic routing lands on
+   * the current cheap model instead of one Google has retired for new accounts.
+   */
   async listModels(auth: ProviderAuth) {
     const base = auth.baseUrl ?? DEFAULT_BASE;
     const { models } = await getJson<{
@@ -286,6 +290,24 @@ export class GoogleProvider implements AIProvider {
         const id = m.name.replace(/^models\//, "");
         return { id, displayName: m.displayName ?? id, capabilities: capabilitiesFor(id) };
       })
-      .filter((m) => !m.capabilities.includes("embedding"));
+      .filter((m) => !m.capabilities.includes("embedding"))
+      .sort((a, b) => rankGeminiModel(b.id) - rankGeminiModel(a.id));
   }
+}
+
+/**
+ * Higher ranks first: generation number dominates, then flash over pro over
+ * everything else, stable releases over previews, "lite" last within a tier.
+ */
+export function rankGeminiModel(id: string): number {
+  const version = /(\d+(?:\.\d+)?)/.exec(id.replace(/^gemini-|^imagen-/, ""));
+  const generation = version ? Number.parseFloat(version[1]!) : 0;
+  const lower = id.toLowerCase();
+  let tier = 0;
+  if (lower.includes("flash")) tier = 30;
+  else if (lower.includes("pro")) tier = 20;
+  else tier = 10;
+  if (lower.includes("lite")) tier -= 5;
+  if (lower.includes("preview") || lower.includes("exp")) tier -= 2;
+  return generation * 100 + tier;
 }

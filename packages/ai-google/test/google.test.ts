@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@platform/ai-core";
-import { GoogleProvider, capabilitiesFor, isGeminiImageModel, toContents } from "../src/index";
+import { GoogleProvider, capabilitiesFor, isGeminiImageModel, rankGeminiModel, toContents } from "../src/index";
 
 type Captured = { url: string; body: Record<string, unknown>; headers: Record<string, string> };
 
@@ -115,6 +115,22 @@ describe("images and model listing", () => {
     expect(res.images[0]).toEqual({ base64: "AAAA", mimeType: "image/png" });
   });
 
+  it("lists the newest flash model first so routing avoids retired ones", async () => {
+    expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-2.5-flash"));
+    expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-pro"));
+    expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-flash-lite"));
+    expect(rankGeminiModel("gemini-3.6-flash")).toBeGreaterThan(rankGeminiModel("gemini-3.6-flash-preview"));
+    mockFetch({
+      models: [
+        { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/gemini-3.6-pro", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/gemini-3.6-flash", supportedGenerationMethods: ["generateContent"] },
+      ],
+    });
+    const models = await provider.listModels(auth);
+    expect(models.map((m) => m.id)).toEqual(["gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash"]);
+  });
+
   it("tags capabilities by model id and drops embedding models", async () => {
     expect(capabilitiesFor("gemini-2.5-pro")).toEqual(["text", "vision", "json"]);
     expect(capabilitiesFor("imagen-4.0-generate-001")).toEqual(["image"]);
@@ -128,8 +144,8 @@ describe("images and model listing", () => {
     });
     const models = await provider.listModels(auth);
     expect(models.map((m) => [m.id, m.capabilities.join(",")])).toEqual([
-      ["gemini-2.5-flash", "text,vision,json"],
       ["imagen-4.0-generate-001", "image"],
+      ["gemini-2.5-flash", "text,vision,json"],
     ]);
   });
 });

@@ -1,6 +1,8 @@
 export type AIErrorCode =
   "AUTH" | "RATE_LIMITED" | "CONTENT_FILTERED" | "INVALID_REQUEST" | "PROVIDER_UNAVAILABLE" | "TIMEOUT" | "UNKNOWN";
 
+const RETIRED_MODEL_RE = /no longer available|not available to new users|has been (retired|deprecated|shut down)|is deprecated|model .* not found|does not exist/i;
+
 export class AIError extends Error {
   constructor(
     message: string,
@@ -18,6 +20,8 @@ export class AIError extends Error {
     const message = messageFrom(body) ?? `${provider} request failed with ${status}`;
     if (status === 401 || status === 403) return new AIError(message, "AUTH", false, provider, status, body);
     if (status === 429) return new AIError(message, "RATE_LIMITED", true, provider, status, body);
+    // A model that was withdrawn or is closed to this account: another model or provider can take the call.
+    if (RETIRED_MODEL_RE.test(message)) return new AIError(message, "PROVIDER_UNAVAILABLE", true, provider, status, body);
     if (status === 408 || status === 504) return new AIError(message, "TIMEOUT", true, provider, status, body);
     if (status >= 500) return new AIError(message, "PROVIDER_UNAVAILABLE", true, provider, status, body);
     if (/safety|content_policy|blocked|filtered/i.test(message))
