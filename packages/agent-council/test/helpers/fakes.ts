@@ -19,6 +19,7 @@ import type {
   DraftCandidate,
   JudgeVerdict,
   PipelineContext,
+  SkillCard,
   ReviewNote,
   RunSnapshot,
   StepEvent,
@@ -54,9 +55,20 @@ export interface Script {
   failing: Set<string>;
   /** Providers that answer every call with a 429 quota error. */
   outOfQuota: Set<AIProviderName>;
+  /** Skill ids the scripted planner picks. */
+  skillPicks: string[];
+  /** Draft text fragments the scripted platform reviewer sends back for a fix. */
+  reviseOnReview: string[];
 }
 
-export const createScript = (): Script => ({ calls: [], writerCalls: 0, failing: new Set(), outOfQuota: new Set() });
+export const createScript = (): Script => ({
+  calls: [],
+  writerCalls: 0,
+  failing: new Set(),
+  outOfQuota: new Set(),
+  skillPicks: [],
+  reviseOnReview: [],
+});
 
 /** Draft A is clean; draft B states a number no claim supports, so it must be revised. */
 export const WRITER_TEXTS = [
@@ -132,8 +144,16 @@ function answer(stage: string, system: string, script: Script): string {
     }
     case "REVISION":
       return JSON.stringify({ text: REVISED_TEXT, hashtags: ["#onboarding"], claimIds: [] });
-    case "CROSS-REVIEW":
-      return JSON.stringify({ issues: ['"the first week decides everything" reads as a claim; soften it'] });
+    case "SKILLS":
+      return JSON.stringify({ picks: script.skillPicks.map((id) => ({ id, why: "fits the platform" })) });
+    case "PLATFORM REVIEW": {
+      const text = system.match(/DRAFT\n([\s\S]*?)\nHashtags:/)?.[1] ?? "";
+      const revise = script.reviseOnReview.some((needle) => text.includes(needle));
+      return JSON.stringify({
+        verdict: revise ? "REVISE" : "PASS",
+        issues: ['"the first week decides everything" reads as a claim; soften it'],
+      });
+    }
     case "JUDGE":
       return JSON.stringify({
         winner: "A",
@@ -245,6 +265,9 @@ export function createMemoryStore(initial: RunSnapshot): MemoryStore {
       snapshot = { ...snapshot, research, claims: withIds };
       return withIds;
     },
+    async saveSkills(_runId, skillIds) {
+      snapshot = { ...snapshot, skillIds };
+    },
     async saveStrategy(runAccountId, strategy: AccountStrategy) {
       mapAccount(runAccountId, (a) => ({ ...a, strategy }));
     },
@@ -345,6 +368,7 @@ export function createTestContext(
     allowedModels?: string[];
     capCents?: number;
     script?: Script;
+    skills?: SkillCard[];
   } = {},
 ): TestContext {
   const script = options.script ?? createScript();
@@ -363,6 +387,7 @@ export function createTestContext(
     availableProviders,
     allowedModels: options.allowedModels,
     researchTools: [NOOP_TOOL],
+    ...(options.skills ? { skills: options.skills } : {}),
     store: memory.store,
     budget: money.budget,
     health: createCircuitBreaker(),

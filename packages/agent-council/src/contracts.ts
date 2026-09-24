@@ -150,10 +150,25 @@ export interface AccountRecommendation {
 // Ports the application implements
 // ---------------------------------------------------------------------------
 
+/** A playbook the organization can attach to a campaign (imported SKILL.md or written by hand). */
+export interface SkillCard {
+  /** Stable id, e.g. `custom:linkedin-post-writer`. */
+  id: string;
+  name: string;
+  description: string;
+  /** Platforms the playbook is written for; empty means it applies everywhere. */
+  platforms: string[];
+  /** Applied to every campaign without being picked. */
+  always: boolean;
+  instructions: string;
+}
+
 export interface RunSnapshot {
   id: string;
   organizationId: string;
   status: AgentRunStatus;
+  /** Playbooks attached to this campaign: what the person picked plus what the skills step added. */
+  skillIds?: string[];
   /** Checkpoint marker: `<STAGE>:running` while a stage executes, `<STAGE>:done` once it finished. */
   currentStep?: string | null;
   assurance: AgentAssurance;
@@ -202,6 +217,8 @@ export interface AgentRunStore {
   /** Persists the checkpoint marker without changing the status (a stage finished or was re-entered). */
   markStep(runId: string, currentStep: string): Promise<void>;
   saveResearch(runId: string, brief: Brief, claims: ClaimRecord[]): Promise<ClaimRecord[]>;
+  /** Additive (skills step): persist the playbooks chosen for the run. */
+  saveSkills(runId: string, skillIds: string[]): Promise<void>;
   saveStrategy(runAccountId: string, strategy: AccountStrategy): Promise<void>;
   saveDraft(runId: string, runAccountId: string, draft: DraftCandidate, extra?: { checks?: CheckResult; judgeScore?: number; judgeRationale?: string }): Promise<string>;
   saveRecommendation(rec: AccountRecommendation & { winnerDraftId?: string }): Promise<void>;
@@ -257,6 +274,11 @@ export interface PipelineContext {
    * the duplicate check. Empty/undefined disables duplicate detection.
    */
   recentTexts?: string[];
+  /**
+   * Additive: the organization's playbook catalogue. The skills step picks from
+   * it; the writing and review stages inject the chosen, platform-relevant ones.
+   */
+  skills?: SkillCard[];
   /**
    * Additive: skill playbooks attached to this campaign. Appended to the system
    * prompt of every stage that writes text (writer, revision, synthesis, adapt).

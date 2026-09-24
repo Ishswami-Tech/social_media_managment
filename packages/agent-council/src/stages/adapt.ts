@@ -59,6 +59,8 @@ async function adaptDraft(
           text: synthesized.text,
           hashtags: synthesized.hashtags.join(" "),
         }),
+        run,
+        account.platform,
       ),
       user: "Adapt the post to the platform now. Return only the JSON object.",
     },

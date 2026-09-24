@@ -39,8 +39,8 @@ export interface ProgressEvent {
   error?: string | null;
   /** ISO timestamp. */
   at: string;
-  /** Only carried for `judge.verdict`, whose output names the winning draft. */
-  output?: { winner?: string } | null;
+  /** Carried for `judge.verdict` (winning draft), `skills` (chosen playbooks) and `review` (verdict). */
+  output?: { winner?: string; skills?: string[]; verdict?: string; issues?: string[]; fixed?: boolean } | null;
 }
 
 /** One social account taking part, as the progress view needs it. */
@@ -155,6 +155,7 @@ export function stageOfStep(step: string): ProgressStageKey | null {
     case "research":
     case "claims":
       return "research";
+    case "skills":
     case "strategy":
       return "strategy";
     case "writer":
@@ -283,7 +284,16 @@ function researchLine(event: ProgressEvent, ctx: Ctx): string | null {
   return null;
 }
 
+function skillsLine(event: ProgressEvent): string | null {
+  if (event.status === "STARTED") return "Choosing playbooks…";
+  if (event.status === "FAILED") return `Could not choose playbooks: ${shortReason(event.error)}`;
+  if (event.status !== "SUCCEEDED") return null;
+  const names = event.output?.skills ?? [];
+  return names.length > 0 ? `Following ${listNames(names)}` : "No playbook needed";
+}
+
 function strategyLine(event: ProgressEvent, ctx: Ctx): string | null {
+  if (parseStep(event.step).head === "skills") return skillsLine(event);
   const name = nameOf(ctx, parseStep(event.step).runAccountId);
   if (event.status === "STARTED") return `Choosing an angle for ${name}…`;
   if (event.status === "SUCCEEDED") return `Angle chosen for ${name}`;
@@ -304,12 +314,27 @@ function draftingLine(event: ProgressEvent, ctx: Ctx): string | null {
   return null;
 }
 
+function platformReviewLine(event: ProgressEvent, ctx: Ctx, draft: string, runAccountId?: string): string | null {
+  const where = runAccountId
+    ? platformName(ctx.accounts.find((a) => a.runAccountId === runAccountId)?.platform ?? "")
+    : "";
+  const target = where ? ` for ${where}` : "";
+  if (event.status === "STARTED") return `Reading ${draft.replace(/^Draft/, "draft")} as a ${where || "platform"} reader…`;
+  if (event.status === "SKIPPED" || event.status === "FAILED") return `${draft} could not be reviewed${target}`;
+  if (event.status !== "SUCCEEDED" || !event.output) return null;
+  const count = event.output.issues?.length ?? 0;
+  if (count === 0) return `${draft} reads well${target}`;
+  const noted = `${count} ${count === 1 ? "note" : "notes"}`;
+  if (event.output.verdict === "REVISE") return event.output.fixed ? `${draft}: ${noted}, fixed` : `${draft}: ${noted}, kept as is`;
+  return `${draft}: ${noted}${target}`;
+}
+
 function reviewLine(event: ProgressEvent, ctx: Ctx): string | null {
   const { head, runAccountId, label, suffix } = parseStep(event.step);
   const draft = label ? `Draft ${label}` : "The draft";
   switch (head) {
     case "checks":
-      if (suffix === "revision")
+      if (suffix === "revision" || suffix === "review-fix")
         return event.status === "SUCCEEDED" ? `${draft} passed after the fix` : `${draft} still has problems`;
       if (event.status === "SUCCEEDED") return `${draft} passed the checks`;
       if (event.status === "FAILED") return `${draft} needs a fix`;
@@ -326,6 +351,7 @@ function reviewLine(event: ProgressEvent, ctx: Ctx): string | null {
     case "draft-dropped":
       return `${draft} dropped: ${event.error ? shortReason(event.error) : "it did not pass the checks"}`;
     case "review":
+      if (label) return platformReviewLine(event, ctx, draft, runAccountId);
       return event.status === "SKIPPED" ? `Nothing passed the checks${forAccount(ctx, runAccountId)}` : null;
     default:
       return null;

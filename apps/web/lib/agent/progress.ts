@@ -66,17 +66,26 @@ export type RunProgressRow = Prisma.AgentRunGetPayload<{ select: typeof runProgr
 export type ProgressEventRow = Prisma.AgentRunEventGetPayload<{ select: typeof progressEventSelect }>;
 type EventRow = ProgressEventRow;
 
-/** The blind judge's verdict names the winning draft; no other output travels. */
-function winnerOf(row: EventRow): { winner?: string } | undefined {
-  if (row.step !== VERDICT_EVENT_STEP) return undefined;
+const strings = (value: unknown): string[] | undefined =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : undefined;
+
+/**
+ * Only the outputs the progress view reads travel to the browser: the judge's
+ * winner, the chosen playbook names and a platform review's verdict.
+ */
+export function outputOf(row: Pick<EventRow, "step" | "output">): ProgressEvent["output"] {
   const output = row.output;
   if (typeof output !== "object" || output === null || Array.isArray(output)) return undefined;
-  const winner = (output as Record<string, unknown>).winner;
-  return typeof winner === "string" ? { winner } : undefined;
+  const record = output as Record<string, unknown>;
+  if (row.step === VERDICT_EVENT_STEP) return typeof record.winner === "string" ? { winner: record.winner } : undefined;
+  if (row.step === "skills") return { skills: strings(record.skills) ?? [] };
+  if (row.step.startsWith("review:") && typeof record.verdict === "string")
+    return { verdict: record.verdict, issues: strings(record.issues) ?? [], fixed: record.fixed === true };
+  return undefined;
 }
 
 export function toProgressEvent(row: EventRow): ProgressEvent {
-  const output = winnerOf(row);
+  const output = outputOf(row);
   return {
     id: row.id,
     step: row.step,

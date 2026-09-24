@@ -225,6 +225,31 @@ describe("buildProgress: activity lines", () => {
     ]);
   });
 
+  it("names the playbooks chosen for the campaign under the strategy stage", () => {
+    const events = [
+      event("skills", "STARTED"),
+      event("skills", "SUCCEEDED", { output: { skills: ["LinkedIn post writer", "Humanizer"] } }),
+    ];
+    const strategy = stage(buildProgress("STRATEGIZING", events, accounts), "strategy");
+    expect(strategy.activity).toEqual(["Choosing playbooks…", "Following LinkedIn post writer and Humanizer"]);
+  });
+
+  it("reports the platform review verdict per draft", () => {
+    const events = [
+      event(`review:${ACC}:A`, "STARTED"),
+      event(`review:${ACC}:A`, "SUCCEEDED", { output: { verdict: "REVISE", issues: ["x", "y"], fixed: true } }),
+      event(`review:${ACC}:B`, "SUCCEEDED", { output: { verdict: "PASS", issues: [], fixed: false } }),
+      event(`checks:${ACC}:A.review-fix`, "SUCCEEDED"),
+    ];
+    const review = stage(buildProgress("REVIEWING", events, accounts), "review");
+    expect(review.activity).toEqual([
+      "Reading draft A as a LinkedIn reader…",
+      "Draft A: 2 notes, fixed",
+      "Draft B reads well for LinkedIn",
+      "Draft A passed after the fix",
+    ]);
+  });
+
   it("reports image generation as part of the adaptation", () => {
     const events = [
       event(`media:${ACC}`, "STARTED", { provider: "GOOGLE" }),

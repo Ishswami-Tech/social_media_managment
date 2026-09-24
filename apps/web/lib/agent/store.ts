@@ -241,6 +241,7 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
         organizationId: run.organizationId,
         status: run.status,
         currentStep: run.currentStep,
+        skillIds: run.skillIds,
         assurance: run.assurance,
         publishMode: run.publishMode,
         brief,
@@ -269,6 +270,10 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
 
     async markStep(runId, currentStep) {
       await prisma.agentRun.update({ where: { id: runId }, data: { currentStep } });
+    },
+
+    async saveSkills(runId, skillIds) {
+      await prisma.agentRun.update({ where: { id: runId }, data: { skillIds } });
     },
 
     async saveResearch(runId, brief, claims) {

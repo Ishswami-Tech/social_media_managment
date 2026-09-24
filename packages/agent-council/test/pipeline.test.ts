@@ -73,12 +73,12 @@ describe("runPipelineToCompletion", () => {
     expect(memory.events.some((e) => e.step === "checks:racc_li:B.revision" && e.status === "SUCCEEDED")).toBe(true);
   });
 
-  it("cross-reviews with another provider and judges blind on a provider that did not write", async () => {
+  it("reviews every draft as a platform reader on another provider and judges blind on a provider that did not write", async () => {
     const { ctx, memory, script } = setup();
     await runPipelineToCompletion(ctx, "run_1");
 
-    const crossReviews = script.calls.filter((c) => c.stage === "CROSS-REVIEW");
-    expect(crossReviews.length).toBeGreaterThan(0);
+    const reviews = script.calls.filter((c) => c.stage === "PLATFORM REVIEW");
+    expect(reviews.length).toBeGreaterThan(0);
     expect(memory.snapshot().accounts[0]?.reviewNotes?.[0]?.label).toBe("A");
 
     const judgeCalls = script.calls.filter((c) => c.stage === "JUDGE");
@@ -135,7 +135,7 @@ describe("runPipelineToCompletion", () => {
       "strategy:racc_li",
       "writer:racc_li:A",
       "revision:racc_li:B",
-      "cross-review:racc_li:A",
+      "review:racc_li:A",
       "judge:racc_li",
       "synthesis:racc_li:A",
       "adapt:racc_li:A",

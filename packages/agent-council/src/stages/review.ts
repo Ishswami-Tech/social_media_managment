@@ -1,8 +1,14 @@
 /**
  * REVIEWING: deterministic checks first (no model, no cost). Only drafts that
  * fail go through the revision editor, once. Drafts that still fail are dropped
- * — the judge must never see a draft that breaks a rule. HIGH_ASSURANCE adds a
- * cross-review by a provider that did not write the draft.
+ * — the judge must never see a draft that breaks a rule.
+ *
+ * Every survivor then gets a platform review: a reader for that platform,
+ * armed with the platform conventions and the playbooks attached to the
+ * campaign, lists what a person would notice and says whether the draft must
+ * be revised. A REVISE verdict triggers one fix pass; the notes travel to the
+ * blind judge either way. HIGH_ASSURANCE asks a provider that did not write
+ * the draft to do the review.
  */
 import { z } from "zod";
 import { checkErrors, runChecks } from "../checks";
@@ -27,7 +33,10 @@ import {
 const REVISION_OUTPUT_TOKENS = 1_200;
 const REVIEW_OUTPUT_TOKENS = 600;
 
-export const ReviewNotesOutputSchema = z.object({ issues: z.array(z.string()).default([]) });
+export const ReviewNotesOutputSchema = z.object({
+  verdict: z.enum(["PASS", "REVISE"]).default("PASS"),
+  issues: z.array(z.string()).default([]),
+});
 
 /** One draft per label: the revision when there is one, otherwise the original. */
 export function latestDraftsByLabel(account: RunAccountSnapshot): DraftCandidate[] {
@@ -35,7 +44,8 @@ export function latestDraftsByLabel(account: RunAccountSnapshot): DraftCandidate
   for (const draft of account.drafts) {
     if (draft.role !== "WRITER" && draft.role !== "REVISION") continue;
     const current = byLabel.get(draft.label);
-    if (!current || (current.role === "WRITER" && draft.role === "REVISION")) byLabel.set(draft.label, draft);
+    // Drafts arrive in creation order, so the newest revision of a label wins.
+    if (!current || draft.role === "REVISION") byLabel.set(draft.label, draft);
   }
   return [...byLabel.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -64,19 +74,29 @@ function checkDraft(
   return runChecks(checkInputFor(ctx, run, account, draft, plannedMedia(account)));
 }
 
+/** Issue lines the revision editor reads, from deterministic checks or from a reviewer. */
+export function issueLines(result: CheckResult): string[] {
+  return result.issues.map((i) => `[${i.severity}] ${i.code}: ${i.message}`);
+}
+
+/**
+ * One revision pass on a draft. Returns the revised draft when it passes the
+ * deterministic checks again, otherwise undefined.
+ */
 async function reviseDraft(
   ctx: PipelineContext,
   run: RunSnapshot,
   account: RunAccountSnapshot,
   draft: DraftCandidate,
-  result: CheckResult,
+  issues: readonly string[],
+  suffix: "revision" | "review-fix",
 ): Promise<DraftCandidate | undefined> {
   const { value, call } = await callJson(
     ctx,
     {
       runId: run.id,
       organizationId: run.organizationId,
-      step: stepName("revision", account, draft.label),
+      step: stepName("revision", account, suffix === "revision" ? draft.label : `${draft.label}.${suffix}`),
       promptKey: "revision",
       pref: { provider: draft.provider, model: draft.model },
       temperature: 0.3,
@@ -86,10 +106,12 @@ async function reviseDraft(
         renderPrompt("revision", {
           ...accountVars(account),
           claims: claimsText(supportedClaims(run.claims)),
-          issues: result.issues.map((i) => `- [${i.severity}] ${i.code}: ${i.message}`).join("\n"),
+          issues: issues.map((i) => `- ${i}`).join("\n"),
           text: draft.text,
           hashtags: draft.hashtags.join(" "),
         }),
+        run,
+        account.platform,
       ),
       user: "Revise the draft now. Return only the JSON object.",
     },
@@ -97,6 +119,7 @@ async function reviseDraft(
   );
   const revised: DraftCandidate = {
     ...draft,
+    id: undefined,
     role: "REVISION",
     provider: call.provider,
     model: call.model,
@@ -114,55 +137,109 @@ async function reviseDraft(
   const recheck = checkDraft(ctx, run, account, revised);
   const id = await ctx.store.saveDraft(run.id, account.runAccountId, revised, { checks: recheck });
   await ctx.store.addEvent(run.id, {
-    step: stepName("checks", account, `${draft.label}.revision`),
+    step: stepName("checks", account, `${draft.label}.${suffix}`),
     status: recheck.ok ? "SUCCEEDED" : "FAILED",
     validation: recheck.issues,
   });
   return recheck.ok ? { ...revised, id } : undefined;
 }
 
-async function crossReview(
+interface PlatformReview {
+  verdict: "PASS" | "REVISE";
+  issues: string[];
+}
+
+/**
+ * The platform reader's verdict on one draft. HIGH_ASSURANCE prefers a provider
+ * that did not write it; otherwise routing decides.
+ */
+async function reviewDraft(
   ctx: PipelineContext,
   run: RunSnapshot,
   account: RunAccountSnapshot,
-  drafts: readonly DraftCandidate[],
-): Promise<ReviewNote[]> {
-  const notes: ReviewNote[] = [];
-  for (const draft of drafts) {
-    const other = ctx.availableProviders.find((p) => p !== draft.provider);
-    try {
-      const { value } = await callJson(
-        ctx,
-        {
-          runId: run.id,
-          organizationId: run.organizationId,
-          step: stepName("cross-review", account, draft.label),
-          promptKey: "review",
-          pref: other ? { provider: other } : undefined,
-          temperature: 0.2,
-          expectedOutputTokens: REVIEW_OUTPUT_TOKENS,
-          system: renderPrompt("review", {
+  draft: DraftCandidate,
+): Promise<PlatformReview | undefined> {
+  const other =
+    run.assurance === "HIGH_ASSURANCE" ? ctx.availableProviders.find((p) => p !== draft.provider) : undefined;
+  try {
+    const { value } = await callJson(
+      ctx,
+      {
+        runId: run.id,
+        organizationId: run.organizationId,
+        step: stepName("review", account, draft.label),
+        promptKey: "review",
+        pref: other ? { provider: other } : undefined,
+        temperature: 0.2,
+        expectedOutputTokens: REVIEW_OUTPUT_TOKENS,
+        system: withSkills(
+          ctx,
+          renderPrompt("review", {
             ...accountVars(account),
             strategy: strategyText(account.strategy),
             claims: claimsText(supportedClaims(run.claims)),
             text: draft.text,
             hashtags: draft.hashtags.join(" "),
           }),
-          user: "List the issues you found. Return only the JSON object.",
-        },
-        ReviewNotesOutputSchema,
-      );
-      if (value.issues.length > 0) notes.push({ label: draft.label, issues: value.issues });
-    } catch (error) {
-      if (isPipelineBlocked(error)) throw error;
-      await ctx.store.addEvent(run.id, {
-        step: stepName("cross-review", account, draft.label),
-        status: "SKIPPED",
-        error: errorMessage(error),
+          run,
+          account.platform,
+        ),
+        user: `Review this draft as a ${account.platform} reader now. Return only the JSON object.`,
+      },
+      ReviewNotesOutputSchema,
+    );
+    return { verdict: value.issues.length === 0 ? "PASS" : value.verdict, issues: value.issues };
+  } catch (error) {
+    if (isPipelineBlocked(error)) throw error;
+    await ctx.store.addEvent(run.id, {
+      step: stepName("review", account, draft.label),
+      status: "SKIPPED",
+      error: errorMessage(error),
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Platform review for every survivor. A REVISE verdict gets one fix pass; when
+ * the fix passes the deterministic checks it replaces the draft, otherwise the
+ * original stays (it already passed) and the judge sees the notes.
+ */
+async function platformReview(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  account: RunAccountSnapshot,
+  survivors: readonly DraftCandidate[],
+): Promise<{ drafts: DraftCandidate[]; notes: ReviewNote[] }> {
+  const drafts: DraftCandidate[] = [];
+  const notes: ReviewNote[] = [];
+  for (const draft of survivors) {
+    const review = await reviewDraft(ctx, run, account, draft);
+    if (!review) {
+      drafts.push(draft);
+      continue;
+    }
+    if (review.issues.length > 0) notes.push({ label: draft.label, issues: review.issues });
+    let fixed: DraftCandidate | undefined;
+    if (review.verdict === "REVISE") {
+      fixed = await reviseDraft(ctx, run, account, draft, review.issues, "review-fix").catch(async (error: unknown) => {
+        if (isPipelineBlocked(error)) throw error;
+        await ctx.store.addEvent(run.id, {
+          step: stepName("revision", account, `${draft.label}.review-fix`),
+          status: "SKIPPED",
+          error: errorMessage(error),
+        });
+        return undefined;
       });
     }
+    await ctx.store.addEvent(run.id, {
+      step: stepName("review", account, draft.label),
+      status: "SUCCEEDED",
+      output: { verdict: review.verdict, issues: review.issues, fixed: Boolean(fixed) },
+    });
+    drafts.push(fixed ?? draft);
   }
-  return notes;
+  return { drafts, notes };
 }
 
 async function reviewAccount(
@@ -182,15 +259,17 @@ async function reviewAccount(
       survivors.push(draft);
       continue;
     }
-    const revised = await reviseDraft(ctx, run, account, draft, result).catch(async (error: unknown) => {
-      if (isPipelineBlocked(error)) throw error;
-      await ctx.store.addEvent(run.id, {
-        step: stepName("revision", account, draft.label),
-        status: "SKIPPED",
-        error: errorMessage(error),
-      });
-      return undefined;
-    });
+    const revised = await reviseDraft(ctx, run, account, draft, issueLines(result), "revision").catch(
+      async (error: unknown) => {
+        if (isPipelineBlocked(error)) throw error;
+        await ctx.store.addEvent(run.id, {
+          step: stepName("revision", account, draft.label),
+          status: "SKIPPED",
+          error: errorMessage(error),
+        });
+        return undefined;
+      },
+    );
     if (revised) survivors.push(revised);
     else
       await ctx.store.addEvent(run.id, {
@@ -204,12 +283,11 @@ async function reviewAccount(
   return survivors;
 }
 
-/** REVIEWING: checks, one revision pass, optional cross-review; drops what still fails. */
+/** REVIEWING: checks, one revision pass, platform review with a fix pass; drops what still fails. */
 export async function reviewStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
   let survivingTotal = 0;
   for (const account of run.accounts) {
     const survivors = await reviewAccount(ctx, run, account);
-    survivingTotal += survivors.length;
     if (survivors.length === 0) {
       await ctx.store.addEvent(run.id, {
         step: stepName("review", account),
@@ -218,10 +296,9 @@ export async function reviewStage(ctx: PipelineContext, run: RunSnapshot): Promi
       });
       continue;
     }
-    if (run.assurance === "HIGH_ASSURANCE") {
-      const notes = await crossReview(ctx, run, account, survivors);
-      await ctx.store.saveReviewNotes(account.runAccountId, notes);
-    }
+    const { drafts, notes } = await platformReview(ctx, run, account, survivors);
+    survivingTotal += drafts.length;
+    await ctx.store.saveReviewNotes(account.runAccountId, notes);
   }
   if (survivingTotal === 0) throw new PipelineBlocked("no valid drafts");
 }

@@ -8,6 +8,7 @@ import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
 import { accountVars, claimsText, filterClaimIds, stepName, stringify, supportedClaims } from "./shared";
+import { selectSkills } from "./skills";
 
 const STRATEGY_OUTPUT_TOKENS = 900;
 const BRIEF_CHARS = 8_000;
@@ -23,8 +24,9 @@ export const StrategyOutputSchema = z.object({
   mediaConcept: z.string().optional(),
 });
 
-/** STRATEGIZING: a strategy per run account, persisted through the store. */
+/** STRATEGIZING: the playbooks for the campaign, then a strategy per run account, persisted through the store. */
 export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
+  await selectSkills(ctx, run);
   const claims = supportedClaims(run.claims);
   const brief = run.research ? stringify(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
   for (const account of run.accounts) {

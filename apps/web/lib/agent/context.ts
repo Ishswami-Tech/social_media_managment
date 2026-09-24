@@ -1,4 +1,4 @@
-import type { PipelineContext } from "@platform/agent-council";
+import type { PipelineContext, SkillCard } from "@platform/agent-council";
 import type { Prisma } from "@platform/database";
 import { aiRuntime } from "@/lib/ai";
 import { createPrismaBudget } from "@/lib/agent/budget";
@@ -7,7 +7,7 @@ import { createPrismaRunStore } from "@/lib/agent/store";
 import { prisma } from "@/lib/db";
 import { pluginTools } from "@/lib/plugins";
 import { buildOrgResearchTools } from "@/lib/research";
-import { attachedSkillInstructions } from "@/lib/skills";
+import { toSkillCard } from "@/lib/agent/skill-cards";
 
 /** Published texts compared by the duplicate check (spec: last 50). */
 const RECENT_TEXTS_LIMIT = 50;
@@ -29,19 +29,21 @@ async function recentPublishedTexts(organizationId: string): Promise<string[]> {
   return rows.map((r) => r.text);
 }
 
-/** The two choices a person can make per campaign: which model, and which skills. */
-interface RunPreferences {
-  preferredModel: string | null;
-  skillIds: string[];
+/** The model a person pinned for the campaign, if any (skills live on the run snapshot). */
+async function preferredModelOf(organizationId: string, runId?: string): Promise<string | null> {
+  if (!runId) return null;
+  const run = await prisma.agentRun.findFirst({ where: { id: runId, organizationId }, select: { preferredModel: true } });
+  return run?.preferredModel ?? null;
 }
 
-async function runPreferences(organizationId: string, runId?: string): Promise<RunPreferences> {
-  if (!runId) return { preferredModel: null, skillIds: [] };
-  const run = await prisma.agentRun.findFirst({
-    where: { id: runId, organizationId },
-    select: { preferredModel: true, skillIds: true },
+/** Every enabled playbook of the organization, as the catalogue the skills step picks from. */
+async function skillCatalogue(organizationId: string): Promise<SkillCard[]> {
+  const rows = await prisma.organizationSkill.findMany({
+    where: { organizationId, enabled: true },
+    orderBy: { name: "asc" },
+    select: { slug: true, name: true, description: true, instructions: true, autoApply: true },
   });
-  return { preferredModel: run?.preferredModel ?? null, skillIds: run?.skillIds ?? [] };
+  return rows.map(toSkillCard);
 }
 
 /**
@@ -49,27 +51,23 @@ async function runPreferences(organizationId: string, runId?: string): Promise<R
  * runtime (keys never leave the server), tenant-scoped research and plugin
  * tools, and the Prisma-backed ports.
  *
- * Passing `runId` also honours what the person chose when they asked for the
- * post: a single model instead of the whole allow-list, and the instructions of
- * any skills they attached.
+ * Passing `runId` also honours the model the person pinned for the post. The
+ * playbook catalogue always rides along; which playbooks apply is decided per
+ * run by the skills step and read from the run snapshot.
  */
 export async function buildPipelineContext(organizationId: string, runId?: string): Promise<PipelineContext> {
-  const [ai, settings, researchTools, plugins, recentTexts, preferences] = await Promise.all([
+  const [ai, settings, researchTools, plugins, recentTexts, preferredModel, skills] = await Promise.all([
     aiRuntime(organizationId),
     prisma.organizationSettings.findUnique({ where: { organizationId }, select: { agentAllowedModels: true } }),
     buildOrgResearchTools(organizationId),
     pluginTools(organizationId),
     recentPublishedTexts(organizationId),
-    runPreferences(organizationId, runId),
+    preferredModelOf(organizationId, runId),
+    skillCatalogue(organizationId),
   ]);
   // One picked model wins over the organization allow-list; otherwise the
   // allow-list (or nothing, meaning automatic routing) applies.
-  const allowedModels = preferences.preferredModel
-    ? [preferences.preferredModel]
-    : parseAllowedModels(settings?.agentAllowedModels);
-  const skillInstructions = preferences.skillIds.length
-    ? await attachedSkillInstructions(organizationId, preferences.skillIds)
-    : undefined;
+  const allowedModels = preferredModel ? [preferredModel] : parseAllowedModels(settings?.agentAllowedModels);
   return {
     executor: ai.executor,
     router: ai.router,
@@ -79,7 +77,7 @@ export async function buildPipelineContext(organizationId: string, runId?: strin
     },
     availableProviders: ai.available,
     allowedModels,
-    ...(skillInstructions ? { skillInstructions } : {}),
+    skills,
     researchTools: [...researchTools, ...plugins],
     store: createPrismaRunStore(),
     budget: createPrismaBudget(),

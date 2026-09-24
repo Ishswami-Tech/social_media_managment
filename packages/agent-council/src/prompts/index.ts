@@ -8,6 +8,7 @@ export { REVIEW_PROMPT } from "./review";
 export { JUDGE_PROMPT } from "./judge";
 export { SYNTHESIS_PROMPT } from "./synthesis";
 export { ADAPT_PROMPT } from "./adapt";
+export { SKILLS_PROMPT } from "./skills";
 
-export const PROMPT_KEYS = ["research", "claims", "strategy", "writer", "revision", "review", "judge", "synthesis", "adapt"] as const;
+export const PROMPT_KEYS = ["research", "claims", "skills", "strategy", "writer", "revision", "review", "judge", "synthesis", "adapt"] as const;
 export type PromptKey = (typeof PROMPT_KEYS)[number];

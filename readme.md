@@ -104,6 +104,18 @@ actually wired into the run, so a model is never asked to call a search tool tha
 provider is out of quota, overloaded or unreachable, the Agent Council hands the same call to the next
 configured provider and records the switch in the run's event trail.
 
+### Playbooks are picked for you, and every draft is reviewed for its platform
+
+Before anything is written, the Agent Council's skills step looks at the campaign (topic, goal,
+audience, target platforms) and the organization's imported playbooks, and picks the ones that help
+write or polish a post for those platforms (a LinkedIn writing playbook for LinkedIn accounts, a
+humanizer, and so on). What you picked by hand and every "always" skill are kept; the chosen set is
+recorded on the run and shown as chips on Home. Each platform only receives the playbooks written for
+it, so an Instagram draft never sees LinkedIn rules. After the deterministic checks, every surviving
+draft gets a platform review: a reader for that platform, armed with the conventions and the attached
+playbooks, lists what a person would notice and asks for one fix pass when needed. The notes travel to
+the blind judge, which still sees text only.
+
 ### Images for agent posts
 
 The Home composer has a "Text only / With image" toggle. With it on, the Agent Council turns each

@@ -49,6 +49,8 @@ export async function synthesizeDraft(
           borrow: borrow.length > 0 ? borrow.map((b) => `- ${b}`).join("\n") : "(nothing to borrow)",
           rationale,
         }),
+        run,
+        account.platform,
       ),
       user: "Produce the merged post now. Return only the JSON object.",
     },

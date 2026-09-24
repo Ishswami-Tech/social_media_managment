@@ -23,8 +23,41 @@ export type RunAccountSnapshot = RunSnapshot["accounts"][number];
  * using the same framing as every other AI call so one skill reads the same way
  * wherever it is applied. Returns the prompt unchanged when nothing is attached.
  */
-export function withSkills(ctx: PipelineContext, system: string): string {
-  return withSkillInstructions(system, ctx.skillInstructions);
+/** Keeps the playbooks from crowding out the stage prompt itself. */
+const SKILL_CHARS_PER_SKILL = 10_000;
+const SKILL_CHARS_TOTAL = 24_000;
+
+/**
+ * The playbooks a stage must follow for one platform: the run's chosen skills
+ * plus every "always" skill, filtered to the platform, in the order they were
+ * chosen. Legacy `ctx.skillInstructions` (already rendered) comes first.
+ */
+export function skillInstructionsFor(ctx: PipelineContext, run: RunSnapshot, platform: string): string | undefined {
+  const cards = ctx.skills ?? [];
+  const chosen = run.skillIds ?? [];
+  const ordered = [
+    ...chosen.flatMap((id) => cards.filter((c) => c.id === id)),
+    ...cards.filter((c) => c.always && !chosen.includes(c.id)),
+  ].filter((c) => c.platforms.length === 0 || c.platforms.includes(platform));
+  const blocks: string[] = ctx.skillInstructions?.trim() ? [ctx.skillInstructions.trim()] : [];
+  let budget = SKILL_CHARS_TOTAL;
+  for (const card of ordered) {
+    if (budget <= 0) break;
+    const text = card.instructions.trim().slice(0, Math.min(SKILL_CHARS_PER_SKILL, budget));
+    if (!text) continue;
+    blocks.push(`## Skill: ${card.name}\n${text}`);
+    budget -= text.length;
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
+/**
+ * Appends the playbooks for the account's platform to a stage prompt. Without a
+ * run the legacy pre-rendered instructions alone apply.
+ */
+export function withSkills(ctx: PipelineContext, system: string, run?: RunSnapshot, platform?: string): string {
+  const instructions = run && platform ? skillInstructionsFor(ctx, run, platform) : ctx.skillInstructions;
+  return withSkillInstructions(system, instructions);
 }
 
 export function stringify(value: unknown): string {

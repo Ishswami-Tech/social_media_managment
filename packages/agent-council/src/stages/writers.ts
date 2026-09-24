@@ -88,6 +88,8 @@ async function writeDraft(
           strategy: strategyText(account.strategy),
           claims: claimsText(supportedClaims(run.claims)),
         }),
+        run,
+        account.platform,
       ),
       user: "Write the post now. Return only the JSON object.",
     },
