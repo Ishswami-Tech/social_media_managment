@@ -9,7 +9,7 @@
  * uses, so the picture and the words never disagree.
  */
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import gsap from "gsap";
 import { BookOpenText, Check, Compass, Gavel, PenLine, ScanSearch, Send, Wand2, type LucideIcon } from "lucide-react";
@@ -77,6 +77,8 @@ function truncate(value: string): string {
   return value.length > LABEL_MAX_CHARS ? `${value.slice(0, LABEL_MAX_CHARS - 1)}…` : value;
 }
 
+const subscribeNever = (): (() => void) => () => {};
+
 export interface CouncilFlowProps {
   stages: ProgressStage[];
   /** True while agents are working; drives the flow speed and the particles. */
@@ -88,8 +90,7 @@ export function CouncilFlow({ stages, working, className }: CouncilFlowProps) {
   const reduced = useReducedMotion();
   const svg = useRef<SVGSVGElement>(null);
   // Motion styles differ between server and client, so the picture only draws after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const points = useMemo(() => arcPoints(stages.length), [stages.length]);
   const activeIndex = stages.findIndex((s) => s.state === "active");
   const reached = activeIndex >= 0 ? activeIndex : stages.filter((s) => s.state === "done" || s.state === "skipped").length;
