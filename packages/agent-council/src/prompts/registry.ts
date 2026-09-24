@@ -18,8 +18,9 @@ export function promptHash(key: string, version: number, template: string): stri
 
 /**
  * Registers a prompt. Re-registering the same key with an identical hash is a
- * no-op (module re-evaluation); a different template for the same key throws
- * so a version bump is forced.
+ * no-op (module re-evaluation). A newer version replaces an older one (a hot
+ * reload after a version bump). The same version with a different template
+ * throws, so a template change always comes with a version bump.
  */
 export function definePrompt(key: string, version: number, template: string): PromptDefinition {
   const definition: PromptDefinition = Object.freeze({
@@ -29,8 +30,12 @@ export function definePrompt(key: string, version: number, template: string): Pr
     hash: promptHash(key, version, template),
   });
   const existing = registry.get(key);
-  if (existing && existing.hash !== definition.hash) {
-    throw new Error(`Prompt "${key}" already defined with a different template; bump the version`);
+  if (existing && existing.hash === definition.hash) return existing;
+  if (existing) {
+    if (existing.version === version) {
+      throw new Error(`Prompt "${key}" v${version} already defined with a different template; bump the version`);
+    }
+    if (existing.version > version) return existing;
   }
   registry.set(key, definition);
   return definition;

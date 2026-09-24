@@ -12,6 +12,19 @@ import "../src/prompts";
 const REQUIRED_KEYS = ["research", "claims", "strategy", "writer", "revision", "judge", "synthesis", "adapt"];
 
 describe("prompt registry", () => {
+  it("lets a newer version replace an older one but rejects a same-version template change", () => {
+    const one = "one ".repeat(60);
+    const two = "two ".repeat(60);
+    const v1 = definePrompt("registry-test", 1, one);
+    expect(definePrompt("registry-test", 1, one)).toBe(v1);
+    expect(() => definePrompt("registry-test", 1, `${one}changed`)).toThrow(/bump the version/);
+    const v2 = definePrompt("registry-test", 2, two);
+    expect(getPrompt("registry-test")).toBe(v2);
+    // A stale module re-evaluating an older version does not win back the slot.
+    expect(definePrompt("registry-test", 1, one)).toBe(v2);
+    expect(getPrompt("registry-test").version).toBe(2);
+  });
+
   it("registers every pipeline prompt with a positive version and a stable sha256 hash", () => {
     const prompts = listPrompts();
     for (const key of REQUIRED_KEYS) {
