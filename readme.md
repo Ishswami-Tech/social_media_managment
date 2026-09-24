@@ -240,6 +240,18 @@ has no long-lived processes). Per-minute crons need the Pro plan; on Hobby, run 
 `docker compose up --build` runs Postgres, Redis, the web app and a persistent worker (`docker/Dockerfile.worker`
 applies migrations on start). Point Cloudflare at the web service and set the same environment variables.
 
+### Go-live checklist
+
+- `pnpm typecheck && pnpm lint && pnpm test && pnpm --filter web build` all pass (the build prerenders 82 routes with no warnings).
+- Postgres migrated (`pnpm db:deploy`), Redis reachable over TLS, R2 (or S3) configured for media and generated images.
+- At least two AI providers with billing under Super Admin → AI providers (one Gemini key for search grounding and
+  images, one Anthropic or OpenAI key for writing). With one provider the council still runs, but failover and
+  the multi-model writers have nowhere to go.
+- `RESEND_API_KEY` so approvers get the email with the one-click approve link; `APP_URL` set to the public origin.
+- LinkedIn app credentials with the versioned REST scopes, and `LINKEDIN_API_VERSION` pinned to a version LinkedIn lists as active.
+- Health: `GET /api/health` returns `{"ok":true}`; the worker logs `workers started` with every queue.
+- Error boundaries, a loading skeleton and a not-found page are in place under `apps/web/app`; `/api/*` never returns tokens or keys.
+
 ## Scripts
 
 ```bash
