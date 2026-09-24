@@ -17,14 +17,19 @@ import {
 } from "@/components/home/composer-bar";
 import { Thread, type ThreadAccount, type ThreadProps, type PostResults } from "@/components/home/thread";
 import { TodayBar, type TodayStats } from "@/components/home/today-bar";
+import { ProviderStrip, type ProviderStatus } from "@/components/home/provider-strip";
+import { providerHealthSummary } from "@/lib/agent/provider-health";
+import { resolveAuth } from "@/lib/ai";
 import { Reveal } from "@/components/ui/reveal";
 
 export const metadata = { title: "Home" };
 
 /** How much of the conversation the feed keeps in view. */
 const MAX_THREADS = 10;
-/** Home shows what is live now or from the last day; everything older lives under Posts. */
-const RECENT_WINDOW_MS = 24 * 60 * 60_000;
+/** Home shows what is live now or finished in the last two hours; everything older lives under Posts. */
+const RECENT_WINDOW_MS = 2 * 60 * 60_000;
+/** Errors older than this no longer colour a provider chip. */
+const PROVIDER_ERROR_WINDOW_MS = 30 * 60_000;
 const LIVE_STATUSES = [
   "QUEUED",
   "RESEARCHING",
@@ -43,6 +48,19 @@ const LIVE_STATUSES = [
 /** Runs created after this moment still belong on Home even when finished. */
 function recentCutoff(): Date {
   return new Date(Date.now() - RECENT_WINDOW_MS);
+}
+
+/** Each configured provider with what the circuit breaker knows about it. */
+async function providerStatuses(organizationId: string): Promise<ProviderStatus[]> {
+  const [{ available }, health] = await Promise.all([resolveAuth(organizationId), providerHealthSummary()]);
+  const now = Date.now();
+  return available.map((provider) => {
+    const h = health.find((r) => r.provider === provider);
+    const recentFailure = h?.lastFailureAt ? now - Date.parse(h.lastFailureAt) < PROVIDER_ERROR_WINDOW_MS : false;
+    if (h?.open) return { provider, state: "cooling", reason: h.lastError ?? undefined, avgLatencyMs: h.avgLatencyMs };
+    if (recentFailure && h?.lastError && h.failureCount > 0) return { provider, state: "failing", reason: h.lastError, avgLatencyMs: h.avgLatencyMs };
+    return { provider, state: "ok", avgLatencyMs: h?.avgLatencyMs };
+  });
 }
 
 const EXAMPLE_PROMPTS = [
@@ -236,13 +254,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
   const canApprove = ctx.can("content:approve");
-  const [images, results, stats] = await Promise.all([
+  const [images, results, stats, providers] = await Promise.all([
     loadRecommendationImages(
       organizationId,
       runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
     ).catch(() => new Map<string, RecommendationImage>()),
     loadResults(runs.flatMap((run) => run.accounts.flatMap((a) => (a.postId ? [a.postId] : [])))),
     loadTodayStats(organizationId),
+    providerStatuses(organizationId).catch(() => [] as ProviderStatus[]),
   ]);
 
   // Oldest at the top, newest just above the composer — like any conversation.
@@ -271,6 +290,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </Link>
         </div>
         <TodayBar stats={stats} />
+        <ProviderStrip providers={providers} />
 
         {forbidden && (
           <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">

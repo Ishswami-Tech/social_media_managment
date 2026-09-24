@@ -114,10 +114,15 @@ function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
           {draft}
           {seat.state === "active" && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-brand align-middle" aria-hidden />}
         </p>
+      ) : seat.state === "active" || (seat.state === "pending" && animate) ? (
+        <div className="grid gap-1.5 animate-pulse" aria-label={seat.state === "active" ? "Writing" : "Waiting"}>
+          <div className="h-3 w-11/12 rounded bg-muted" />
+          <div className="h-3 w-3/4 rounded bg-muted" />
+          <div className="h-3 w-5/6 rounded bg-muted" />
+          <div className="h-3 w-1/2 rounded bg-muted" />
+        </div>
       ) : (
-        <p className="text-[13px] text-muted-foreground">
-          {seat.state === "active" ? "Writing…" : seat.state === "pending" ? "Waiting for the strategy" : "No text"}
-        </p>
+        <p className="text-[13px] text-muted-foreground">{seat.state === "pending" ? "Waiting for the strategy" : "No text"}</p>
       )}
       <AnimatePresence>
         {seat.reviewVerdict && (

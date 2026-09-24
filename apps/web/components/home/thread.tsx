@@ -23,6 +23,8 @@ import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { CouncilFlow } from "@/components/agent/council-flow";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
+import { Celebrate } from "@/components/agent/celebrate";
+import { motion } from "framer-motion";
 import { PostPreview } from "@/components/preview/post-preview";
 import { CalendarClock, Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -230,6 +232,7 @@ function ResultCard({
   const [editing, setEditing] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [publishAt, setPublishAt] = useState("");
+  const [celebration, setCelebration] = useState(0);
   // After a refresh (judge override, another person's edit) the server's text wins.
   const [seen, setSeen] = useState(account.text);
   if (seen !== account.text) {
@@ -263,6 +266,7 @@ function ResultCard({
       return;
     }
     toast.success(decision === "APPROVED" ? (scheduling && publishAt ? "Approved and scheduled" : "Approved") : "Rejected");
+    if (decision === "APPROVED") setCelebration((n) => n + 1);
     setRejecting(false);
     setScheduling(false);
     setNote("");
@@ -273,7 +277,8 @@ function ResultCard({
   const published = Boolean(account.postId);
 
   return (
-    <article className="grid gap-3 rounded-2xl border border-white/60 bg-white/60 p-3 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+    <article className="relative grid gap-3 rounded-2xl border border-white/60 bg-white/60 p-3 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+      <Celebrate token={celebration} />
       <header className="flex flex-wrap items-center gap-2">
         <PlatformIcon platform={account.platform} />
         <span className="text-sm font-medium">{account.displayName}</span>
@@ -590,6 +595,19 @@ export function Thread({
             )}
           </div>
         )}
+        <div className="grid gap-1">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className={cn(working && "animate-pulse")}>{progress.overall.label}</span>
+            <span>{progress.overall.percent}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-brand to-brand-2"
+              animate={{ width: `${progress.overall.percent}%` }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            />
+          </div>
+        </div>
         {board.writers.length > 0 && (
           <div className="grid gap-2">
             {!working && (

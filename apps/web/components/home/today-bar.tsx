@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CalendarClock, CheckCircle2, Inbox, TrendingUp } from "lucide-react";
+import { CountUp } from "@/components/ui/count-up";
 
 export interface TodayStats {
   awaiting: number;
@@ -28,14 +29,14 @@ export function TodayBar({ stats }: { stats: TodayStats }) {
     {
       icon: Inbox,
       label: "Waiting for you",
-      value: String(stats.awaiting),
+      value: <CountUp value={stats.awaiting} />,
       href: stats.awaiting > 0 ? "#waiting" : undefined,
       tone: stats.awaiting > 0 ? "text-brand" : "text-muted-foreground",
     },
     {
       icon: CheckCircle2,
       label: "Published this month",
-      value: String(stats.publishedThisMonth),
+      value: <CountUp value={stats.publishedThisMonth} />,
       href: "/posts",
       tone: "text-emerald-600 dark:text-emerald-400",
     },

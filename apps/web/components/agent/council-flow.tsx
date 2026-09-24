@@ -12,6 +12,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import gsap from "gsap";
+import { MotionPathPlugin } from "gsap/MotionPathPlugin";
+
+gsap.registerPlugin(MotionPathPlugin);
 import { Check } from "lucide-react";
 import type { ProgressStage, ProgressStageKey } from "@platform/agent-council/progress";
 import { AGENTS } from "@/components/agent/agents";
@@ -102,6 +105,15 @@ export function CouncilFlow({ stages, working, models = {}, selected = null, onS
         const length = path.getTotalLength();
         gsap.fromTo(path, { strokeDasharray: length, strokeDashoffset: length }, { strokeDashoffset: 0, duration: 0.9, ease: "power2.out" });
       });
+      // A packet rides the last flowing segment toward the agent at work.
+      const packet = root.querySelector<SVGCircleElement>("circle[data-packet='true']");
+      const lane = drawing[0] ?? flowing[flowing.length - 1];
+      if (packet && lane && working) {
+        gsap.set(packet, { opacity: 1 });
+        gsap.to(packet, { motionPath: { path: lane, align: lane, alignOrigin: [0.5, 0.5] }, duration: 1.8, repeat: -1, ease: "power1.inOut" });
+      } else if (packet) {
+        gsap.set(packet, { opacity: 0 });
+      }
     }, root);
     return () => ctx.revert();
   }, [reached, working, reduced, mounted]);
@@ -168,6 +180,7 @@ export function CouncilFlow({ stages, working, models = {}, selected = null, onS
             />
           );
         })}
+        <circle data-packet="true" r={5} fill="url(#council-path)" opacity={0} filter="url(#council-glow)" />
         {stages.map((stage, i) => {
           const p = points[i]!;
           const identity = AGENTS[stage.key];
