@@ -31,19 +31,22 @@ export interface NavItem {
   hidden?: boolean;
 }
 
-/** The five destinations that are always worth a click. */
+/**
+ * The product is one loop: plan the month, let the agents write, approve, see
+ * the results, and keep the AI's memory honest. Only that loop lives here.
+ */
 export const MAIN_NAV: NavItem[] = [
   { href: "/home", label: "Home", icon: "home" },
-  { href: "/posts", label: "Posts", icon: "posts" },
-  { href: "/whatsapp/inbox", label: "Inbox", icon: "inbox", capability: "whatsapp:view" },
-  { href: "/accounts", label: "Accounts", icon: "accounts", capability: "accounts:view" },
   { href: "/plan", label: "Plan", icon: "calendar", capability: "ai:generate" },
+  { href: "/posts", label: "Posts", icon: "posts" },
   { href: "/memory", label: "Memory", icon: "memory", capability: "accounts:view" },
+  { href: "/accounts", label: "Accounts", icon: "accounts", capability: "accounts:view" },
   { href: "/settings", label: "Settings", icon: "settings", capability: "org:settings" },
 ];
 
 /** Everything else, tucked behind a collapsed "More" group. */
 export const MORE_NAV: NavItem[] = [
+  { href: "/whatsapp/inbox", label: "Inbox", icon: "inbox", capability: "whatsapp:view" },
   { href: "/create", label: "Write it yourself", icon: "create", capability: "content:create" },
   { href: "/ai", label: "AI Studio", icon: "ai", capability: "ai:generate" },
   { href: "/analytics", label: "Analytics", icon: "analytics", capability: "analytics:view" },
