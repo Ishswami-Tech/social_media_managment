@@ -77,8 +77,16 @@ function toReviewAccount(a: RunAccount, images: ReadonlyMap<string, Recommendati
   };
 }
 
+/** The newest writer/revision draft per label: what "use instead" may pick. */
+function latestByLabel(drafts: RunAccount["drafts"]): Set<string> {
+  const latest = new Map<string, string>();
+  for (const d of drafts) if (d.role === "WRITER" || d.role === "REVISION") latest.set(d.label, d.id);
+  return new Set(latest.values());
+}
+
 function DraftList({ account, runId, canChoose }: { account: RunAccount; runId: string; canChoose: boolean }) {
   if (account.drafts.length === 0) return null;
+  const choosable = latestByLabel(account.drafts);
   return (
     <div className="grid gap-2">
       <p className="text-sm font-medium">{account.socialAccount.displayName}</p>
@@ -105,7 +113,7 @@ function DraftList({ account, runId, canChoose }: { account: RunAccount; runId: 
               {d.judgeRationale}
             </p>
           )}
-          {canChoose && d.id !== account.winnerDraftId && (d.role === "WRITER" || d.role === "REVISION") && (
+          {canChoose && d.id !== account.winnerDraftId && choosable.has(d.id) && (
             <div className="mt-2">
               <UseDraftButton runId={runId} accountId={account.id} draftId={d.id} label={d.label} />
             </div>

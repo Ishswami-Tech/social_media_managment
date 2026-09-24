@@ -28,6 +28,7 @@ import {
   supportedClaims,
   withSkills,
   type RunAccountSnapshot,
+  stripInlineClaimIds,
 } from "./shared";
 
 const REVISION_OUTPUT_TOKENS = 1_200;
@@ -126,7 +127,7 @@ async function reviseDraft(
     promptKey: call.promptKey,
     promptVersion: call.promptVersion,
     promptHash: call.promptHash,
-    text: value.text,
+    text: stripInlineClaimIds(value.text, run.claims),
     hashtags: value.hashtags,
     claimIds: filterClaimIds(value.claimIds, run.claims),
     costCents: call.costCents,

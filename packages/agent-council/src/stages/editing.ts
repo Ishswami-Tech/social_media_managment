@@ -21,6 +21,7 @@ import {
   supportedClaims,
   withSkills,
   type RunAccountSnapshot,
+  stripInlineClaimIds,
 } from "./shared";
 
 const REVISE_OUTPUT_TOKENS = 1_200;
@@ -88,7 +89,7 @@ export async function reviseRecommendation(
     },
     ReviseOutputSchema,
   );
-  const draft = { text: value.text, hashtags: value.hashtags };
+  const draft = { text: stripInlineClaimIds(value.text, run.claims), hashtags: value.hashtags };
   const checks = runChecks(checkInputFor(ctx, run, account, draft, plannedMedia(account)));
   if (!checks.ok) {
     throw new RevisionRejected(
@@ -99,7 +100,7 @@ export async function reviseRecommendation(
     );
   }
   return {
-    text: value.text,
+    text: draft.text,
     hashtags: value.hashtags,
     claimIds: filterClaimIds(value.claimIds, run.claims),
     note: value.note,

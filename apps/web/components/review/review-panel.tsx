@@ -131,6 +131,14 @@ function AccountBlock({
   const [performance, setPerformance] = useState(account.performance);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  // After a refresh (judge override, another person's edit) the server's text wins.
+  const [seen, setSeen] = useState(account.text);
+  if (seen !== account.text) {
+    setSeen(account.text);
+    setText(account.text);
+    setSavedText(account.text);
+    setPerformance(account.performance);
+  }
 
   function applyEdit(edited: EditedAccount) {
     setText(edited.text);

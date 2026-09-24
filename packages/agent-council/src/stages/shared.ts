@@ -102,6 +102,25 @@ export function strategyText(strategy: AccountStrategy | undefined): string {
   return strategy ? stringify(strategy) : "(no strategy recorded)";
 }
 
+/**
+ * Models sometimes cite a claim inside the post ("… 70% [cl_3]") although ids
+ * belong only in `claimIds`. Remove every known claim id, with any brackets
+ * or parentheses around it, and tidy the whitespace left behind.
+ */
+export function stripInlineClaimIds(text: string, claims: readonly { id: string }[]): string {
+  if (claims.length === 0) return text;
+  const ids = claims.map((c) => c.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const grouped = new RegExp(`\\s*[\\[(]\\s*(?:${ids})(?:\\s*[,;/]\\s*(?:${ids}))*\\s*[\\])]`, "g");
+  const bare = new RegExp(`\\s*\\b(?:${ids})\\b`, "g");
+  return text
+    .replace(grouped, "")
+    .replace(bare, "")
+    .replace(/[ \t]+([.,;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
 /** Prompt variables every per-account prompt shares. */
 export function accountVars(account: RunAccountSnapshot): Record<string, string | number> {
   const limit = hashtagLimit(account.platform);

@@ -27,7 +27,7 @@ RULES
 1. Do what was asked, no more. If the request would require a fact that is not in the allowed claims, do it without the fact and say so in "note".
 2. Hard limit {{maxLength}} characters INCLUDING hashtags; at most {{maxHashtags}} hashtags{{hashtagNote}}.
 3. Keep the voice from the Account Brain and the attached playbooks. No new URLs, emails, phone numbers, placeholders. Never mention AI.
-4. Keep the claim ids you still use.
+4. Keep the claim ids you still use in "claimIds" only; never write an id inside the post text.
 
 OUTPUT
 Return ONLY a JSON object (no markdown fences):
