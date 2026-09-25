@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   formatDuration,
+  modelLabel,
   revealStages,
   stageOfStep,
   WRITER_LANES,
@@ -164,6 +165,51 @@ function Disc({ agent, size = "size-7", pulse, animate }: { agent: ProgressStage
   );
 }
 
+interface Orb {
+  key: string;
+  label: string;
+  /** Text from this model is arriving right now. */
+  live: boolean;
+}
+
+/**
+ * The models behind a working seat, as small orbs circling its disc in their
+ * vendors' colours. An orb swells while its model's text is arriving, so
+ * three seats streaming look like three seats streaming.
+ */
+function CouncilOrbit({ agent, orbs, animate }: { agent: ProgressStageKey; orbs: Orb[]; animate: boolean }) {
+  if (orbs.length < 2) return null;
+  const identity = AGENTS[agent];
+  return (
+    <motion.span
+      className="pointer-events-none absolute -inset-2"
+      animate={animate ? { rotate: 360 } : undefined}
+      transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+      aria-hidden
+    >
+      {orbs.map((o, i) => {
+        const angle = (i / orbs.length) * 2 * Math.PI - Math.PI / 2;
+        const color = vendorOf(o.label)?.color ?? identity.to;
+        return (
+          <motion.span
+            key={o.key}
+            className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card dark:ring-[#0b0a14]"
+            style={{ left: `${50 + 50 * Math.cos(angle)}%`, top: `${50 + 50 * Math.sin(angle)}%`, background: color }}
+            animate={o.live && animate ? { scale: [1, 1.6, 1], boxShadow: [`0 0 0 0 ${color}00`, `0 0 8px 2px ${color}aa`, `0 0 0 0 ${color}00`] } : { scale: 1 }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut", delay: i * 0.25 }}
+          />
+        );
+      })}
+    </motion.span>
+  );
+}
+
+/** Which seat of a council a live step belongs to: "research:m2" → 2. */
+function seatNumber(step: string): number | undefined {
+  const n = step.match(/:m(\d+)(?:#|$)/)?.[1];
+  return n ? Number(n) : undefined;
+}
+
 /** The agent as a member of staff: on duty, done, stuck, standing by. */
 function Duty({ state }: { state: ProgressStage["state"] }) {
   const base = "inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide";
@@ -203,14 +249,17 @@ function Wire({ from, flowing, done, animate }: { from: ProgressStageKey; flowin
       style={done || flowing ? { backgroundImage: `linear-gradient(to bottom, ${identity.to}, ${identity.to}55)` } : undefined}
       aria-hidden
     >
-      {flowing && animate && (
-        <motion.span
-          className="absolute left-0 top-0 h-2 w-0.5 rounded-full bg-white"
-          style={{ boxShadow: `0 0 6px 1px ${identity.to}` }}
-          animate={{ y: [-8, 18] }}
-          transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-        />
-      )}
+      {flowing &&
+        animate &&
+        [0, 0.4].map((delay) => (
+          <motion.span
+            key={delay}
+            className="absolute left-0 top-0 h-2 w-0.5 rounded-full bg-white"
+            style={{ boxShadow: `0 0 6px 1px ${identity.to}` }}
+            animate={{ y: [-8, 18] }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: "linear", delay }}
+          />
+        ))}
     </span>
   );
 }
@@ -220,22 +269,27 @@ function Cursor() {
 }
 
 /** What one live model call looks like on stage: the plan, then the text arriving. */
-function LiveText({ p, animate, label, color }: { p: LivePartial; animate: boolean; label: string; color: string }) {
+function LiveText({ p, animate, label, color, compact }: { p: LivePartial; animate: boolean; label: string; color: string; compact?: boolean }) {
   return (
-    <motion.div layout={animate} initial={animate ? { opacity: 0, y: 6 } : false} animate={{ opacity: 1, y: 0 }} exit={animate ? { opacity: 0 } : undefined} className={cn(PANEL, "border-l-2")} style={{ borderLeftColor: color }}>
-      <div className={cn("mb-1 flex items-center gap-2 text-[11px]", MUTED)}>
-        <PenLine className="size-3" style={{ color }} aria-hidden />
-        <span className="font-medium text-foreground dark:text-white">{label}</span>
-        <ModelTag label={p.model} />
-        <span className="ml-auto tabular-nums">{p.text.length} chars</span>
+    <motion.div layout={animate} initial={animate ? { opacity: 0, y: 6 } : false} animate={{ opacity: 1, y: 0 }} exit={animate ? { opacity: 0 } : undefined} className={cn(PANEL, "min-w-0 border-l-2", compact && "p-2")} style={{ borderLeftColor: color }}>
+      <div className={cn("mb-1 flex min-w-0 items-center gap-1.5 text-[11px]", MUTED)}>
+        <PenLine className="size-3 shrink-0" style={{ color }} aria-hidden />
+        <span className="truncate font-medium text-foreground dark:text-white">{label}</span>
+        {!compact && <ModelTag label={modelLabel(p.model, p.provider)} />}
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums">
+          {/* A blink for every packet that lands. */}
+          <motion.span key={p.chars} className="size-1.5 rounded-full" style={{ background: color }} initial={animate ? { opacity: 1, scale: 1.6 } : false} animate={{ opacity: 0.35, scale: 1 }} transition={{ duration: 0.5 }} aria-hidden />
+          <CountUp value={p.text.length} /> chars
+        </span>
       </div>
+      {compact && <ModelTag label={modelLabel(p.model, p.provider)} className={cn("mb-1 text-[10px]", MUTED)} />}
       {p.note && (
         <p className={cn("mb-1 flex items-start gap-1.5 text-[12px] italic", MUTED)}>
           <Lightbulb className="mt-0.5 size-3 shrink-0 text-amber-500" aria-hidden />
           <span>{p.note}</span>
         </p>
       )}
-      <p className={cn("max-h-28 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed [mask-image:linear-gradient(to_bottom,black_70%,transparent)]", BODY)}>
+      <p className={cn("overflow-hidden whitespace-pre-wrap leading-relaxed [mask-image:linear-gradient(to_bottom,black_70%,transparent)]", compact ? "max-h-20 text-[12px]" : "max-h-28 text-[13px]", BODY)}>
         {p.text || (p.chars > 0 ? "Thinking…" : "Starting…")}
         <Cursor />
       </p>
@@ -265,11 +319,15 @@ function LiveBlock({ stage, partials, animate }: { stage: ProgressStage; partial
           </AnimatePresence>
         </ul>
       )}
-      <AnimatePresence initial={false}>
-        {texts.map((p) => (
-          <LiveText key={p.step} p={p} animate={animate} label={p.label ? `Quill ${p.label}` : identity.name} color={identity.to} />
-        ))}
-      </AnimatePresence>
+      <div className={cn("grid min-w-0 gap-1.5", texts.length > 1 && "md:grid-cols-[repeat(3,minmax(0,1fr))]")}>
+        <AnimatePresence initial={false}>
+          {texts.map((p) => {
+            const seat = seatNumber(p.step);
+            const label = p.label ? `Quill ${p.label}` : seat ? `${identity.name} · seat ${seat}` : identity.name;
+            return <LiveText key={p.step} p={p} animate={animate} label={label} color={identity.to} compact={texts.length > 1} />;
+          })}
+        </AnimatePresence>
+      </div>
       {texts.length === 0 && tools.length === 0 && recent.length > 0 && (
         <ul className={cn("grid gap-0.5 text-[11.5px]", MUTED)}>
           {recent.map((line, i) => (
@@ -281,12 +339,44 @@ function LiveBlock({ stage, partials, animate }: { stage: ProgressStage; partial
   );
 }
 
-function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; model?: string; models?: string[]; animate: boolean }) {
+function NodeCard({
+  stage,
+  model,
+  models,
+  partials,
+  upNext,
+  animate,
+}: {
+  stage: ProgressStage;
+  model?: string;
+  models?: string[];
+  partials: LivePartial[];
+  /** The seat that takes over next: it stirs while it waits. */
+  upNext: boolean;
+  animate: boolean;
+}) {
   const identity = AGENTS[stage.key];
   const active = stage.state === "active";
   const done = stage.state === "done";
   const failed = stage.state === "failed";
   const pending = stage.state === "pending";
+  const flash = useRef<HTMLSpanElement>(null);
+  const previous = useRef(stage.state);
+  // Finishing a stage lights the card up in the agent's colour for a moment.
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = stage.state;
+    if (!animate || !flash.current || was !== "active" || stage.state !== "done") return;
+    const tween = gsap.fromTo(flash.current, { opacity: 0.55 }, { opacity: 0, duration: 1.4, ease: "power2.out" });
+    return () => {
+      tween.kill();
+    };
+  }, [stage.state, animate]);
+  const streaming = partials.filter((p) => p.kind !== "tool");
+  const orbs: Orb[] =
+    streaming.length > 0
+      ? streaming.map((p) => ({ key: p.step, label: modelLabel(p.model, p.provider) ?? p.model, live: true }))
+      : (models ?? []).map((m) => ({ key: m, label: m, live: active }));
   return (
     <motion.div
       layout={animate}
@@ -308,9 +398,16 @@ function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; mod
             }
           : {}),
       }}
-      animate={active && animate ? { boxShadow: [`0 0 0 0px ${identity.to}00`, `0 0 0 4px ${identity.to}33`, `0 0 0 0px ${identity.to}00`] } : { boxShadow: "0 0 0 0px transparent" }}
+      animate={
+        active && animate
+          ? { boxShadow: [`0 0 0 0px ${identity.to}00`, `0 0 0 4px ${identity.to}33`, `0 0 0 0px ${identity.to}00`] }
+          : upNext && pending && animate
+            ? { opacity: [0.45, 0.8, 0.45], boxShadow: "0 0 0 0px transparent" }
+            : { boxShadow: "0 0 0 0px transparent" }
+      }
       transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
     >
+      <span ref={flash} aria-hidden className="pointer-events-none absolute inset-0 opacity-0" style={{ background: identity.to }} />
       {active && animate && (
         <span
           aria-hidden
@@ -318,7 +415,10 @@ function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; mod
           style={{ backgroundImage: `linear-gradient(90deg, transparent, ${identity.to}22, transparent)` }}
         />
       )}
-      <Disc agent={stage.key} pulse={active} animate={animate} />
+      <span className="relative inline-flex shrink-0">
+        <Disc agent={stage.key} pulse={active && orbs.length < 2} animate={animate} />
+        {active && <CouncilOrbit agent={stage.key} orbs={orbs} animate={animate} />}
+      </span>
       <span className="relative min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight">
           {identity.name}
@@ -330,8 +430,10 @@ function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; mod
             <span className="font-medium" style={{ color: identity.to }}>
               Council of {models.length}
             </span>
-            {models.map((m) => (
-              <ModelTag key={m} label={m} />
+            {models.map((m, i) => (
+              <motion.span key={m} className="inline-flex min-w-0" initial={animate ? { opacity: 0, y: 4 } : false} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+                <ModelTag label={m} />
+              </motion.span>
             ))}
           </span>
         ) : (
@@ -348,7 +450,7 @@ function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; mod
   );
 }
 
-function WriterTile({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
+function WriterTile({ seat, partial, animate }: { seat: AgentSeat; partial?: LivePartial | undefined; animate: boolean }) {
   const identity = AGENTS.drafting;
   const active = seat.state === "active";
   const vendor = vendorOf(seat.modelLabel);
@@ -380,6 +482,12 @@ function WriterTile({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
         {seat.label}
       </span>
       <span className={cn("w-full max-w-full break-words text-[9.5px] leading-tight", MUTED)}>{shortModel(seat.modelLabel) ?? (seat.state === "pending" ? "waiting" : "…")}</span>
+      {active && partial && (
+        <span className="inline-flex items-center gap-1 text-[9.5px] tabular-nums" style={{ color: identity.to }}>
+          <motion.span key={partial.chars} className="size-1 rounded-full" style={{ background: identity.to }} initial={animate ? { opacity: 1, scale: 1.8 } : false} animate={{ opacity: 0.4, scale: 1 }} transition={{ duration: 0.5 }} aria-hidden />
+          <CountUp value={partial.text.length} /> chars
+        </span>
+      )}
       {seat.state === "done" && !seat.winner && <CheckCircle2 className="absolute right-1 top-1 size-3 text-emerald-600 dark:text-emerald-400" aria-hidden />}
       {seat.state === "failed" && <AlertTriangle className="absolute right-1 top-1 size-3 text-rose-600 dark:text-rose-400" aria-hidden />}
     </motion.div>
@@ -403,8 +511,11 @@ function DraftCompare({ writers, animate }: { writers: AgentSeat[]; animate: boo
           const lane = w.label ? WRITER_LANES[w.label] : undefined;
           const pct = w.score !== undefined ? Math.round((w.score / JUDGE_MAX) * 100) : undefined;
           return (
-            <article
+            <motion.article
               key={w.label}
+              initial={animate ? { opacity: 0, y: 10 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: (w.label ?? "A").charCodeAt(0) % 3 * 0.1, duration: 0.35 }}
               className={cn("grid min-w-0 content-start gap-1.5 rounded-xl border p-2.5 text-[12px]", w.winner ? "border-emerald-500" : "border-border dark:border-white/15")}
               style={w.winner ? { backgroundColor: "#10b9811a" } : undefined}
             >
@@ -443,7 +554,7 @@ function DraftCompare({ writers, animate }: { writers: AgentSeat[]; animate: boo
                 </div>
               )}
               <p className={cn("max-h-56 overflow-y-auto whitespace-pre-wrap leading-snug", BODY)}>{w.draft ?? (w.state === "pending" ? "Waiting for the angle." : "No text.")}</p>
-            </article>
+            </motion.article>
           );
         })}
       </div>
@@ -479,7 +590,7 @@ function TeamGraph({ stages, board, partials, animate }: { stages: ProgressStage
                 <div className={cn("min-w-0 rounded-lg", stage.state === "pending" && "opacity-45")}>
                   <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-1">
                     {board.writers.map((w) => (
-                      <WriterTile key={w.label} seat={w} animate={animate} />
+                      <WriterTile key={w.label} seat={w} partial={mine.find((p) => p.kind !== "tool" && p.label === w.label)} animate={animate} />
                     ))}
                   </div>
                   <div className="mt-1 flex items-center justify-center gap-2">
@@ -513,7 +624,14 @@ function TeamGraph({ stages, board, partials, animate }: { stages: ProgressStage
                 </div>
               ) : (
                 <>
-                  <NodeCard stage={stage} model={board.modelsByStage[stage.key]} models={seatFor(board, stage.key)?.models} animate={animate} />
+                  <NodeCard
+                    stage={stage}
+                    model={board.modelsByStage[stage.key]}
+                    models={seatFor(board, stage.key)?.models}
+                    partials={mine}
+                    upNext={activeIndex >= 0 && i === activeIndex + 1}
+                    animate={animate}
+                  />
                   {open && stage.key !== "ready" && <LiveBlock stage={stage} partials={mine} animate={animate} />}
                 </>
               )}
@@ -570,6 +688,8 @@ export function MissionControl({ stages, board, transcript, partials, working, s
   const models = new Set([...board.seats.flatMap((s) => s.models ?? []), ...board.writers.flatMap((w) => (w.modelLabel ? [w.modelLabel] : []))]).size;
   const failedCalls = transcript.filter((m) => m.tone === "failed").length;
   const active = stages.find((s) => s.state === "active");
+  // Not running and a seat is stuck: the run stopped, it did not finish.
+  const halted = !working && stages.some((s) => s.state === "failed");
   const activeKey = active?.key ?? null;
   const accent = active ? AGENTS[active.key].to : undefined;
   const room = useRef<HTMLElement>(null);
@@ -604,8 +724,14 @@ export function MissionControl({ stages, board, transcript, partials, working, s
       <header className={cn("relative mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em]", MUTED)}>
         <span className="flex items-center gap-2">
           <Signal working={working} animate={animate} />
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", working ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-brand/15 text-brand")}>
-            {working ? "Live" : "Finished"}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              working ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : halted ? "bg-rose-500/15 text-rose-700 dark:text-rose-300" : "bg-brand/15 text-brand",
+            )}
+          >
+            {working && <motion.span className="size-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" animate={animate ? { opacity: [1, 0.25, 1], scale: [1, 0.8, 1] } : undefined} transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }} aria-hidden />}
+            {working ? "Live" : halted ? "Stopped" : "Finished"}
           </span>
           {elapsedMs !== null && (
             <span className="inline-flex items-center gap-1 tabular-nums text-foreground/80 dark:text-white/80">
@@ -688,7 +814,9 @@ export function MissionControl({ stages, board, transcript, partials, working, s
       </div>
 
       <div className="relative mt-4 h-[3px] overflow-hidden rounded-full bg-border/70 dark:bg-white/10">
-        <motion.div className="h-full rounded-full" style={{ backgroundImage: `linear-gradient(90deg, var(--brand), ${accent ?? "var(--brand-2)"})` }} animate={{ width: `${percent}%` }} transition={{ duration: 0.8, ease: "easeOut" }} />
+        <motion.div className="relative h-full overflow-hidden rounded-full" style={{ backgroundImage: `linear-gradient(90deg, var(--brand), ${accent ?? "var(--brand-2)"})` }} animate={{ width: `${Math.max(percent, working ? 4 : 0)}%` }} transition={{ duration: 0.8, ease: "easeOut" }}>
+          {working && animate && <span aria-hidden className="absolute inset-y-0 w-1/3 animate-[mc-shimmer_1.6s_linear_infinite] bg-white/50" />}
+        </motion.div>
       </div>
     </section>
   );
