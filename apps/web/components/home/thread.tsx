@@ -9,7 +9,7 @@
  * plain: no run, no pipeline, no council.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -447,7 +447,14 @@ export function Thread({
   canManage,
 }: ThreadProps) {
   const router = useRouter();
-  const { snapshot, progress, reconnect } = useRunProgress(runId, initial);
+  // When the work finishes while this is on screen, the server has the post
+  // and the images: ask it to render them. A thread that arrived already
+  // finished has nothing new to fetch.
+  const startedLive = useRef(!isSettled(initial.status));
+  const onReady = useCallback(() => {
+    if (startedLive.current) router.refresh();
+  }, [router]);
+  const { snapshot, progress, reconnect } = useRunProgress(runId, initial, onReady);
   const [rows, setRows] = useState<ThreadAccount[]>(accounts);
   const [busy, setBusy] = useState(false);
 
@@ -527,7 +534,10 @@ export function Thread({
       return;
     }
     toast.success(message);
-    if (action === "retry" || action === "resume") reconnect();
+    if (action === "retry" || action === "resume") {
+      startedLive.current = true;
+      reconnect();
+    }
     refresh();
   }
 
