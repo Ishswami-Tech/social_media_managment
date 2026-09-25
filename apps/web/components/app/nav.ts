@@ -3,7 +3,6 @@ import type { Capability } from "@platform/rbac";
 /** Icon names are plain strings so nav items can cross the server/client boundary. */
 export type NavIcon =
   | "home"
-  | "agents"
   | "create"
   | "posts"
   | "calendar"
@@ -38,7 +37,6 @@ export interface NavItem {
  */
 export const MAIN_NAV: NavItem[] = [
   { href: "/home", label: "Home", icon: "home" },
-  { href: "/agents", label: "Agents", icon: "agents", capability: "accounts:view" },
   { href: "/plan", label: "Plan", icon: "calendar", capability: "ai:generate" },
   { href: "/posts", label: "Posts", icon: "posts" },
   { href: "/memory", label: "Memory", icon: "memory", capability: "accounts:view" },
