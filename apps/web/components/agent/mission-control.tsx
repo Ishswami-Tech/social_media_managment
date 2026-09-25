@@ -60,6 +60,7 @@ const VENDORS: { match: RegExp; name: string; color: string }[] = [
   { match: /^claude|anthropic/i, name: "Anthropic", color: "#d97757" },
   { match: /^gpt|^o[0-9]|openai/i, name: "OpenAI", color: "#10a37f" },
   { match: /^gemini|^imagen|google/i, name: "Google", color: "#4285f4" },
+  { match: /^llama|^muse|meta/i, name: "Meta", color: "#0866ff" },
 ];
 
 function vendorOf(label: string | undefined): { name: string; color: string } | undefined {

@@ -66,7 +66,7 @@ interface Props {
 }
 
 const NONE = "__none__";
-const PROVIDERS_LIST = ["OpenAI", "Anthropic", "Google", "Groq", "Cohere", "Mistral", "Together AI", "", "Ollama", "Custom"];
+const PROVIDERS_LIST = ["OpenAI", "Anthropic", "Google", "Meta (Llama API)", "Groq", "Cohere", "Mistral", "Together AI", "Ollama", "Custom"];
 
 export function AISettings({ settings, models, keys, connections = [] }: Props) {
   const router = useRouter();
