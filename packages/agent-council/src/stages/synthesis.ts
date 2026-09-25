@@ -36,6 +36,7 @@ export async function synthesizeDraft(
       runId: run.id,
       organizationId: run.organizationId,
       step: stepName("synthesis", account, winner.label),
+      live: { runAccountId: account.runAccountId, field: "text" },
       promptKey: "synthesis",
       pref: { provider: winner.provider, model: winner.model },
       temperature: 0.4,

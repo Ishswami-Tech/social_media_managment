@@ -12,6 +12,7 @@ import { Award, Radio, ShieldCheck, Sparkles } from "lucide-react";
 import {
   formatDuration,
   modelLabel,
+  stageOfStep,
   WRITER_LANES,
   type ProgressStage,
   type ProgressStageKey,
@@ -250,26 +251,39 @@ export function CouncilRoom({ messages, stages, partials, working, className }: 
         ))}
 
         <AnimatePresence initial={false}>
-          {live.map((p) => (
-            <motion.div
-              key={`live-${p.step}`}
-              layout={animate}
-              initial={animate ? { opacity: 0, y: 10 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={animate ? { opacity: 0, height: 0 } : undefined}
-              className="flex items-start gap-2"
-            >
-              <Avatar agent="drafting" pulse={animate} />
-              <Bubble live>
-                <Speaker agent="drafting" label={p.label} model={p.model} provider={p.provider} />
-                <p className="mt-0.5 max-h-32 overflow-hidden whitespace-pre-wrap [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
-                  {p.text || (p.chars > 0 ? "Thinking…" : "Starting…")}
-                  <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-brand align-middle" aria-hidden />
-                </p>
-                <span className="mt-1 block text-[10px] tabular-nums text-muted-foreground">{p.text.length} characters so far</span>
-              </Bubble>
-            </motion.div>
-          ))}
+          {live.map((p) => {
+            const agent = stageOfStep(p.step.split("#")[0] ?? p.step) ?? "drafting";
+            const tool = p.kind === "tool";
+            return (
+              <motion.div
+                key={`live-${p.step}`}
+                layout={animate}
+                initial={animate ? { opacity: 0, y: 10 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                exit={animate ? { opacity: 0, height: 0 } : undefined}
+                className="flex items-start gap-2"
+              >
+                <Avatar agent={agent} pulse={animate && !tool} />
+                <Bubble live>
+                  <Speaker agent={agent} label={p.label} model={p.model} provider={p.provider} />
+                  {tool ? (
+                    <p className="mt-0.5 text-muted-foreground">
+                      Using <span className="font-medium text-foreground">{p.tool}</span>
+                      {p.text ? <> · <span className="italic">{p.text}</span></> : null}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mt-0.5 max-h-32 overflow-hidden whitespace-pre-wrap [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
+                        {p.text || (p.chars > 0 ? "Thinking…" : "Starting…")}
+                        <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-brand align-middle" aria-hidden />
+                      </p>
+                      <span className="mt-1 block text-[10px] tabular-nums text-muted-foreground">{p.text.length} characters so far</span>
+                    </>
+                  )}
+                </Bubble>
+              </motion.div>
+            );
+          })}
 
           {showTyping && active && (
             <motion.div

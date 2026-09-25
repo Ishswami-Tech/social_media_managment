@@ -8,8 +8,12 @@ import { modelLabel } from "./progress";
 
 /** One in-flight model call's output so far. */
 export interface LivePartial {
-  /** Replay step name, e.g. "writer:acc_1:A". */
+  /** Replay step name, e.g. "writer:acc_1:A"; a tool call appends "#n" so each one is its own entry. */
   step: string;
+  /** "text" (default) for the model's answer so far; "tool" when the model reached for a tool. */
+  kind?: "text" | "tool";
+  /** Tool name for `kind: "tool"`. */
+  tool?: string;
   /** Writer label (A, B, C) when the call is a draft. */
   label?: string;
   runAccountId?: string;

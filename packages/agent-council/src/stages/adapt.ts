@@ -47,6 +47,7 @@ async function adaptDraft(
       runId: run.id,
       organizationId: run.organizationId,
       step: stepName("adapt", account, synthesized.label),
+      live: { runAccountId: account.runAccountId, field: "text" },
       promptKey: "adapt",
       pref: { provider: synthesized.provider, model: synthesized.model },
       temperature: 0.4,

@@ -153,9 +153,9 @@ function withoutPartial(
   partials: Record<string, LivePartial> | undefined,
   event: ProgressEvent,
 ): Record<string, LivePartial> | undefined {
-  if (!partials || event.status === "STARTED" || !(event.step in partials)) return partials;
-  const { [event.step]: _dropped, ...rest } = partials;
-  return rest;
+  if (!partials || event.status === "STARTED") return partials;
+  const keep = Object.entries(partials).filter(([key]) => key !== event.step && !key.startsWith(`${event.step}#`));
+  return keep.length === Object.keys(partials).length ? partials : Object.fromEntries(keep);
 }
 
 function parse<T>(raw: string): T | null {

@@ -38,6 +38,8 @@ export interface AgentOptions {
   maxToolResultChars?: number;
   /** Output budget per model turn (reasoning models spend thinking tokens from it). */
   maxTokens?: number;
+  /** Called the moment the model asks for a tool, before it runs; for people watching. */
+  onToolCall?: (call: ToolCall) => void;
 }
 
 const DEFAULT_AGENT_MAX_TOKENS = 8_192;
@@ -88,6 +90,7 @@ export async function runAgent(executor: AIExecutor, ctx: Ctx, opts: AgentOption
     }
     messages.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls });
     for (const call of res.toolCalls) {
+      opts.onToolCall?.(call);
       const tool = byName.get(call.name);
       const started = Date.now();
       let result: unknown;

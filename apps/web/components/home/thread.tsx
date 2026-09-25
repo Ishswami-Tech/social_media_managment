@@ -396,6 +396,15 @@ export function Thread({
     () => buildTranscript(snapshot.events, snapshot.accounts, { claimCount: snapshot.claimCount }),
     [snapshot],
   );
+  const stageStats = useMemo(
+    () => ({
+      facts: snapshot.claimCount,
+      drafts: board.writers.filter((w) => w.draft).length,
+      notesFixed: transcript.reduce((sum, m) => sum + (m.output?.fixed ? (m.output.issues?.length ?? 0) : 0), 0),
+      spentCents: snapshot.spentCents,
+    }),
+    [snapshot.claimCount, snapshot.spentCents, board.writers, transcript],
+  );
   const [showWork, setShowWork] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
   // While the agents work the stage tells the story; the drafts side by side come after.
@@ -511,6 +520,7 @@ export function Thread({
           partials={snapshot.partials}
           writers={board.writers}
           startedAt={initial.startedAt}
+          stats={stageStats}
         />
         {board.writers.length > 0 && (
           <div className="grid gap-2">

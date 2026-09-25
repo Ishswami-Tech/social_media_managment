@@ -4,7 +4,7 @@
  * spend money without a reservation or without leaving a trace.
  */
 import type { AICapability, AIProviderName } from "@platform/types";
-import { AIError, parseJsonOutput, runAgent, type RoutingContext, type Tool, type Usage } from "@platform/ai-core";
+import { AIError, parseJsonOutput, runAgent, type RoutingContext, type Tool, type ToolCall, type Usage } from "@platform/ai-core";
 import type { z } from "zod";
 import { estimateCallCents, estimateTokens, usageToCents } from "../budget";
 import type { PipelineContext } from "../contracts";
@@ -89,8 +89,42 @@ export interface ModelCallInput {
   avoidModels?: readonly string[];
   /** Providers other writers of the same account already use; avoided first, so drafts come from different houses. */
   avoidProviders?: readonly AIProviderName[];
-  /** Set to push the model's text to watchers as it is produced (writers do). */
-  live?: { label?: string; runAccountId?: string };
+  /**
+   * Set to push the model's output to watchers as it is produced. `field` names
+   * the JSON key whose value is worth reading while it is still arriving
+   * ("text" for drafts, "angle" for the strategy, and so on).
+   */
+  live?: { label?: string; runAccountId?: string; field?: string };
+}
+
+/** The one string worth showing from a tool call's arguments: the query, the URL, whatever came first. */
+function toolSummary(args: Record<string, unknown>): string {
+  const first = Object.values(args).find((v): v is string => typeof v === "string" && v.trim().length > 0);
+  return first ? first.slice(0, 120) : "";
+}
+
+/** Announces each tool call to watchers as its own live entry, or nothing when nobody listens. */
+function liveToolSink(
+  ctx: PipelineContext,
+  input: ModelCallInput,
+  decision: ModelDecision,
+): ((call: ToolCall) => void) | undefined {
+  const bus = ctx.live;
+  if (!bus || !input.live) return undefined;
+  let count = 0;
+  return (call) => {
+    count += 1;
+    bus.partial(input.runId, {
+      step: `${input.step}#${count}`,
+      ...(input.live?.runAccountId ? { runAccountId: input.live.runAccountId } : {}),
+      kind: "tool",
+      tool: call.name,
+      provider: decision.provider,
+      model: decision.model,
+      text: toolSummary(call.arguments),
+      chars: 0,
+    });
+  };
 }
 
 /** Partials are pushed at most this often per call; the last stored event carries the full text anyway. */
@@ -113,10 +147,12 @@ function liveChunkSink(
     lastSent = now;
     bus.partial(input.runId, {
       step: input.step,
-      ...input.live,
+      ...(input.live?.label ? { label: input.live.label } : {}),
+      ...(input.live?.runAccountId ? { runAccountId: input.live.runAccountId } : {}),
+      kind: "text",
       provider: decision.provider,
       model: decision.model,
-      text: input.json ? partialTextField(buffer) : buffer,
+      text: input.json ? partialTextField(buffer, input.live?.field ?? "text") : buffer,
       chars: buffer.length,
     });
   };
@@ -234,10 +270,17 @@ async function execute(ctx: PipelineContext, input: ModelCallInput, decision: Mo
   const expectedOutput = Math.max(MIN_MAX_TOKENS, input.expectedOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
   const maxTokens = expectedOutput + THINKING_HEADROOM_TOKENS;
   try {
-    return await executeWithBudget(ctx, input, decision, maxTokens, liveChunkSink(ctx, input, decision));
+    return await executeWithBudget(ctx, input, decision, maxTokens, liveChunkSink(ctx, input, decision), liveToolSink(ctx, input, decision));
   } catch (error) {
     if (!isBudgetExhausted(error) || maxTokens >= MAX_RETRY_TOKENS) throw error;
-    return executeWithBudget(ctx, input, decision, Math.min(MAX_RETRY_TOKENS, maxTokens * 2), liveChunkSink(ctx, input, decision));
+    return executeWithBudget(
+      ctx,
+      input,
+      decision,
+      Math.min(MAX_RETRY_TOKENS, maxTokens * 2),
+      liveChunkSink(ctx, input, decision),
+      liveToolSink(ctx, input, decision),
+    );
   }
 }
 
@@ -247,6 +290,7 @@ async function executeWithBudget(
   decision: ModelDecision,
   maxTokens: number,
   onChunk?: (delta: string) => void,
+  onToolCall?: (call: ToolCall) => void,
 ): Promise<Attempt> {
   const started = Date.now();
   if (input.tools) {
@@ -258,6 +302,7 @@ async function executeWithBudget(
       temperature: input.temperature,
       json: input.json,
       maxTokens,
+      ...(onToolCall ? { onToolCall } : {}),
     });
     return { text: result.text, usage: result.usage, latencyMs: Date.now() - started };
   }

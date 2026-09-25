@@ -95,6 +95,7 @@ async function judgeAccount(
       runId: run.id,
       organizationId: run.organizationId,
       step: stepName("judge", account),
+      live: { runAccountId: account.runAccountId, field: "rationale" },
       promptKey: "judge",
       pref: judgePreference(ctx, drafts),
       avoidModels: [...new Set(drafts.map((d) => `${d.provider}::${d.model}`))],

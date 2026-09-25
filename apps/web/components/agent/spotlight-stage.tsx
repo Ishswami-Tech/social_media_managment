@@ -13,10 +13,13 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import gsap from "gsap";
-import { Check, ChevronRight, Sparkles } from "lucide-react";
+import { Check, ChevronRight, Sparkles, Wrench } from "lucide-react";
+import { CountUp } from "@/components/ui/count-up";
+import { formatCents } from "@/components/agent/format";
 import {
   formatDuration,
   revealStages,
+  stageOfStep,
   type AgentSeat,
   type ProgressStage,
   type ProgressStageKey,
@@ -42,7 +45,17 @@ export interface SpotlightStageProps {
   writers?: AgentSeat[] | undefined;
   /** When the work began; drives the clock in the corner. */
   startedAt?: string | null | undefined;
+  /** Running totals for the strip under the header. */
+  stats?: { facts?: number; drafts?: number; notesFixed?: number; spentCents?: number } | undefined;
   className?: string;
+}
+
+/** Which live entries belong to the agent on stage: its text so far, and the tools it reached for. */
+function liveFor(partials: Record<string, LivePartial> | undefined, key: ProgressStageKey): { text?: LivePartial; tools: LivePartial[] } {
+  const mine = Object.values(partials ?? {}).filter((p) => stageOfStep(p.step.split("#")[0] ?? p.step) === key);
+  const text = mine.filter((p) => p.kind !== "tool").sort((a, b) => b.chars - a.chars)[0];
+  const tools = mine.filter((p) => p.kind === "tool").sort((a, b) => a.step.localeCompare(b.step, undefined, { numeric: true })).slice(-4);
+  return { text, tools };
 }
 
 /** The agent in the spotlight: the one working, else the last one that did anything. */
@@ -119,7 +132,7 @@ function Disc({ agent, size, glow, animate }: { agent: ProgressStageKey; size: s
   );
 }
 
-export function SpotlightStage({ stages, working, models = {}, partials, writers = [], startedAt, className }: SpotlightStageProps) {
+export function SpotlightStage({ stages, working, models = {}, partials, writers = [], startedAt, stats, className }: SpotlightStageProps) {
   const reduced = useReducedMotion();
   const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const animate = mounted && !reduced;
@@ -136,9 +149,15 @@ export function SpotlightStage({ stages, working, models = {}, partials, writers
   const done = stages.filter((s) => s.state === "done" || s.state === "skipped").length;
   const percent = Math.round((done / stages.length) * 100);
 
-  const live = Object.values(partials ?? {}).sort((a, b) => b.chars - a.chars)[0];
+  const { text: live, tools } = liveFor(partials, spot.key);
   const landed = spot.key === "drafting" ? writers.filter((w) => w.draft && !w.streaming).at(-1) : undefined;
   const earlier = spot.activity.slice(0, -1).slice(-3);
+  const handedOver = trail[trail.length - 1]?.stage;
+  const counters = [
+    { label: "facts", value: stats?.facts },
+    { label: "drafts", value: stats?.drafts },
+    { label: "notes fixed", value: stats?.notesFixed },
+  ].filter((c): c is { label: string; value: number } => typeof c.value === "number" && c.value > 0);
 
   // GSAP: a handoff is a light sweep across the stage and a small camera move.
   useEffect(() => {
@@ -194,6 +213,17 @@ export function SpotlightStage({ stages, working, models = {}, partials, writers
           </span>
         </header>
 
+        {(counters.length > 0 || (stats?.spentCents ?? 0) > 0) && (
+          <ul className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/55" aria-label="Running totals">
+            {counters.map((c) => (
+              <li key={c.label} className="tabular-nums">
+                <CountUp value={c.value} className="font-semibold text-white/85" /> {c.label}
+              </li>
+            ))}
+            {(stats?.spentCents ?? 0) > 0 && <li className="tabular-nums">{formatCents(stats!.spentCents!)} spent</li>}
+          </ul>
+        )}
+
         <div data-content className="grid place-items-center">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -212,10 +242,45 @@ export function SpotlightStage({ stages, working, models = {}, partials, writers
                 {working && spot.state === "active" && <span className="ml-1 inline-block h-5 w-[3px] animate-pulse bg-white/80 align-middle" aria-hidden />}
               </p>
 
+              {handedOver && working && (
+                <motion.p
+                  key={handedOver.key}
+                  initial={animate ? { opacity: 0, y: -6 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/60"
+                >
+                  <Disc agent={handedOver.key} size="size-4" animate={false} />
+                  <span className="truncate">
+                    {AGENTS[handedOver.key].name} handed over · {handedOver.activity.at(-1) ?? handedOver.label}
+                  </span>
+                </motion.p>
+              )}
+
+              {tools.length > 0 && (
+                <ul className="grid w-full gap-1 text-left text-[12px] text-white/70" aria-label="Tools in use">
+                  <AnimatePresence initial={false}>
+                    {tools.map((t) => (
+                      <motion.li
+                        key={t.step}
+                        initial={animate ? { opacity: 0, x: -10 } : false}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={animate ? { opacity: 0 } : undefined}
+                        className="flex items-center gap-2 rounded-lg bg-black/35 px-3 py-1.5"
+                      >
+                        <Wrench className="size-3.5 shrink-0 text-white/50" aria-hidden />
+                        <span className="font-medium text-white/85">{t.tool}</span>
+                        {t.text && <span className="truncate italic text-white/60">{t.text}</span>}
+                      </motion.li>
+                    ))}
+                  </AnimatePresence>
+                </ul>
+              )}
+
               {live ? (
                 <div className="mt-1 w-full rounded-2xl bg-black/40 px-5 py-4 text-left">
                   <span className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-white/50">
-                    Quill {live.label} · writing · {live.text.length} characters
+                    {live.label ? `Quill ${live.label} · writing` : `${identity.name} · thinking`} · {live.text.length} characters
                   </span>
                   <p className="max-h-40 overflow-hidden whitespace-pre-wrap text-[15px] leading-relaxed text-white/90 [mask-image:linear-gradient(to_bottom,black_65%,transparent)]">
                     {live.text || (live.chars > 0 ? "Thinking…" : "Starting…")}

@@ -36,6 +36,7 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
         runId: run.id,
         organizationId: run.organizationId,
         step: stepName("strategy", account),
+        live: { runAccountId: account.runAccountId, field: "angle" },
         promptKey: "strategy",
         temperature: 0.5,
         expectedOutputTokens: STRATEGY_OUTPUT_TOKENS,
