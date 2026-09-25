@@ -22,7 +22,11 @@ import type { OrgContext } from "@/lib/session";
 export const FUNNEL_STAGES = ["awareness", "trust", "offer"] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 
+export const PLAN_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export type PlanStatus = (typeof PLAN_STATUSES)[number];
+
 export const planInput = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
   theme: z.string().trim().min(3).max(2000),
   audience: z.string().trim().max(500).optional(),
   socialAccountIds: z.array(z.string().min(1)).min(1).max(10),
@@ -43,17 +47,41 @@ export const planItemSchema = z.object({
   runId: z.string().optional(),
 });
 export type PlanItem = z.infer<typeof planItemSchema>;
+/** An item as shown: what its campaign is doing, when one was started. */
+export type PlanItemView = PlanItem & { runStatus?: string };
+
+export const planUpdateInput = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    status: z.enum(PLAN_STATUSES),
+  })
+  .partial()
+  .refine((v) => v.name !== undefined || v.status !== undefined, { message: "Nothing to change" });
+export type PlanUpdateInput = z.infer<typeof planUpdateInput>;
+
+const NAME_MAX_CHARS = 60;
+
+/** A name from the theme when none was given: its first sentence, cut short. */
+export function planName(theme: string): string {
+  const firstLine = theme.split(/\r?\n/)[0]?.trim() ?? "";
+  const sentence = firstLine.split(/(?<=[.!?;])\s/)[0] ?? firstLine;
+  const trimmed = sentence.replace(/[.,;:!?]+$/, "").trim();
+  if (!trimmed) return "Untitled plan";
+  return trimmed.length > NAME_MAX_CHARS ? `${trimmed.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…` : trimmed;
+}
 
 const PlanOutputSchema = z.object({ items: z.array(planItemSchema.omit({ runId: true })).min(1) });
 
 export interface ContentPlanView {
   id: string;
+  name: string;
+  status: PlanStatus;
   theme: string;
   audience: string | null;
   platforms: string[];
   startDate: string;
   days: number;
-  items: PlanItem[];
+  items: PlanItemView[];
   createdAt: string;
 }
 
@@ -141,6 +169,8 @@ async function planningInstructions(organizationId: string, platforms: string[])
 
 function toView(row: {
   id: string;
+  name: string | null;
+  status: string;
   theme: string;
   audience: string | null;
   platforms: Platform[];
@@ -152,6 +182,8 @@ function toView(row: {
   const parsed = z.array(planItemSchema).safeParse(row.items);
   return {
     id: row.id,
+    name: row.name ?? planName(row.theme),
+    status: row.status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE",
     theme: row.theme,
     audience: row.audience,
     platforms: row.platforms,
@@ -162,9 +194,43 @@ function toView(row: {
   };
 }
 
-export async function listPlans(organizationId: string, take = 5): Promise<ContentPlanView[]> {
+/** Every plan, newest first, with what each started campaign is up to. */
+export async function listPlans(organizationId: string, take = 50): Promise<ContentPlanView[]> {
   const rows = await prisma.contentPlan.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take });
-  return rows.map(toView);
+  const views = rows.map(toView);
+  const runIds = [...new Set(views.flatMap((p) => p.items.flatMap((i) => (i.runId ? [i.runId] : []))))];
+  if (runIds.length === 0) return views;
+  const runs = await prisma.agentRun.findMany({ where: { id: { in: runIds }, organizationId }, select: { id: true, status: true } });
+  const statusOf = new Map(runs.map((r) => [r.id, r.status as string]));
+  return views.map((p) => ({
+    ...p,
+    items: p.items.map((i) => (i.runId && statusOf.has(i.runId) ? { ...i, runStatus: statusOf.get(i.runId) } : i)),
+  }));
+}
+
+/** Rename, archive or restore a plan. */
+export async function updatePlan(ctx: OrgContext, planId: string, input: PlanUpdateInput): Promise<ContentPlanView> {
+  const organizationId = ctx.organization.id;
+  const existing = await prisma.contentPlan.findFirst({ where: { id: planId, organizationId }, select: { id: true } });
+  if (!existing) throw notFound("Plan");
+  const row = await prisma.contentPlan.update({
+    where: { id: planId },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+    },
+  });
+  await audit(ctx, "plan.update", "ContentPlan", planId, { ...input });
+  return toView(row);
+}
+
+/** Removes the plan record. Campaigns started from it are untouched. */
+export async function deletePlan(ctx: OrgContext, planId: string): Promise<void> {
+  const organizationId = ctx.organization.id;
+  const existing = await prisma.contentPlan.findFirst({ where: { id: planId, organizationId }, select: { id: true, name: true, theme: true } });
+  if (!existing) throw notFound("Plan");
+  await prisma.contentPlan.delete({ where: { id: planId } });
+  await audit(ctx, "plan.delete", "ContentPlan", planId, { name: existing.name ?? planName(existing.theme) });
 }
 
 /** Asks the model for the month and stores it. */
@@ -213,6 +279,7 @@ export async function createPlan(ctx: OrgContext, input: PlanInput): Promise<Con
     data: {
       organizationId,
       createdById: ctx.user.id,
+      name: input.name ?? null,
       theme: input.theme,
       audience: input.audience ?? null,
       platforms,

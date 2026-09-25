@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { planName, planUpdateInput } from "@/lib/agent/plan";
 import { funnelFor, planPrompt, spreadDates } from "../lib/agent/plan";
 
 describe("spreadDates", () => {
@@ -49,5 +50,22 @@ describe("planPrompt", () => {
     expect(prompt).toContain("The Tuesday queue: Queue hit 14 people; now 5.");
     expect(prompt).toContain("Cafe Tools · tone: direct");
     expect(planPrompt({ theme: "t", platforms: ["X"], slots: [], stories: [] })).toContain("(none recorded yet)");
+  });
+});
+
+describe("planName", () => {
+  it("takes the first sentence of the theme and keeps it short", () => {
+    expect(planName("Get cafe owners to try WhatsApp ordering. We have 3 stories.")).toBe("Get cafe owners to try WhatsApp ordering");
+    expect(planName("A very long theme that goes on and on about everything the month should achieve for everyone")).toMatch(/…$/);
+    expect(planName("   ")).toBe("Untitled plan");
+  });
+});
+
+describe("planUpdateInput", () => {
+  it("needs at least a name or a status", () => {
+    expect(planUpdateInput.safeParse({}).success).toBe(false);
+    expect(planUpdateInput.safeParse({ status: "ARCHIVED" }).success).toBe(true);
+    expect(planUpdateInput.safeParse({ name: "October" }).success).toBe(true);
+    expect(planUpdateInput.safeParse({ status: "DONE" }).success).toBe(false);
   });
 });

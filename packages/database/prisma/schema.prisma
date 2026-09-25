@@ -801,6 +801,10 @@ model ContentPlan {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdById    String
+  /// Short name people use to tell plans apart; the theme's first words when not given
+  name           String?
+  /// ACTIVE | ARCHIVED
+  status         String       @default("ACTIVE")
   theme          String
   audience       String?
   platforms      Platform[]
