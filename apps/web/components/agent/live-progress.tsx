@@ -24,6 +24,7 @@ import {
   XCircle,
 } from "lucide-react";
 import {
+  buildBoard,
   buildProgress,
   formatDuration,
   revealStages,
@@ -34,7 +35,8 @@ import {
   type RunProgress,
   progressOutput,
 } from "@platform/agent-council/progress";
-import type { LivePartial } from "@platform/agent-council/live";
+import { applyPartials, type LivePartial } from "@platform/agent-council/live";
+import { SpotlightStage } from "@/components/agent/spotlight-stage";
 import { formatCents } from "@/components/agent/format";
 import { isSettled } from "@/components/home/labels";
 import { cn } from "@/lib/utils";
@@ -423,7 +425,7 @@ function Meta({
 interface Props {
   runId: string;
   initial: RunInitial;
-  variant?: "full" | "compact";
+  variant?: "full" | "compact" | "stage";
   /**
    * Called once, when the campaign stops needing the live view. Both screens
    * that use this are Server Components and cannot hand a function across the
@@ -447,6 +449,21 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
   const failed = progress.stages.find((s) => s.state === "failed");
   // Agents ahead of the work stay out of sight until it reaches them.
   const shown = revealStages(progress.stages);
+
+  if (variant === "stage") {
+    const board = applyPartials(buildBoard(snapshot.status, snapshot.events, snapshot.accounts), snapshot.partials);
+    return (
+      <SpotlightStage
+        className={className}
+        stages={progress.stages}
+        working={running}
+        models={board.modelsByStage}
+        partials={snapshot.partials}
+        writers={board.writers}
+        startedAt={initial.startedAt}
+      />
+    );
+  }
 
   if (variant === "compact") {
     return (

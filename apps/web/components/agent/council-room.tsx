@@ -154,12 +154,12 @@ function Bubble({ children, tone, live }: { children: React.ReactNode; tone?: Tr
   return (
     <div
       className={cn(
-        "min-w-0 flex-1 rounded-2xl rounded-tl-md border px-3 py-2 text-[13px] leading-snug backdrop-blur-xl",
+        "min-w-0 flex-1 rounded-2xl rounded-tl-md border px-3 py-2 text-[13px] leading-snug",
         tone === "failed"
           ? "border-destructive/40 bg-destructive/5"
           : live
             ? "border-brand/40 bg-brand/5 shadow-[0_0_0_3px_color-mix(in_oklch,var(--brand)_10%,transparent)]"
-            : "border-white/60 bg-white/60 dark:border-white/10 dark:bg-white/[0.05]",
+            : "border-border bg-background",
       )}
     >
       {children}
@@ -210,7 +210,7 @@ export function CouncilRoom({ messages, stages, partials, working, className }: 
   return (
     <section
       aria-label="Council room"
-      className={cn("grid gap-2 rounded-2xl border border-white/60 bg-white/40 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.03]", className)}
+      className={cn("grid gap-2 rounded-2xl border bg-card p-3", className)}
     >
       <header className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
         <span className="flex items-center gap-1.5">

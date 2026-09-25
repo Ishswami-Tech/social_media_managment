@@ -14,25 +14,22 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { buildBoard, buildTranscript, formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { buildBoard, buildTranscript } from "@platform/agent-council/progress";
 import { CouncilRoom } from "@/components/agent/council-room";
 import { applyPartials } from "@platform/agent-council/live";
 import { CouncilBoard } from "@/components/agent/council-board";
-import { formatCents } from "@/components/agent/format";
 import { useRunProgress, type RunInitial } from "@/components/agent/live-progress";
 import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
-import { CouncilFlow } from "@/components/agent/council-flow";
+import { SpotlightStage } from "@/components/agent/spotlight-stage";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { Celebrate } from "@/components/agent/celebrate";
-import { motion } from "framer-motion";
 import { PostPreview } from "@/components/preview/post-preview";
 import { CalendarClock, Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -400,9 +397,9 @@ export function Thread({
     [snapshot],
   );
   const [showWork, setShowWork] = useState(false);
-  const [selectedStage, setSelectedStage] = useState<ProgressStage["key"] | null>(null);
-  const selectedDetail = selectedStage ? progress.stages.find((s) => s.key === selectedStage) : undefined;
-  const boardOpen = working || showWork;
+  const [showRoom, setShowRoom] = useState(false);
+  // While the agents work the stage tells the story; the drafts side by side come after.
+  const boardOpen = !working && showWork;
   const ready = rows.some((a) => a.text) && !isProducing(status);
 
   // After an approval the post is created in the background, so we keep asking
@@ -507,47 +504,14 @@ export function Thread({
 
       {/* What the AI did about it: the council at a glance, then the detail. */}
       <div className="grid max-w-[95%] gap-2">
-        <CouncilFlow
+        <SpotlightStage
           stages={progress.stages}
           working={working}
           models={board.modelsByStage}
-          selected={selectedStage}
-          onSelect={(key) => setSelectedStage((cur) => (cur === key ? null : key))}
+          partials={snapshot.partials}
+          writers={board.writers}
+          startedAt={initial.startedAt}
         />
-        {selectedDetail && (
-          <div className="grid gap-1 rounded-xl border border-brand/30 bg-brand/5 p-3 text-sm backdrop-blur-xl">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{selectedDetail.label}</span>
-              <span className="text-xs text-muted-foreground">
-                {board.modelsByStage[selectedDetail.key] ? `${board.modelsByStage[selectedDetail.key]} · ` : ""}
-                {selectedDetail.durationMs ? formatDuration(selectedDetail.durationMs) : selectedDetail.state}
-                {selectedDetail.costCents > 0 ? ` · ${formatCents(selectedDetail.costCents)}` : ""}
-              </span>
-            </div>
-            {selectedDetail.activity.length > 0 ? (
-              <ol className="grid gap-0.5 text-xs text-muted-foreground">
-                {selectedDetail.activity.map((line, i) => (
-                  <li key={`${i}-${line}`}>{line}</li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-xs text-muted-foreground">Nothing yet.</p>
-            )}
-          </div>
-        )}
-        <div className="grid gap-1">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className={cn(working && "animate-pulse")}>{progress.overall.label}</span>
-            <span>{progress.overall.percent}%</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-brand to-brand-2"
-              animate={{ width: `${progress.overall.percent}%` }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-            />
-          </div>
-        </div>
         {board.writers.length > 0 && (
           <div className="grid gap-2">
             {!working && (
@@ -563,7 +527,15 @@ export function Thread({
             {boardOpen && <CouncilBoard board={board} working={working} />}
           </div>
         )}
-        <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />
+        <button
+          type="button"
+          onClick={() => setShowRoom((v) => !v)}
+          className="w-fit text-xs text-muted-foreground underline-offset-4 hover:underline"
+          aria-expanded={showRoom}
+        >
+          {showRoom ? "Hide the conversation" : `Show the conversation (${transcript.length})`}
+        </button>
+        {showRoom && <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />}
 
         {stopped && reason && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">{reason}</p>

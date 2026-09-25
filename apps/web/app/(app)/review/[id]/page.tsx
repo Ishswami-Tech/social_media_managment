@@ -197,7 +197,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </p>
       )}
 
-      {live && <LiveProgress runId={run.id} initial={detailToRunInitial(run)} variant="full" />}
+      {live && <LiveProgress runId={run.id} initial={detailToRunInitial(run)} variant="stage" />}
 
       {/* While the text is still being written there is nothing to read, but
           pausing, stopping and trying again must still be within reach. */}
