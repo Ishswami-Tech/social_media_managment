@@ -46,13 +46,15 @@ export interface Dictation {
   /** Everything heard since `start`, final words plus the phrase still being recognised. */
   transcript: string;
   error: string | null;
+  /** The browser refused the microphone; the person has to allow it in the address bar. */
+  blocked: boolean;
   start: () => void;
   stop: () => void;
   toggle: () => void;
 }
 
 const ERROR_WORDS: Record<string, string> = {
-  "not-allowed": "The browser blocked the microphone. Allow it in the address bar and try again.",
+  "not-allowed": "Microphone blocked. Click the lock icon in the address bar, set Microphone to Allow, then reload this page.",
   "audio-capture": "No microphone was found.",
   network: "Speech recognition needs a network connection in this browser.",
   "no-speech": "Nothing was heard.",
@@ -63,6 +65,7 @@ export function useDictation(): Dictation {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
   const recognition = useRef<RecognitionLike | null>(null);
   const finalWords = useRef("");
 
@@ -93,6 +96,7 @@ export function useDictation(): Dictation {
     r.onerror = (event) => {
       const code = event.error ?? "";
       if (code === "aborted") return;
+      if (code === "not-allowed" || code === "service-not-allowed") setBlocked(true);
       setError(ERROR_WORDS[code] ?? "Could not hear you. Try again.");
     };
     r.onend = () => {
@@ -118,5 +122,5 @@ export function useDictation(): Dictation {
   // Leaving the page mid-sentence must not keep the microphone open.
   useEffect(() => () => recognition.current?.abort(), []);
 
-  return { supported, listening, transcript, error, start, stop, toggle };
+  return { supported, listening, transcript, error, blocked, start, stop, toggle };
 }

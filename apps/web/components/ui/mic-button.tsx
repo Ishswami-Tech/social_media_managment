@@ -27,7 +27,7 @@ function join(base: string, spoken: string): string {
 }
 
 export function MicButton({ value, onChange, className, variant = "icon", disabled }: MicButtonProps) {
-  const { supported, listening, transcript, error, toggle } = useDictation();
+  const { supported, listening, transcript, error, blocked, toggle } = useDictation();
   const base = useRef(value);
   const wasListening = useRef(false);
 
@@ -47,7 +47,11 @@ export function MicButton({ value, onChange, className, variant = "icon", disabl
 
   if (!supported) return null;
 
-  const label = listening ? "Stop dictating" : "Dictate";
+  const label = blocked
+    ? "Microphone blocked: click the lock icon in the address bar, allow the microphone, then reload"
+    : listening
+      ? "Stop dictating"
+      : "Dictate";
   return (
     <button
       type="button"
@@ -61,12 +65,14 @@ export function MicButton({ value, onChange, className, variant = "icon", disabl
         variant === "icon" ? "size-7" : "h-7 px-2.5",
         listening
           ? "border-rose-500/50 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          : blocked
+            ? "border-amber-500/50 text-amber-600 dark:text-amber-400"
+            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         className,
       )}
     >
       {listening && <span className="absolute inset-0 animate-ping rounded-full bg-rose-500/30" aria-hidden />}
-      {listening ? <MicOff className="relative size-3.5" aria-hidden /> : <Mic className="relative size-3.5" aria-hidden />}
+      {listening || blocked ? <MicOff className="relative size-3.5" aria-hidden /> : <Mic className="relative size-3.5" aria-hidden />}
       {variant === "pill" && <span className="relative">{listening ? "Listening…" : "Speak"}</span>}
     </button>
   );

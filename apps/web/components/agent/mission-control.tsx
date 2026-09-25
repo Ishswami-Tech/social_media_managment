@@ -28,8 +28,8 @@ import { CountUp } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 
 const subscribeNever = (): (() => void) => () => {};
-const PANEL = "rounded-xl bg-white/[0.04] p-3";
-const CAP = "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45";
+const PANEL = "rounded-xl bg-muted/60 p-3 dark:bg-muted/60 dark:bg-white/[0.04]";
+const CAP = "text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground dark:text-muted-foreground/80 dark:text-white/45";
 
 export interface MissionControlProps {
   stages: ProgressStage[];
@@ -88,12 +88,23 @@ function Disc({ agent, size = "size-7", pulse, animate, dim }: { agent: Progress
   );
 }
 
+/** The agent as a member of staff: on duty, done, standing by. */
+function Duty({ stage }: { stage: ProgressStage }) {
+  if (stage.state === "active")
+    return <span className="rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">On duty</span>;
+  if (stage.state === "failed")
+    return <span className="rounded-full bg-rose-500/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Stuck</span>;
+  if (stage.state === "pending")
+    return <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground dark:bg-white/10 dark:text-white/50">Standing by</span>;
+  return null;
+}
+
 function Wire({ flowing, done, animate }: { flowing: boolean; done: boolean; animate: boolean }) {
   return (
-    <span className={cn("relative ml-[13px] block h-3.5 w-0.5 overflow-hidden", done || flowing ? "bg-white/25" : "bg-white/10")} aria-hidden>
+    <span className={cn("relative ml-[13px] block h-3.5 w-0.5 overflow-hidden", done || flowing ? "bg-border dark:bg-white/25" : "bg-border/70 dark:bg-white/10")} aria-hidden>
       {flowing && animate && (
         <motion.span
-          className="absolute left-0 top-0 h-1.5 w-0.5 bg-white"
+          className="absolute left-0 top-0 h-1.5 w-0.5 bg-brand dark:bg-white"
           animate={{ y: [-6, 16] }}
           transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
         />
@@ -113,22 +124,25 @@ function NodeCard({ stage, model, animate, children }: { stage: ProgressStage; m
       layout={animate}
       className={cn(
         "flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5",
-        active && "border-white/40 bg-white/[0.07]",
+        active && "border-brand/50 dark:border-white/40 bg-brand/10 dark:bg-white/[0.07]",
         done && "border-emerald-500/40",
         failed && "border-rose-500/50",
-        pending && "border-dashed border-white/15 opacity-45",
-        stage.state === "skipped" && "border-white/15 opacity-60",
+        pending && "border-dashed border-border dark:border-white/15 opacity-45",
+        stage.state === "skipped" && "border-border dark:border-white/15 opacity-60",
       )}
       style={active && animate ? { boxShadow: `0 0 0 3px ${identity.from}33` } : undefined}
     >
       <Disc agent={stage.key} pulse={active} animate={animate} />
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium leading-tight">{identity.name}</span>
-        <span className="block truncate text-[10.5px] text-white/55">{children ?? (pending ? identity.role : (stage.activity.at(-1) ?? identity.role))}</span>
-        {model && !pending && <span className="block truncate text-[10px] text-white/40">{model}</span>}
+        <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight">
+          {identity.name}
+          <Duty stage={stage} />
+        </span>
+        <span className="block truncate text-[10.5px] text-muted-foreground dark:text-white/55">{children ?? (pending ? identity.role : (stage.activity.at(-1) ?? identity.role))}</span>
+        {model && !pending && <span className="block truncate text-[10px] text-muted-foreground/70 dark:text-white/40">{model}</span>}
       </span>
-      {done && <Check className="size-3.5 shrink-0 text-emerald-400" aria-hidden />}
-      {failed && <X className="size-3.5 shrink-0 text-rose-400" aria-hidden />}
+      {done && <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />}
+      {failed && <X className="size-3.5 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden />}
     </motion.div>
   );
 }
@@ -141,22 +155,22 @@ function WriterTile({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
       layout={animate}
       className={cn(
         "grid min-w-0 justify-items-center gap-0.5 overflow-hidden rounded-lg border px-1 py-1.5 text-center",
-        active && "border-white/40 bg-white/[0.07]",
+        active && "border-brand/50 dark:border-white/40 bg-brand/10 dark:bg-white/[0.07]",
         seat.state === "done" && "border-emerald-500/40",
         seat.state === "failed" && "border-rose-500/50",
-        seat.state === "pending" && "border-dashed border-white/15 opacity-45",
+        seat.state === "pending" && "border-dashed border-border dark:border-white/15 opacity-45",
         seat.winner && "border-emerald-400",
       )}
       title={`${seat.name}${seat.modelLabel ? ` · ${seat.modelLabel}` : ""} · ${seat.detail}`}
     >
       <span className="relative">
         <Disc agent="drafting" size="size-6" pulse={active} animate={animate} />
-        {seat.winner && <Award className="absolute -right-1.5 -top-1.5 size-3 text-emerald-300" aria-hidden />}
+        {seat.winner && <Award className="absolute -right-1.5 -top-1.5 size-3 text-emerald-600 dark:text-emerald-300" aria-hidden />}
       </span>
       <span className="text-[11px] font-medium" style={{ color: identity.to }}>
         {seat.label}
       </span>
-      <span className="w-full max-w-full truncate text-[9.5px] text-white/50">{seat.modelLabel ?? (seat.state === "pending" ? "waiting" : "…")}</span>
+      <span className="w-full max-w-full truncate text-[9.5px] text-muted-foreground dark:text-white/50">{seat.modelLabel ?? (seat.state === "pending" ? "waiting" : "…")}</span>
     </motion.div>
   );
 }
@@ -182,7 +196,7 @@ function TeamGraph({ stages, board, animate }: { stages: ProgressStage[]; board:
                       <WriterTile key={w.label} seat={w} animate={animate} />
                     ))}
                   </div>
-                  <span className="mt-1 block text-center text-[10px] text-white/45">Quill · three writers, three models</span>
+                  <span className="mt-1 block text-center text-[10px] text-muted-foreground/80 dark:text-white/45">Quill · three writers, three models</span>
                 </div>
               ) : (
                 <NodeCard stage={stage} model={board.modelsByStage[stage.key]} animate={animate} />
@@ -207,17 +221,17 @@ function LiveWriter({ p, animate }: { p: LivePartial; animate: boolean }) {
       <div className="mb-1 flex items-center gap-2 text-[11px]">
         <Disc agent="drafting" size="size-5" pulse animate={animate} />
         <span className="font-medium">Quill {p.label}</span>
-        <span className="text-white/45">{p.model}</span>
-        <span className="ml-auto tabular-nums text-white/45">{p.text.length} chars</span>
+        <span className="text-muted-foreground/80 dark:text-white/45">{p.model}</span>
+        <span className="ml-auto tabular-nums text-muted-foreground/80 dark:text-white/45">{p.text.length} chars</span>
       </div>
       {p.note && (
-        <p className="mb-1 border-l-2 border-white/30 pl-2 text-[12px] italic text-white/70">
+        <p className="mb-1 border-l-2 border-border dark:border-white/30 pl-2 text-[12px] italic text-muted-foreground dark:text-white/70">
           {p.note}
         </p>
       )}
-      <p className="max-h-28 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed text-white/90 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
+      <p className="max-h-28 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90 dark:text-white/90 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
         {p.text || (p.chars > 0 ? "Thinking…" : "Starting…")}
-        <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-white/80 align-middle" aria-hidden />
+        <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-foreground/80 dark:bg-white/80 align-middle" aria-hidden />
       </p>
     </motion.div>
   );
@@ -244,12 +258,12 @@ function Centre({ stages, board, partials, working, animate }: { stages: Progres
         <div className="min-w-0">
           <p className={CAP}>{working ? "Working now" : spot.state === "failed" ? "Stopped" : "Last on stage"}</p>
           <p className="truncate text-lg font-semibold leading-tight">
-            {identity.name} <span className="text-sm font-normal text-white/50">· {identity.role}</span>
+            {identity.name} <span className="text-sm font-normal text-muted-foreground dark:text-white/50">· {identity.role}</span>
           </p>
-          <p className={cn("truncate text-[12px] text-white/70", spot.state === "failed" && "text-rose-300")}>{spot.activity.at(-1) ?? spot.label}</p>
+          <p className={cn("truncate text-[12px] text-muted-foreground dark:text-white/70", spot.state === "failed" && "text-rose-600 dark:text-rose-300")}>{spot.activity.at(-1) ?? spot.label}</p>
         </div>
         {board.modelsByStage[spot.key] && (
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/70">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-border dark:border-white/15 px-2 py-0.5 text-[10px] text-muted-foreground dark:text-white/70">
             <Sparkles className="size-3" aria-hidden /> {board.modelsByStage[spot.key]}
           </span>
         )}
@@ -261,10 +275,10 @@ function Centre({ stages, board, partials, working, animate }: { stages: Progres
           <ul className="grid gap-1">
             <AnimatePresence initial={false}>
               {tools.map((t) => (
-                <motion.li key={t.step} initial={animate ? { opacity: 0, x: -8 } : false} animate={{ opacity: 1, x: 0 }} exit={animate ? { opacity: 0 } : undefined} className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[11.5px]">
-                  <Wrench className="size-3 shrink-0 text-white/45" aria-hidden />
-                  <span className="font-medium text-white/85">{t.tool}</span>
-                  {t.text && <span className="truncate italic text-white/55">{t.text}</span>}
+                <motion.li key={t.step} initial={animate ? { opacity: 0, x: -8 } : false} animate={{ opacity: 1, x: 0 }} exit={animate ? { opacity: 0 } : undefined} className="flex items-center gap-2 rounded-lg bg-muted/60 dark:bg-white/[0.04] px-2.5 py-1 text-[11.5px]">
+                  <Wrench className="size-3 shrink-0 text-muted-foreground/80 dark:text-white/45" aria-hidden />
+                  <span className="font-medium text-foreground/85 dark:text-white/85">{t.tool}</span>
+                  {t.text && <span className="truncate italic text-muted-foreground dark:text-white/55">{t.text}</span>}
                 </motion.li>
               ))}
             </AnimatePresence>
@@ -281,9 +295,9 @@ function Centre({ stages, board, partials, working, animate }: { stages: Progres
       {liveOther && (
         <div className={PANEL}>
           <p className={cn(CAP, "mb-1")}>Thinking · {liveOther.text.length} chars</p>
-          <p className="max-h-28 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed text-white/90 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
+          <p className="max-h-28 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90 dark:text-white/90 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
             {liveOther.text || (liveOther.chars > 0 ? "Thinking…" : "Starting…")}
-            <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-white/80 align-middle" aria-hidden />
+            <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-foreground/80 dark:bg-white/80 align-middle" aria-hidden />
           </p>
         </div>
       )}
@@ -292,7 +306,7 @@ function Centre({ stages, board, partials, working, animate }: { stages: Progres
         <div className="grid gap-1">
           <p className={CAP}>Landed</p>
           {landed.map((w) => (
-            <p key={w.label} className="truncate rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/75">
+            <p key={w.label} className="truncate rounded-lg bg-muted/60 dark:bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-foreground/75 dark:text-white/75">
               <span className="font-medium text-white">Quill {w.label}</span> · {w.draft}
             </p>
           ))}
@@ -300,7 +314,7 @@ function Centre({ stages, board, partials, working, animate }: { stages: Progres
       )}
 
       {liveText.length === 0 && tools.length === 0 && landed.length === 0 && recent.length > 1 && (
-        <ul className="grid gap-0.5 text-[12px] text-white/55">
+        <ul className="grid gap-0.5 text-[12px] text-muted-foreground dark:text-white/55">
           {recent.slice(0, -1).map((line, i) => (
             <li key={`${line}-${i}`}>· {line}</li>
           ))}
@@ -337,13 +351,13 @@ export function MissionControl({ stages, board, transcript, partials, working, s
   return (
     <section
       aria-label="Mission control"
-      className={cn("relative isolate overflow-hidden rounded-3xl bg-[#0b0a14] p-4 text-white sm:p-5", className)}
+      className={cn("relative isolate overflow-hidden rounded-3xl border bg-card p-4 text-foreground dark:border-transparent dark:bg-[#0b0a14] dark:text-white sm:p-5", className)}
     >
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-white/55">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground dark:text-white/55">
         <span className="flex items-center gap-2">
           <span className={cn("size-1.5 rounded-full", working ? "animate-pulse bg-emerald-400" : "bg-white/40")} aria-hidden />
           {working ? "Live" : "Finished"}
-          {elapsedMs !== null && <span className="tabular-nums text-white/80">· {formatDuration(elapsedMs)}</span>}
+          {elapsedMs !== null && <span className="tabular-nums text-foreground/80 dark:text-white/80">· {formatDuration(elapsedMs)}</span>}
         </span>
         <span className="flex items-center gap-3">
           {models > 0 && <span className="normal-case tracking-normal">{models} model{models === 1 ? "" : "s"} on this run</span>}
@@ -365,7 +379,7 @@ export function MissionControl({ stages, board, transcript, partials, working, s
               { label: "Failed calls", value: failedCalls },
             ].map((s) => (
               <div key={s.label} className={cn(PANEL, "min-w-0")}>
-                <span className="block truncate text-[10px] text-white/45">{s.label}</span>
+                <span className="block truncate text-[10px] text-muted-foreground/80 dark:text-white/45">{s.label}</span>
                 <span className="block text-lg font-semibold tabular-nums">
                   <CountUp value={s.value} />
                 </span>
@@ -373,7 +387,7 @@ export function MissionControl({ stages, board, transcript, partials, working, s
             ))}
             {(stats?.spentCents ?? 0) > 0 && (
               <div className={cn(PANEL, "col-span-2 md:col-span-4 xl:col-span-2")}>
-                <span className="block text-[10px] text-white/45">Spend</span>
+                <span className="block text-[10px] text-muted-foreground/80 dark:text-white/45">Spend</span>
                 <span className="block text-lg font-semibold tabular-nums">{formatCents(stats!.spentCents!)}</span>
               </div>
             )}
@@ -381,7 +395,7 @@ export function MissionControl({ stages, board, transcript, partials, working, s
           <div>
             <p className={cn(CAP, "mb-1")}>Handoffs</p>
             {briefs.length === 0 ? (
-              <p className="text-[11px] text-white/45">None yet.</p>
+              <p className="text-[11px] text-muted-foreground/80 dark:text-white/45">None yet.</p>
             ) : (
               <ul className="grid min-w-0 gap-1">
                 <AnimatePresence initial={false}>
@@ -395,9 +409,9 @@ export function MissionControl({ stages, board, transcript, partials, working, s
                       <Disc agent={h.from} size="size-4" animate={false} />
                       <span className="min-w-0">
                         <span className="flex flex-wrap items-center gap-1 font-medium">
-                          {AGENTS[h.from].name} <ArrowRight className="size-3 text-white/40" aria-hidden /> {AGENTS[h.to].name}
+                          {AGENTS[h.from].name} <ArrowRight className="size-3 text-muted-foreground/70 dark:text-white/40" aria-hidden /> {AGENTS[h.to].name}
                         </span>
-                        <span className="block truncate text-white/55">{h.brief}</span>
+                        <span className="block truncate text-muted-foreground dark:text-white/55">{h.brief}</span>
                       </span>
                     </motion.li>
                   ))}
@@ -406,14 +420,14 @@ export function MissionControl({ stages, board, transcript, partials, working, s
             )}
           </div>
           {next && working && (
-            <p className="text-[11px] text-white/55">
-              Next: <span className="font-medium text-white/85">{AGENTS[next.key].name}</span>
+            <p className="text-[11px] text-muted-foreground dark:text-white/55">
+              Next: <span className="font-medium text-foreground/85 dark:text-white/85">{AGENTS[next.key].name}</span>
             </p>
           )}
         </div>
       </div>
 
-      <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-white/10">
+      <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-border/70 dark:bg-white/10">
         <motion.div
           className="h-full rounded-full bg-gradient-to-r from-brand to-brand-2"
           animate={{ width: `${percent}%` }}

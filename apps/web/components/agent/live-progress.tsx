@@ -26,6 +26,7 @@ import {
 import {
   buildBoard,
   buildProgress,
+  buildTranscript,
   formatDuration,
   revealStages,
   type ProgressAccount,
@@ -36,7 +37,7 @@ import {
   progressOutput,
 } from "@platform/agent-council/progress";
 import { applyPartials, type LivePartial } from "@platform/agent-council/live";
-import { SpotlightStage } from "@/components/agent/spotlight-stage";
+import { MissionControl } from "@/components/agent/mission-control";
 import { formatCents } from "@/components/agent/format";
 import { isSettled } from "@/components/home/labels";
 import { cn } from "@/lib/utils";
@@ -425,7 +426,7 @@ function Meta({
 interface Props {
   runId: string;
   initial: RunInitial;
-  variant?: "full" | "compact" | "stage";
+  variant?: "full" | "compact" | "mission";
   /**
    * Called once, when the campaign stops needing the live view. Both screens
    * that use this are Server Components and cannot hand a function across the
@@ -450,17 +451,24 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
   // Agents ahead of the work stay out of sight until it reaches them.
   const shown = revealStages(progress.stages);
 
-  if (variant === "stage") {
+  if (variant === "mission") {
     const board = applyPartials(buildBoard(snapshot.status, snapshot.events, snapshot.accounts), snapshot.partials);
+    const transcript = buildTranscript(snapshot.events, snapshot.accounts, { claimCount: snapshot.claimCount });
     return (
-      <SpotlightStage
+      <MissionControl
         className={className}
         stages={progress.stages}
-        working={running}
-        models={board.modelsByStage}
+        board={board}
+        transcript={transcript}
         partials={snapshot.partials}
-        writers={board.writers}
+        working={running}
         startedAt={initial.startedAt}
+        stats={{
+          facts: snapshot.claimCount,
+          drafts: board.writers.filter((w) => w.draft).length,
+          notesFixed: transcript.reduce((sum, m) => sum + (m.output?.fixed ? (m.output.issues?.length ?? 0) : 0), 0),
+          spentCents: snapshot.spentCents,
+        }}
       />
     );
   }
