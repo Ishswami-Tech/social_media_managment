@@ -38,14 +38,18 @@ export function aiProvider(name: AIProviderName): AIProvider {
 
 export async function modelCatalogue(): Promise<ModelInfo[]> {
   const rows = await prisma.aIProviderConfig.findMany({ where: { active: true }, orderBy: { priority: "asc" } });
-  return rows.map((r) => ({
-    provider: r.provider,
-    model: r.model,
-    capabilities: r.capabilities as AICapability[],
-    inputCostPerM: r.inputCostPerM,
-    outputCostPerM: r.outputCostPerM,
-    imageCost: r.imageCost,
-  }));
+  // The catalogue's own capabilities are read through the same sorting as live listings: an image model is
+  // never a content model, and audio, video, embedding and moderation rows are left out.
+  return rows
+    .map((r) => ({
+      provider: r.provider,
+      model: r.model,
+      capabilities: classifyModel(r.model, r.capabilities as AICapability[]),
+      inputCostPerM: r.inputCostPerM,
+      outputCostPerM: r.outputCostPerM,
+      imageCost: r.imageCost,
+    }))
+    .filter((m) => m.capabilities.length > 0);
 }
 
 export interface SelectableModel {
