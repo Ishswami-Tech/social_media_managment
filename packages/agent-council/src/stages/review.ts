@@ -16,7 +16,7 @@ import type { CheckResult, DraftCandidate, PipelineContext, ReviewNote, RunSnaps
 import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
 import {
   accountVars,
   checkInputFor,
@@ -193,7 +193,7 @@ async function reviewDraft(
           run,
           account.platform,
         ),
-        user: `Review this draft as a ${account.platform} reader now. Return only the JSON object.`,
+        user: withPerspective(`Review this draft as a ${account.platform} reader now. Return only the JSON object.`, seatPerspective("review", index, prefs.length)),
       },
       ReviewNotesOutputSchema,
       ),

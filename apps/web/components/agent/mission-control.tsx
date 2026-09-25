@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  COUNCIL_PERSPECTIVES,
   formatDuration,
   modelLabel,
   revealStages,
@@ -323,7 +324,8 @@ function LiveBlock({ stage, partials, animate }: { stage: ProgressStage; partial
         <AnimatePresence initial={false}>
           {texts.map((p) => {
             const seat = seatNumber(p.step);
-            const label = p.label ? `Quill ${p.label}` : seat ? `${identity.name} · seat ${seat}` : identity.name;
+            const perspective = seat ? COUNCIL_PERSPECTIVES[stage.key]?.[seat - 1]?.name : undefined;
+            const label = p.label ? `Quill ${p.label}` : seat ? `${identity.name} · ${perspective ?? `seat ${seat}`}` : identity.name;
             return <LiveText key={p.step} p={p} animate={animate} label={label} color={identity.to} compact={texts.length > 1} />;
           })}
         </AnimatePresence>

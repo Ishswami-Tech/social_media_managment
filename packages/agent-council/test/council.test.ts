@@ -3,7 +3,8 @@ import { mergeBriefs } from "../src/stages/research";
 import { pickStrategy } from "../src/stages/strategy";
 import { tally } from "../src/stages/judge";
 import { PipelineBlocked } from "../src/errors";
-import { council, coolingProviders, councilPrefs, otherSeats, topPerProvider, uniqueStrings } from "../src/stages/council";
+import { council, coolingProviders, councilPrefs, otherSeats, seatPerspective, topPerProvider, uniqueStrings, withPerspective } from "../src/stages/council";
+import { firstLine, mergeCouncilMemory } from "../src/council-memory";
 import { ModelRouter, type ModelInfo } from "@platform/ai-core";
 import { createCircuitBreaker } from "../src/circuit-breaker";
 import { createTestContext } from "./helpers/fakes";
@@ -137,6 +138,43 @@ describe("a council behind one seat", () => {
     const prefs = [{ provider: "OPENAI" as const, model: "gpt-test" }, {}, { provider: "GOOGLE" as const, model: "gemini-test" }];
     expect(otherSeats(prefs, 0)).toEqual(["GOOGLE::gemini-test"]);
     expect(otherSeats(prefs, 2)).toEqual(["OPENAI::gpt-test"]);
+  });
+
+  it("gives every seat of a council its own perspective and a lone seat none", () => {
+    const seats = [0, 1, 2].map((i) => seatPerspective("research", i, 3));
+    expect(seats.map((s) => s?.match(/COUNCIL: (\w+)/)?.[1])).toEqual(["Evidence", "Counterpoint", "Practice"]);
+    expect(new Set(seats).size).toBe(3);
+    expect(seatPerspective("judge", 1, 3)).toContain("Craft");
+    expect(seatPerspective("research", 0, 1)).toBeUndefined();
+    expect(withPerspective("Do it.", undefined)).toBe("Do it.");
+    expect(withPerspective("Do it.", "YOUR SEAT")).toBe("Do it.\nYOUR SEAT");
+  });
+
+  it("learns from a run and keeps the memory small", () => {
+    const first = mergeCouncilMemory(undefined, {
+      winnerLane: "Story",
+      winnerFirstLine: "Last Tuesday the queue hit 14 people.\nThen it changed.",
+      reviewIssues: ["Cut the cliché “game-changer”.", "Ends without a question."],
+      angle: "The two-minute reply rule",
+      at: "2026-09-26T00:00:00.000Z",
+    });
+    expect(first.runs).toBe(1);
+    expect(first.winningLanes).toEqual([{ lane: "Story", wins: 1 }]);
+    expect(first.winningHooks).toEqual(["Last Tuesday the queue hit 14 people."]);
+    const second = mergeCouncilMemory(first, {
+      winnerLane: "Evidence",
+      reviewIssues: ["cut the cliche 'unlock'", "ends without a question!"],
+      angle: "the two-minute reply rule",
+    });
+    expect(second.runs).toBe(2);
+    expect(second.winningLanes?.map((l) => l.lane)).toEqual(["Story", "Evidence"]);
+    expect(second.recurringNotes?.map((n) => n.count)).toEqual([2, 2]);
+    expect(second.recurringNotes?.find((n) => /question/.test(n.note))).toEqual({ note: "Ends without a question.", count: 2 });
+    expect(second.recurringNotes?.find((n) => /cliché/.test(n.note))?.count).toBe(2);
+    // The newest spelling of a repeated angle is the one kept.
+    expect(second.recentAngles).toEqual(["the two-minute reply rule"]);
+    expect(first.runs).toBe(1);
+    expect(firstLine("\n\n  Hello there  \nmore")).toBe("Hello there");
   });
 
   it("dedupes strings without caring about case", () => {

@@ -299,6 +299,35 @@ export async function resumeRun(ctx: OrgContext, runId: string): Promise<AgentRu
   return loadRun(ctx.organization.id, runId);
 }
 
+/**
+ * Resumes a blocked or paused run without a person: used by maintenance once
+ * a provider is back. False when the run is not in a resumable state.
+ */
+export async function resumeRunBySystem(runId: string, reason: string): Promise<boolean> {
+  const run = await prisma.agentRun.findUnique({ where: { id: runId }, select: { status: true, resumeStatus: true, organizationId: true } });
+  if (!run || (run.status !== "BLOCKED" && run.status !== "PAUSED")) return false;
+  const target: AgentRunStatus = run.resumeStatus ?? "QUEUED";
+  if (!WORKER_STATUSES.has(target)) return false;
+  await transition(runId, run.status, target, { resumeStatus: null, blockedReason: null, error: null });
+  await addEvent(runId, "resume", { by: "system", reason, to: target });
+  await enqueueRun(runId, run.organizationId, `revive-${Date.now()}`, true);
+  return true;
+}
+
+/** Puts a run that says it is working, but has not moved for a long time, back on the queue. */
+export async function requeueRunBySystem(runId: string, reason: string): Promise<boolean> {
+  const run = await prisma.agentRun.findUnique({ where: { id: runId }, select: { status: true, organizationId: true } });
+  if (!run || !WORKER_STATUSES.has(run.status)) return false;
+  await addEvent(runId, "requeue", { by: "system", reason });
+  await enqueueRun(runId, run.organizationId, `revive-${Date.now()}`, true);
+  return true;
+}
+
+/** Statuses the pipeline worker owns, for maintenance to recognise a run that should be moving. */
+export function isWorkerStatus(status: AgentRunStatus): boolean {
+  return WORKER_STATUSES.has(status);
+}
+
 export async function cancelRun(ctx: OrgContext, runId: string): Promise<AgentRunDetail> {
   const run = await loadRun(ctx.organization.id, runId);
   await transition(runId, run.status, "CANCELLED", { resumeStatus: null, completedAt: new Date() });

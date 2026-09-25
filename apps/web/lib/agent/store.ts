@@ -13,7 +13,7 @@ import type {
   RunSnapshot,
   StepEvent,
 } from "@platform/agent-council";
-import type { Prisma } from "@platform/database";
+import { Prisma } from "@platform/database";
 import type { Brief } from "@platform/research";
 import {
   AGENT_PIPELINE,
@@ -80,6 +80,7 @@ export function profileToBrain(profile: {
   content: Prisma.JsonValue | null;
   performance: Prisma.JsonValue | null;
   humanFeedback: Prisma.JsonValue | null;
+  council?: Prisma.JsonValue | null;
 } | null): AccountBrain {
   if (!profile) return {};
   const brain: AccountBrain = {
@@ -89,6 +90,7 @@ export function profileToBrain(profile: {
     content: jsonObject<AccountBrain["content"] & object>(profile.content),
     performance: jsonObject<AccountBrain["performance"] & object>(profile.performance),
     humanFeedback: jsonObject<AccountBrain["humanFeedback"] & object>(profile.humanFeedback),
+    council: jsonObject<AccountBrain["council"] & object>(profile.council),
   };
   return Object.fromEntries(Object.entries(brain).filter(([, v]) => v !== undefined)) as AccountBrain;
 }
@@ -279,6 +281,38 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
 
     async saveSkills(runId, skillIds) {
       await prisma.agentRun.update({ where: { id: runId }, data: { skillIds } });
+    },
+
+    async findRecentResearch(organizationId, topic, maxAgeMs) {
+      const wanted = topic.trim().toLowerCase();
+      if (!wanted) return undefined;
+      const recent = await prisma.agentRun.findMany({
+        where: {
+          organizationId,
+          createdAt: { gte: new Date(Date.now() - maxAgeMs) },
+          research: { not: Prisma.DbNull },
+          status: { notIn: ["FAILED", "CANCELLED"] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, topic: true, research: true, createdAt: true, claims: { orderBy: { createdAt: "asc" } } },
+        take: 20,
+      });
+      const match = recent.find((r) => r.topic.trim().toLowerCase() === wanted && r.claims.length > 0);
+      const brief = match ? jsonObject<Brief>(match.research) : undefined;
+      if (!match || !brief) return undefined;
+      return {
+        brief,
+        researchedAt: match.createdAt.toISOString(),
+        claims: match.claims.map((c) => ({
+          id: c.id,
+          statement: c.statement,
+          sourceUrl: c.sourceUrl ?? undefined,
+          sourceTitle: c.sourceTitle ?? undefined,
+          evidence: c.evidence ?? undefined,
+          confidence: c.confidence,
+          status: c.status,
+        })),
+      };
     },
 
     async saveResearch(runId, brief, claims) {

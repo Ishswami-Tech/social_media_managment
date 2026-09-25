@@ -12,6 +12,34 @@
  */
 
 /** What each writer is asked to lean into; shown next to the writer and sent in its prompt. */
+/**
+ * A council is three seats that look at the same question differently, not
+ * three copies of one prompt. The name is what the board shows; the brief is
+ * appended to that seat's instructions.
+ */
+export const COUNCIL_PERSPECTIVES: Partial<Record<ProgressStageKey, { name: string; brief: string }[]>> = {
+  research: [
+    { name: "Evidence", brief: "Primary evidence first: numbers, studies, first-hand reports and official sources, each with a date. Prefer specifics over summaries." },
+    { name: "Counterpoint", brief: "The other side: critiques, failure stories, limits and the objections a sceptical reader would raise. Record them as caveats and as claims of their own." },
+    { name: "Practice", brief: "Practical detail: worked examples, case studies, step-by-step methods and what practitioners actually do, with the numbers they report." },
+  ],
+  strategy: [
+    { name: "Story", brief: "Favour an angle that opens on a concrete human moment or scene and lets the lesson follow." },
+    { name: "Evidence", brief: "Favour an angle that opens on the strongest number or finding, contrarian where the facts allow it." },
+    { name: "Practical", brief: "Favour an angle the reader can act on today: steps, a checklist, a method or a tool." },
+  ],
+  review: [
+    { name: "Facts", brief: "Read for facts: every number, name, cause and effect must be backed by an allowed claim. Flag anything unsupported, implied or overstated." },
+    { name: "Platform", brief: "Read as the platform: the first line, length, paragraphing, hashtags, native conventions, and anything that reads like an advert or AI filler." },
+    { name: "Reader", brief: "Read as the audience: would they stop, trust and act? Flag jargon, a missing 'so what', a weak or missing ask." },
+  ],
+  judge: [
+    { name: "Credibility", brief: "Weigh goal fit, claim discipline and brand voice most heavily; a post that cannot be trusted cannot win." },
+    { name: "Craft", brief: "Weigh hook strength, clarity and platform fit most heavily; the first line and the reading rhythm decide." },
+    { name: "Audience", brief: "Weigh what the reader takes away and whether they would act; score the 'so what' and the call to action hardest." },
+  ],
+};
+
 export const WRITER_LANES: Record<string, { name: string; brief: string }> = {
   A: {
     name: "Story",
@@ -67,6 +95,9 @@ export interface ProgressEvent {
     issues?: string[];
     fixed?: boolean;
     draft?: string;
+    /** Research step: the brief was remembered from a run on this date instead of researched again. */
+    reusedFrom?: string;
+    facts?: number;
   } | null;
 }
 
@@ -348,7 +379,10 @@ function researchLine(event: ProgressEvent, ctx: Ctx): string | null {
   const { head } = parseStep(event.step);
   if (head === "research") {
     if (event.status === "STARTED") return "Reading sources…";
-    if (event.status === "SUCCEEDED") return `Sources read${took(event)}`;
+    if (event.status === "SUCCEEDED")
+      return event.output?.reusedFrom
+        ? `Reused the brief from ${event.output.reusedFrom}: ${event.output.facts ?? 0} facts, nothing to research again`
+        : `Sources read${took(event)}`;
     if (event.status === "FAILED") return `Could not finish reading: ${shortReason(event.error)}`;
     return null;
   }

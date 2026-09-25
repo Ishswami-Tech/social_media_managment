@@ -7,5 +7,6 @@ export * from "./checks";
 export * from "./stages";
 export * from "./pipeline";
 export * from "./progress";
+export * from "./council-memory";
 export * from "./scoring";
 export * from "./lab";

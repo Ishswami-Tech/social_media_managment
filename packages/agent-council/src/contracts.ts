@@ -1,4 +1,5 @@
 import type { LiveBus } from "./live";
+import type { CouncilMemory } from "./council-memory";
 /**
  * Shared contracts for the Agent Council. Everything the pipeline reads or
  * writes goes through these types and the `AgentRunStore` port, so the pure
@@ -64,6 +65,8 @@ export interface AccountBrain {
   };
   /** Story bank: real moments, numbers and lessons the organization recorded for the writers to draw from. */
   stories?: { title?: string; text: string }[];
+  /** What the council learned from this account's earlier runs: winning lanes and hooks, recurring reviewer notes, recent angles. */
+  council?: CouncilMemory;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +221,15 @@ export interface StepEvent {
 /** Persistence port: the worker's Prisma implementation lives in apps/web. */
 export interface AgentRunStore {
   load(runId: string): Promise<RunSnapshot>;
+  /**
+   * Additive: a brief this organization researched recently for the same
+   * topic, with its claims, so research is not repeated within `maxAgeMs`.
+   */
+  findRecentResearch?(
+    organizationId: string,
+    topic: string,
+    maxAgeMs: number,
+  ): Promise<{ brief: Brief; claims: ClaimRecord[]; researchedAt: string } | undefined>;
   setStatus(runId: string, status: AgentRunStatus, extra?: { currentStep?: string; error?: string; blockedReason?: string }): Promise<void>;
   /** Persists the checkpoint marker without changing the status (a stage finished or was re-entered). */
   markStep(runId: string, currentStep: string): Promise<void>;

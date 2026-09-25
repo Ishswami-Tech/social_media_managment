@@ -10,13 +10,15 @@ import type { ClaimRecord, PipelineContext, RunSnapshot } from "../contracts";
 import { errorMessage } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, callModel, type ProviderPreference } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
 import { stringify } from "./shared";
 
 const RESEARCH_MAX_STEPS = 6;
 const RESEARCH_OUTPUT_TOKENS = 2_500;
 const CLAIMS_OUTPUT_TOKENS = 1_500;
 const CLAIMS_BRIEF_CHARS = 24_000;
+/** A brief researched this recently for the same topic is reused instead of researched again. */
+const RESEARCH_REUSE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Models write `null` for a field they have nothing for; that is "absent", not a broken answer. */
 const optionalText = z
@@ -140,13 +142,20 @@ async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Bri
   const prefs = await councilPrefs(ctx);
   const briefs = await council(
     prefs,
-    (pref, index, others) => produceOneBrief(ctx, run, pref, seatStep("research", index, prefs.length), others),
+    (pref, index, others) => produceOneBrief(ctx, run, pref, seatStep("research", index, prefs.length), others, seatPerspective("research", index, prefs.length)),
     recordSeatFailure(ctx, run.id, "research", prefs.length),
   );
   return mergeBriefs(briefs);
 }
 
-async function produceOneBrief(ctx: PipelineContext, run: RunSnapshot, pref: ProviderPreference, step: string, avoidModels: string[]): Promise<Brief> {
+async function produceOneBrief(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  pref: ProviderPreference,
+  step: string,
+  avoidModels: string[],
+  perspective: string | undefined,
+): Promise<Brief> {
   const system = renderPrompt("research", {
     brandClause: brandClause(run),
     toolGuide: toolGuide(ctx.researchTools),
@@ -171,7 +180,7 @@ async function produceOneBrief(ctx: PipelineContext, run: RunSnapshot, pref: Pro
     tools: ctx.researchTools,
     maxSteps: RESEARCH_MAX_STEPS,
     system,
-    user: `Research this campaign now and return the brief as JSON.\nTopic: ${run.brief.topic}\nGoal: ${run.brief.goal}`,
+    user: withPerspective(`Research this campaign now and return the brief as JSON.\nTopic: ${run.brief.topic}\nGoal: ${run.brief.goal}`, perspective),
   });
   const parsed = BriefSchema.safeParse(safeJson(call.text));
   if (parsed.success) return parsed.data;
@@ -199,6 +208,17 @@ function safeJson(text: string): unknown {
 
 /** RESEARCHING: brief + claims ledger, persisted through the store. */
 export async function researchStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
+  // The same topic researched a few days ago is remembered, not researched again.
+  const remembered = await ctx.store.findRecentResearch?.(run.organizationId, run.brief.topic, RESEARCH_REUSE_MS);
+  if (remembered && remembered.claims.length > 0) {
+    await ctx.store.saveResearch(run.id, remembered.brief, remembered.claims);
+    await ctx.store.addEvent(run.id, {
+      step: "research",
+      status: "SUCCEEDED",
+      output: { reusedFrom: remembered.researchedAt.slice(0, 10), facts: remembered.claims.length },
+    });
+    return;
+  }
   const brief = await produceBrief(ctx, run);
   const { value } = await callJson(
     ctx,

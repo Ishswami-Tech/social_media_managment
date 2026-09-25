@@ -284,6 +284,21 @@ describe("runPipelineToCompletion", () => {
     expect(ctx.deadModels?.has("GOOGLE::gemini-test")).toBe(true);
   });
 
+  it("reuses a brief researched days ago for the same topic instead of researching again", async () => {
+    const { ctx, script, memory } = setup();
+    ctx.store.findRecentResearch = async () => ({
+      brief: { title: "Remembered", summary: "From last time.", keyPoints: ["Queues fell"], angles: [], postIdeas: [], sources: [{ title: "S", url: "https://s" }], caveats: [] },
+      claims: [{ id: "old_1", statement: "Queues fell from 14 to 5.", confidence: 0.9, status: "SUPPORTED" }],
+      researchedAt: "2026-09-24T10:00:00.000Z",
+    });
+    await runPipelineToCompletion(ctx, "run_1");
+    expect(script.calls.filter((c) => c.stage === "RESEARCH" || c.stage === "CLAIMS").length).toBe(0);
+    expect(memory.snapshot().research?.title).toBe("Remembered");
+    expect(memory.snapshot().claims.map((c) => c.statement)).toEqual(["Queues fell from 14 to 5."]);
+    const line = memory.events.find((e) => e.step === "research" && e.status === "SUCCEEDED");
+    expect(line?.output).toEqual({ reusedFrom: "2026-09-24", facts: 1 });
+  });
+
   it("spreads writers over different providers when their planned provider is down", async () => {
     const { ctx, script } = createTestContext(baseRun({ accounts: [baseRun().accounts[0]!] }), {
       availableProviders: ["GOOGLE", "OPENAI", "ANTHROPIC"],

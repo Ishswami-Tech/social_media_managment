@@ -2,7 +2,7 @@ import { definePrompt } from "./registry";
 
 export const REVIEW_PROMPT = definePrompt(
   "review",
-  2,
+  3,
   `STAGE: PLATFORM REVIEW
 You are the {{platform}} reviewer of an Agent Council. A writer produced the draft below for the account described here. Deterministic checks already passed (length, claims, banned words), so look for the problems only a {{platform}} reader would notice, judged against the platform conventions and the playbooks attached to this campaign. You do not rewrite anything: you list issues and say whether the draft must be revised.
 
@@ -35,6 +35,7 @@ RULES
 1. Each issue is one short, concrete sentence quoting the offending phrase. No praise, no rewriting.
 2. "verdict" is "REVISE" when at least one issue would make a {{platform}} reader scroll past, distrust the post, or breaks an attached playbook rule; otherwise "PASS" (minor notes may still be listed).
 3. Report only real problems; an empty list with "PASS" is the correct answer for a clean draft.
+4. Account Brain "council.recurringNotes" are this account's habitual mistakes from earlier runs; check for each of them first.
 
 OUTPUT
 Return ONLY a JSON object (no markdown fences):

@@ -7,6 +7,9 @@ import { providers } from "@/lib/providers";
 import { queues } from "@/lib/queue";
 import { scheduleAnalyticsCollection } from "@/lib/services/analytics";
 import { learnAllAccountProfiles } from "@/lib/agent/learning";
+import { providerHealthSummary } from "@/lib/agent/provider-health";
+import { isWorkerStatus, requeueRunBySystem, resumeRunBySystem } from "@/lib/agent/runs";
+import { AGENT_PIPELINE } from "@platform/types";
 
 /** Register repeatable housekeeping jobs (idempotent: BullMQ dedupes by repeat key). */
 export async function scheduleMaintenance() {
@@ -25,6 +28,11 @@ export async function scheduleMaintenance() {
     "retry-stuck-jobs",
     { every: 5 * 60_000 },
     { name: "maintenance", data: { task: "retry-stuck-jobs" } },
+  );
+  await q.upsertJobScheduler(
+    "revive-runs",
+    { every: 5 * 60_000 },
+    { name: "maintenance", data: { task: "revive-runs" } },
   );
   await q.upsertJobScheduler(
     "collect-analytics",
@@ -47,6 +55,8 @@ export async function runMaintenance(data: MaintenanceJobData) {
       return;
     case "retry-stuck-jobs":
       return requeueStuckJobs();
+    case "revive-runs":
+      return reviveRuns();
     case "collect-analytics": {
       const n = await scheduleAnalyticsCollection();
       logger.info("analytics collection scheduled", n);
@@ -57,6 +67,34 @@ export async function runMaintenance(data: MaintenanceJobData) {
       logger.info("account profiles learned", result);
       return;
     }
+  }
+}
+
+/** A run blocked for want of a provider, or one that stopped moving, is set going again once it can be. */
+const PROVIDER_TROUBLE = /providers unavailable|quota|credits|usage limit|rate limit|overloaded/i;
+const BLOCKED_GRACE_MS = 3 * 60_000;
+const STUCK_AFTER_MS = 20 * 60_000;
+
+async function reviveRuns(): Promise<void> {
+  const health = await providerHealthSummary();
+  const someProviderOpen = health.length === 0 || health.some((h) => !h.open);
+  if (someProviderOpen) {
+    const blocked = await prisma.agentRun.findMany({
+      where: { status: "BLOCKED", updatedAt: { lt: new Date(Date.now() - BLOCKED_GRACE_MS) } },
+      select: { id: true, blockedReason: true },
+    });
+    for (const run of blocked) {
+      if (!PROVIDER_TROUBLE.test(run.blockedReason ?? "")) continue;
+      if (await resumeRunBySystem(run.id, "a provider is available again")) logger.info("blocked run resumed", { runId: run.id });
+    }
+  }
+  const stuck = await prisma.agentRun.findMany({
+    where: { status: { in: [...AGENT_PIPELINE] }, updatedAt: { lt: new Date(Date.now() - STUCK_AFTER_MS) } },
+    select: { id: true, status: true },
+  });
+  for (const run of stuck) {
+    if (!isWorkerStatus(run.status)) continue;
+    if (await requeueRunBySystem(run.id, "no progress for 20 minutes")) logger.warn("stalled run requeued", { runId: run.id, status: run.status });
   }
 }
 

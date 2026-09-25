@@ -7,6 +7,7 @@
  */
 import type { AIProviderName } from "@platform/types";
 import type { PipelineContext } from "../contracts";
+import { COUNCIL_PERSPECTIVES, type ProgressStageKey } from "../progress";
 import { errorMessage, isPipelineBlocked } from "../errors";
 import type { ProviderPreference } from "./call";
 
@@ -73,6 +74,22 @@ function spread(candidates: readonly { provider: AIProviderName; model: string }
     for (const list of lists) if (list[round] && out.length < size) out.push(list[round]!);
   }
   return out;
+}
+
+/**
+ * The instruction that makes seat `index` of a council look at the question
+ * its own way; nothing for a single seat, so a lone call keeps its prompt.
+ */
+export function seatPerspective(stage: ProgressStageKey, index: number, seats: number): string | undefined {
+  if (seats < 2) return undefined;
+  const list = COUNCIL_PERSPECTIVES[stage];
+  const p = list?.[index % (list?.length || 1)];
+  return p ? `YOUR SEAT ON THE COUNCIL: ${p.name}. ${p.brief} Other seats cover the other perspectives; do not water yours down.` : undefined;
+}
+
+/** The user message with the seat's perspective appended, when there is one. */
+export function withPerspective(user: string, perspective: string | undefined): string {
+  return perspective ? `${user}\n${perspective}` : user;
 }
 
 /** A `council` failure hook that writes a FAILED event on the seat's own step. */

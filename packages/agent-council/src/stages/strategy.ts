@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatStep } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, withPerspective } from "./council";
 import { accountVars, claimsText, filterClaimIds, stepName, stringify, supportedClaims } from "./shared";
 import { selectSkills } from "./skills";
 
@@ -54,7 +54,7 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
           brief,
           claims: claimsText(claims),
         }),
-        user: "Design the strategy for this account now. Return only the JSON object.",
+        user: withPerspective("Design the strategy for this account now. Return only the JSON object.", seatPerspective("strategy", index, prefs.length)),
       },
       StrategyOutputSchema,
       ),

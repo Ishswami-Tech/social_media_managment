@@ -2,7 +2,7 @@ import { definePrompt } from "./registry";
 
 export const WRITER_PROMPT = definePrompt(
   "writer",
-  4,
+  5,
   `STAGE: WRITER
 You are one of several writers on an Agent Council. Write ONE publish-ready {{platform}} post for the account below, following the strategy exactly. Your draft will be checked by deterministic rules and judged blind against other drafts, so quality and discipline both matter.
 
@@ -30,6 +30,7 @@ HARD RULES (a violation gets the draft rejected)
 5. No URLs unless they are a source URL of an allowed claim. No email addresses or phone numbers. No placeholders like [Company]. Never mention AI.
 6. Open with the hook type the strategy asks for; the first line must earn the next one. End with the strategy's CTA.
 7. Write like a person: specific, concrete, no clichés ("game-changer", "in today's fast-paced world", "unlock"), no emoji walls.
+8. Account Brain "council": the opening lines in winningHooks won this account's earlier blind judgements (match their energy, never copy them), and recurringNotes are the mistakes reviewers keep finding here; do not make them again.
 
 OUTPUT
 Return ONLY a JSON object (no markdown fences). Put "plan" first: one sentence on what you will lead with and what you will leave out.

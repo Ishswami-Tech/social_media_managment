@@ -23,6 +23,7 @@ import { buildPipelineContext } from "@/lib/agent/context";
 import { createPrismaRunStore } from "@/lib/agent/store";
 import { applyApprovedRun } from "@/lib/agent/apply";
 import { generateRunMedia } from "@/lib/agent/media";
+import { learnCouncilMemory } from "@/lib/agent/council-memory";
 import { notifyAwaitingApproval } from "@/lib/agent/tokens";
 import { prisma } from "@/lib/db";
 import { errorInfo, logger } from "@/lib/logger";
@@ -248,7 +249,12 @@ async function settleAfterPipeline(
   const media = await generateRunMedia(runId, organizationId);
   if (media.generated + media.failed > 0) log.info("images for the recommendations", media);
   const next = decideNextAfterAdapting(policy);
-  log.info("agent run left the pipeline", { next });
+  // Every finished run teaches each account's brain what its council did.
+  const learned = await learnCouncilMemory(runId).catch((error: unknown) => {
+    log.warn("council memory not learned", errorInfo(error));
+    return 0;
+  });
+  log.info("agent run left the pipeline", { next, learned });
 
   if (next === "APPROVED") {
     await setStatus(runId, "APPROVED");

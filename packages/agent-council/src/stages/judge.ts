@@ -9,7 +9,7 @@ import type { DraftCandidate, JudgeVerdict, PipelineContext, ReviewNote, RunSnap
 import { PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, type ProviderPreference } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
 import { selectCandidates } from "./review";
 import { accountVars, stepName, strategyText, type RunAccountSnapshot } from "./shared";
 
@@ -106,7 +106,7 @@ async function judgeAccount(
         temperature: 0.2,
         expectedOutputTokens: JUDGE_OUTPUT_TOKENS,
         system,
-        user,
+        user: withPerspective(user, seatPerspective("judge", index, prefs.length)),
       },
       JudgeOutputSchema,
     ),

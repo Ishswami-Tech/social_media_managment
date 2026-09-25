@@ -47,6 +47,7 @@ export type MaintenanceJobData =
   | { task: "refresh-tokens" }
   | { task: "expire-oauth-states" }
   | { task: "retry-stuck-jobs" }
+  | { task: "revive-runs" }
   | { task: "collect-analytics" }
   | { task: "learn-account-profiles" };
 

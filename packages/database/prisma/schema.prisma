@@ -999,6 +999,8 @@ model AccountProfile {
   performance     Json?
   /// Weighted preferences derived from human edits, rejections and approval comments
   humanFeedback   Json?
+  /// What the council learned from this account's runs: winning lanes and hooks, recurring reviewer notes, recent angles
+  council         Json?
   sampleSize      Int           @default(0)
   learnedAt       DateTime?
   updatedAt       DateTime      @updatedAt
