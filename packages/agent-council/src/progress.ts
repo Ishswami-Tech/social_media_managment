@@ -656,6 +656,36 @@ export function buildProgress(
 }
 
 // ---------------------------------------------------------------------------
+// Progressive reveal: agents appear one after another
+// ---------------------------------------------------------------------------
+
+export interface RevealedStage {
+  stage: ProgressStage;
+  /** True for the one agent shown ahead of the work as "up next"; nothing beyond it is shown. */
+  hint: boolean;
+}
+
+/**
+ * The stages a picture should show right now: everyone who has worked or is
+ * working, plus the next agent in line as a hint. Agents further ahead stay
+ * out of sight until the work reaches them, so the run reads as a relay. A
+ * finished or halted run shows everyone who took part.
+ */
+export function revealStages(stages: readonly ProgressStage[]): RevealedStage[] {
+  const shown: RevealedStage[] = [];
+  for (const stage of stages) {
+    if (stage.state === "pending") {
+      const previous = shown[shown.length - 1];
+      const halted = previous?.stage.state === "failed";
+      if (!halted) shown.push({ stage, hint: true });
+      break;
+    }
+    shown.push({ stage, hint: false });
+  }
+  return shown;
+}
+
+// ---------------------------------------------------------------------------
 // Transcript: the run as a conversation
 // ---------------------------------------------------------------------------
 

@@ -164,11 +164,14 @@ function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
 }
 
 export function CouncilBoard({ board, working }: { board: AgentBoard; working: boolean }) {
-  const columns = Math.min(3, Math.max(1, board.writers.length));
+  // Agents join the board when their turn comes, never before.
+  const seats = board.seats.filter((seat) => seat.state !== "pending");
+  const writers = board.writers.filter((seat) => seat.state !== "pending");
+  const columns = Math.min(3, Math.max(1, writers.length));
   return (
     <div className="grid gap-3">
       <ul className="flex flex-wrap gap-2">
-        {board.seats.map((seat) => {
+        {seats.map((seat) => {
           const identity = AGENTS[stageOfSeat(seat.role)];
           const Icon = identity.icon;
           return (
@@ -197,12 +200,15 @@ export function CouncilBoard({ board, working }: { board: AgentBoard; working: b
           );
         })}
       </ul>
-      {board.writers.length > 0 && (
+      {writers.length > 0 && (
         <div className={cn("grid gap-3", columns === 2 && "md:grid-cols-2", columns >= 3 && "md:grid-cols-3")}>
-          {board.writers.map((w) => (
+          {writers.map((w) => (
             <WriterCard key={w.label} seat={w} animate={working} />
           ))}
         </div>
+      )}
+      {writers.length === 0 && board.writers.length > 0 && working && (
+        <p className="text-xs text-muted-foreground">The writers join once the angle is set.</p>
       )}
     </div>
   );

@@ -26,6 +26,7 @@ import {
 import {
   buildProgress,
   formatDuration,
+  revealStages,
   type ProgressAccount,
   type ProgressEvent,
   type ProgressStage,
@@ -444,14 +445,17 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
   const elapsedMs = useElapsed(initial.startedAt, running);
   const active = progress.stages.find((s) => s.state === "active");
   const failed = progress.stages.find((s) => s.state === "failed");
+  // Agents ahead of the work stay out of sight until it reaches them.
+  const shown = revealStages(progress.stages);
 
   if (variant === "compact") {
     return (
       <div className={cn("grid gap-2", className)}>
         <ol className="flex flex-wrap items-center gap-1.5">
-          {progress.stages.map((stage) => (
+          {shown.map(({ stage, hint }) => (
             <li
               key={stage.key}
+              style={hint ? { opacity: 0.5 } : undefined}
               className={cn(
                 "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
                 stage.state === "active" && "border-primary/40 bg-primary/5 text-foreground",
@@ -498,10 +502,10 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
       <Progress value={progress.overall.percent} className="h-1" aria-label="Progress" />
 
       <ol className="grid">
-        {progress.stages.map((stage, index) => {
-          const last = index === progress.stages.length - 1;
+        {shown.map(({ stage, hint }, index) => {
+          const last = index === shown.length - 1;
           return (
-            <li key={stage.key} className="flex gap-3">
+            <li key={stage.key} className={cn("flex gap-3", hint && "opacity-50")}>
               <div className="flex flex-col items-center">
                 <span className="flex size-6 items-center justify-center">
                   <StageIcon stage={stage} />
@@ -534,6 +538,7 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
                     </span>
                   )}
                   {stage.state === "skipped" && <span className="text-xs text-muted-foreground">skipped</span>}
+                  {hint && <span className="text-xs text-muted-foreground">up next</span>}
                   {stage.costCents > 0 && (
                     <span className="text-xs text-muted-foreground tabular-nums">{formatCents(stage.costCents)}</span>
                   )}
