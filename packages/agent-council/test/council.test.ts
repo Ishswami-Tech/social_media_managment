@@ -4,7 +4,7 @@ import { pickStrategy } from "../src/stages/strategy";
 import { tally } from "../src/stages/judge";
 import { PipelineBlocked } from "../src/errors";
 import { council, coolingProviders, councilPrefs, otherSeats, seatPerspective, topPerProvider, uniqueStrings, withPerspective } from "../src/stages/council";
-import { firstLine, mergeCouncilMemory } from "../src/council-memory";
+import { firstLine, lesson, mergeCouncilMemory } from "../src/council-memory";
 import { ModelRouter, type ModelInfo } from "@platform/ai-core";
 import { createCircuitBreaker } from "../src/circuit-breaker";
 import { createTestContext } from "./helpers/fakes";
@@ -175,6 +175,9 @@ describe("a council behind one seat", () => {
     expect(second.recentAngles).toEqual(["the two-minute reply rule"]);
     expect(first.runs).toBe(1);
     expect(firstLine("\n\n  Hello there  \nmore")).toBe("Hello there");
+    expect(lesson('"Hashtags: #cafe" — the "Hashtags:" label is not native LinkedIn formatting.')).toBe('The "Hashtags:" label is not native LinkedIn formatting.');
+    expect(lesson("Ends without a question.")).toBe("Ends without a question.");
+    expect(lesson("\"Cafe owners, what's your queue like?\" — opens with a question, which the playbook forbids.")).toBe("Opens with a question, which the playbook forbids.");
   });
 
   it("dedupes strings without caring about case", () => {

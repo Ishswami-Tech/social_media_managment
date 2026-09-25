@@ -35,7 +35,21 @@ const KEEP_NOTES = 8;
 const LINE_MAX = 140;
 
 function tidy(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, LINE_MAX);
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= LINE_MAX) return flat;
+  const cut = flat.slice(0, LINE_MAX);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), LINE_MAX - 30))}…`;
+}
+
+/**
+ * The lesson in a reviewer's note: a note usually opens by quoting the
+ * offending phrase, then says what is wrong with it. The memory keeps the
+ * second part, which is what applies to the next post too.
+ */
+export function lesson(note: string): string {
+  const stripped = note.replace(/^\s*(?:"[^"]*"|“[^”]*”|'[^']*'|‘[^’]*’)\s*(?:—|–|-|:)\s*/, "").trim();
+  const text = stripped || note.trim();
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Notes are compared without case, punctuation or quoted phrases, so "Cut “game-changer”" and "cut 'unlock'" count as one habit. */
@@ -65,7 +79,7 @@ export function mergeCouncilMemory(existing: CouncilMemory | undefined, seen: Co
     const key = noteKey(issue);
     if (!key) continue;
     const current = notes.get(key);
-    notes.set(key, current ? { ...current, count: current.count + 1 } : { note: tidy(issue), count: 1 });
+    notes.set(key, current ? { ...current, count: current.count + 1 } : { note: tidy(lesson(issue)), count: 1 });
   }
 
   return {
