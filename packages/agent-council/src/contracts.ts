@@ -89,6 +89,8 @@ export interface AccountStrategy {
   claimIds: string[];
   rationale: string;
   mediaConcept?: string;
+  /** Angles the other strategists proposed, kept for the record when a council sat. */
+  alternatives?: { angle: string; hookType: string; model?: string }[];
 }
 
 export interface DraftCandidate {
@@ -253,7 +255,14 @@ export interface BudgetPort {
 
 /** Circuit-breaker port shared by all workers (persisted in ProviderHealth). */
 export interface ProviderHealthPort {
+  /** Whether the breaker is open; a check on an expired breaker lets one probe call through. */
   isOpen(provider: AIProviderName): Promise<boolean>;
+  /**
+   * Additive: true when the breaker is closed, without touching it. Used to
+   * plan seats ahead of the calls; `isOpen` would hand the single half-open
+   * probe to the planner instead of to the call.
+   */
+  isHealthy?(provider: AIProviderName): Promise<boolean>;
   recordSuccess(provider: AIProviderName, latencyMs: number): Promise<void>;
   recordFailure(provider: AIProviderName, error: string): Promise<void>;
 }
@@ -297,6 +306,13 @@ export interface PipelineContext {
    * everyone landing on the top entry. Never persisted.
    */
   modelsInUse?: Set<string>;
+  /**
+   * Additive: how many models sit behind each single-seat agent. 3 means the
+   * researcher asks three models and merges, the strategist hears three angles,
+   * the reviewer pools three readings and the judge is three judges voting.
+   * Absent or 1 is one call per seat.
+   */
+  councilSize?: number;
   /**
    * Additive: skill playbooks attached to this campaign. Appended to the system
    * prompt of every stage that writes text (writer, revision, synthesis, adapt).

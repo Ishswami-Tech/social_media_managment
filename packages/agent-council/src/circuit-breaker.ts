@@ -90,6 +90,7 @@ function onFailure(record: BreakerRecord, at: number, error: string | undefined,
 }
 
 export interface CircuitBreaker extends ProviderHealthPort {
+  isHealthy(provider: AIProviderName): Promise<boolean>;
   snapshot(provider: AIProviderName): BreakerRecord;
 }
 
@@ -108,6 +109,9 @@ export function createCircuitBreaker(
   return {
     async isOpen(provider) {
       return apply(provider, { type: "check", at: now() });
+    },
+    async isHealthy(provider) {
+      return current(provider).state === "CLOSED";
     },
     async recordSuccess(provider) {
       apply(provider, { type: "success", at: now() });

@@ -85,6 +85,21 @@ describe("AnthropicProvider", () => {
     expect(echoed.text).toBe('{"a":1}');
   });
 
+  it("treats a gateway's usage-limit notice as a rate limit, not an answer", async () => {
+    const p = new AnthropicProvider();
+    mockFetch({
+      id: "msg_limit_1",
+      content: [{ type: "text", text: "Usage limit reached. You've reached 100% of your 5-hour quota. Please wait and try again later." }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+    await expect(p.generateText({ model: "m", messages: [{ role: "user", content: "x" }] }, auth)).rejects.toMatchObject({
+      code: "PROVIDER_UNAVAILABLE",
+      status: 429,
+      retryable: true,
+    });
+  });
+
   it("lists models from gateways that omit type or display_name", async () => {
     mockFetch({ data: [{ id: "claude-x", display_name: "Claude X" }, { id: "claude-y" }, { id: "emb", type: "embedding" }] });
     const p = new AnthropicProvider();

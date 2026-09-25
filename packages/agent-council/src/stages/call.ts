@@ -45,14 +45,10 @@ export function isProviderFailure(error: unknown): boolean {
  * retryable. Such failures do not count against the provider's circuit breaker.
  */
 export function isModelFailure(error: unknown): boolean {
-  return (
-    error instanceof AIError &&
-    error.code === "PROVIDER_UNAVAILABLE" &&
-    typeof error.status === "number" &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 429
-  );
+  // An empty answer stays a provider failure on purpose: a gateway that has stopped serving returns empty
+  // content for every model, and treating that as one bad model would burn the whole catalogue in seconds.
+  if (!(error instanceof AIError) || error.code !== "PROVIDER_UNAVAILABLE") return false;
+  return typeof error.status === "number" && error.status >= 400 && error.status < 500 && error.status !== 429;
 }
 
 export type RoutingCtx = Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: AICapability };
@@ -198,10 +194,10 @@ async function resolveProviderAvoiding(
 ): Promise<ModelDecision> {
   const avoidModels = (input.avoidModels ?? []).filter((m) => !excludedModels.includes(m));
   const avoidProviders = (input.avoidProviders ?? []).filter((p) => !excluded.has(p));
-  // Models teammates already used: steered away from unless the caller pinned a model.
-  const inUse = input.pref?.model
-    ? []
-    : [...(ctx.modelsInUse ?? [])].filter((m) => !excludedModels.includes(m) && !avoidModels.includes(m));
+  // Models teammates already used: steered away from. A pinned model stays pinned even if a teammate used it;
+  // only the failover away from it (when the pin cannot take the call) keeps clear of the others.
+  const pinned = input.pref?.model ? `${input.pref.provider}::${input.pref.model}` : undefined;
+  const inUse = [...(ctx.modelsInUse ?? [])].filter((m) => m !== pinned && !excludedModels.includes(m) && !avoidModels.includes(m));
   const passes: { providers: ReadonlySet<AIProviderName>; models: readonly string[] }[] = [];
   if (avoidProviders.length > 0)
     passes.push({ providers: new Set([...excluded, ...avoidProviders]), models: [...excludedModels, ...avoidModels, ...inUse] });
@@ -220,6 +216,8 @@ async function resolveProviderAvoiding(
 
 /** How many models of one provider a single call may burn before moving to the next provider. */
 const MODELS_PER_PROVIDER = 2;
+/** Bad models (retired, empty answers) are cheap to skip: a provider gets this many of them before the call moves on. */
+const MODEL_FAILURES_PER_PROVIDER = 4;
 
 export async function resolveProvider(
   ctx: PipelineContext,
@@ -356,10 +354,12 @@ export async function callModel(ctx: PipelineContext, input: ModelCallInput): Pr
       if (!isProviderFailure(error)) throw error;
       lastError = error;
       excludedModels.push(`${decision.provider}::${decision.model}`);
-      if (isModelFailure(error)) ctx.deadModels?.add(`${decision.provider}::${decision.model}`);
-      const tries = (burned.get(decision.provider) ?? 0) + 1;
+      const modelFailure = isModelFailure(error);
+      if (modelFailure) ctx.deadModels?.add(`${decision.provider}::${decision.model}`);
+      // Same provider, next model, until it has burned its share; then the next provider. A bad model costs the
+      // provider less than a provider-wide failure such as quota does.
+      const tries = (burned.get(decision.provider) ?? 0) + (modelFailure ? 1 / MODEL_FAILURES_PER_PROVIDER : 1);
       burned.set(decision.provider, tries);
-      // Same provider, next model, until it has burned its share; then the next provider.
       if (tries >= MODELS_PER_PROVIDER) excluded.add(decision.provider);
       stayWith = excluded.has(decision.provider) ? undefined : decision.provider;
       const alternative = ctx.availableProviders.some((p) => !excluded.has(p));
@@ -435,7 +435,10 @@ async function callProvider(
       promptHash: prompt.hash,
     };
   } catch (error) {
-    if (!isModelFailure(error)) await ctx.health.recordFailure(decision.provider, errorMessage(error));
+    // A bad model is not a bad provider: the provider answered, so it counts as reachable. That also settles a
+    // half-open probe that happened to land on the bad model; otherwise the provider would stay locked for a while.
+    if (isModelFailure(error)) await ctx.health.recordSuccess(decision.provider, 0);
+    else await ctx.health.recordFailure(decision.provider, errorMessage(error));
     await ctx.budget.release(reservation.reservationId);
     await ctx.store.addEvent(input.runId, { ...base, status: "FAILED", error: errorMessage(error) });
     throw error;

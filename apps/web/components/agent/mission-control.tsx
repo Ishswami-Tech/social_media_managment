@@ -281,7 +281,7 @@ function LiveBlock({ stage, partials, animate }: { stage: ProgressStage; partial
   );
 }
 
-function NodeCard({ stage, model, animate }: { stage: ProgressStage; model?: string; animate: boolean }) {
+function NodeCard({ stage, model, models, animate }: { stage: ProgressStage; model?: string; models?: string[]; animate: boolean }) {
   const identity = AGENTS[stage.key];
   const active = stage.state === "active";
   const done = stage.state === "done";
@@ -298,7 +298,15 @@ function NodeCard({ stage, model, animate }: { stage: ProgressStage; model?: str
       )}
       style={{
         borderLeftColor: failed ? "#f43f5e" : pending ? undefined : identity.to,
-        ...(active ? { backgroundColor: `${identity.from}1a`, borderColor: `${identity.to}66`, borderLeftColor: identity.to } : {}),
+        ...(active
+          ? {
+              backgroundColor: `${identity.from}1a`,
+              borderTopColor: `${identity.to}66`,
+              borderRightColor: `${identity.to}66`,
+              borderBottomColor: `${identity.to}66`,
+              borderLeftColor: identity.to,
+            }
+          : {}),
       }}
       animate={active && animate ? { boxShadow: [`0 0 0 0px ${identity.to}00`, `0 0 0 4px ${identity.to}33`, `0 0 0 0px ${identity.to}00`] } : { boxShadow: "0 0 0 0px transparent" }}
       transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
@@ -317,7 +325,18 @@ function NodeCard({ stage, model, animate }: { stage: ProgressStage; model?: str
           <Duty state={stage.state} />
         </span>
         <span className={cn("block truncate text-[10.5px]", MUTED, failed && "text-rose-600 dark:text-rose-300")}>{pending ? identity.role : (stage.activity.at(-1) ?? identity.role)}</span>
-        {model && !pending && <ModelTag label={model} className="text-[10px] text-muted-foreground/80 dark:text-white/50" />}
+        {!pending && models && models.length > 1 ? (
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80 dark:text-white/50">
+            <span className="font-medium" style={{ color: identity.to }}>
+              Council of {models.length}
+            </span>
+            {models.map((m) => (
+              <ModelTag key={m} label={m} />
+            ))}
+          </span>
+        ) : (
+          model && !pending && <ModelTag label={model} className="text-[10px] text-muted-foreground/80 dark:text-white/50" />
+        )}
       </span>
       {done && (
         <motion.span initial={animate ? { scale: 0, rotate: -30 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 300, damping: 16 }}>
@@ -432,6 +451,11 @@ function DraftCompare({ writers, animate }: { writers: AgentSeat[]; animate: boo
   );
 }
 
+/** The single-seat agent behind a stage, if the stage has one. */
+function seatFor(board: AgentBoard, key: ProgressStageKey): AgentSeat | undefined {
+  return board.seats.find((s) => s.role === key);
+}
+
 function TeamGraph({ stages, board, partials, animate }: { stages: ProgressStage[]; board: AgentBoard; partials: LivePartial[]; animate: boolean }) {
   const activeIndex = stages.findIndex((s) => s.state === "active");
   const landed = board.writers.filter((w) => w.draft && !w.streaming);
@@ -489,7 +513,7 @@ function TeamGraph({ stages, board, partials, animate }: { stages: ProgressStage
                 </div>
               ) : (
                 <>
-                  <NodeCard stage={stage} model={board.modelsByStage[stage.key]} animate={animate} />
+                  <NodeCard stage={stage} model={board.modelsByStage[stage.key]} models={seatFor(board, stage.key)?.models} animate={animate} />
                   {open && stage.key !== "ready" && <LiveBlock stage={stage} partials={mine} animate={animate} />}
                 </>
               )}
@@ -543,7 +567,7 @@ export function MissionControl({ stages, board, transcript, partials, working, s
   const live = useMemo(() => Object.values(partials ?? {}), [partials]);
   const done = stages.filter((s) => s.state === "done" || s.state === "skipped").length;
   const percent = Math.round((done / stages.length) * 100);
-  const models = new Set([...Object.values(board.modelsByStage), ...board.writers.flatMap((w) => (w.modelLabel ? [w.modelLabel] : []))]).size;
+  const models = new Set([...board.seats.flatMap((s) => s.models ?? []), ...board.writers.flatMap((w) => (w.modelLabel ? [w.modelLabel] : []))]).size;
   const failedCalls = transcript.filter((m) => m.tone === "failed").length;
   const active = stages.find((s) => s.state === "active");
   const activeKey = active?.key ?? null;

@@ -100,8 +100,11 @@ export function capabilitiesText(capabilities: PlatformCapabilities): string {
   ].join("; ");
 }
 
+/** The chosen strategy as prompt text. The other strategists' angles (and which models they came from) stay out of every prompt. */
 export function strategyText(strategy: AccountStrategy | undefined): string {
-  return strategy ? stringify(strategy) : "(no strategy recorded)";
+  if (!strategy) return "(no strategy recorded)";
+  const { alternatives: _alternatives, ...chosen } = strategy;
+  return stringify(chosen);
 }
 
 /**

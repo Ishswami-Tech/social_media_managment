@@ -16,6 +16,7 @@ import type { CheckResult, DraftCandidate, PipelineContext, ReviewNote, RunSnaps
 import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
+import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
 import {
   accountVars,
   checkInputFor,
@@ -146,6 +147,8 @@ async function reviseDraft(
   return recheck.ok ? { ...revised, id } : undefined;
 }
 
+const MAX_POOLED_ISSUES = 8;
+
 interface PlatformReview {
   verdict: "PASS" | "REVISE";
   issues: string[];
@@ -164,16 +167,18 @@ async function reviewDraft(
   const other =
     run.assurance === "HIGH_ASSURANCE" ? ctx.availableProviders.find((p) => p !== draft.provider) : undefined;
   try {
-    const { value } = await callJson(
+    const prefs = await councilPrefs(ctx, new Set([`${draft.provider}::${draft.model}`]));
+    const readings = await council(prefs, (pref, index, others) =>
+      callJson(
       ctx,
       {
         runId: run.id,
         organizationId: run.organizationId,
-        step: stepName("review", account, draft.label),
+        step: seatStep(stepName("review", account, draft.label), index, prefs.length),
         live: { runAccountId: account.runAccountId, field: "verdict" },
         promptKey: "review",
-        pref: other ? { provider: other } : undefined,
-        avoidModels: [`${draft.provider}::${draft.model}`],
+        pref: prefs.length > 1 ? pref : other ? { provider: other } : undefined,
+        avoidModels: [`${draft.provider}::${draft.model}`, ...others],
         temperature: 0.2,
         expectedOutputTokens: REVIEW_OUTPUT_TOKENS,
         system: withSkills(
@@ -191,8 +196,13 @@ async function reviewDraft(
         user: `Review this draft as a ${account.platform} reader now. Return only the JSON object.`,
       },
       ReviewNotesOutputSchema,
+      ),
+      recordSeatFailure(ctx, run.id, stepName("review", account, draft.label), prefs.length),
     );
-    return { verdict: value.issues.length === 0 ? "PASS" : value.verdict, issues: value.issues };
+    // Any reader asking for a revision gets one; every distinct note is kept.
+    const issues = uniqueStrings(readings.flatMap((r) => r.value.issues)).slice(0, MAX_POOLED_ISSUES);
+    const revise = readings.some((r) => r.value.verdict === "REVISE" && r.value.issues.length > 0);
+    return { verdict: issues.length === 0 ? "PASS" : revise ? "REVISE" : "PASS", issues };
   } catch (error) {
     if (isPipelineBlocked(error)) throw error;
     await ctx.store.addEvent(run.id, {

@@ -9,13 +9,14 @@ import { BriefSchema } from "@platform/research";
 import type { ClaimRecord, PipelineContext, RunSnapshot } from "../contracts";
 import { errorMessage } from "../errors";
 import { renderPrompt } from "../prompts";
-import { callJson, callModel } from "./call";
+import { callJson, callModel, type ProviderPreference } from "./call";
+import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
 import { stringify } from "./shared";
 
 const RESEARCH_MAX_STEPS = 6;
 const RESEARCH_OUTPUT_TOKENS = 2_500;
 const CLAIMS_OUTPUT_TOKENS = 1_500;
-const CLAIMS_BRIEF_CHARS = 12_000;
+const CLAIMS_BRIEF_CHARS = 24_000;
 
 /** Models write `null` for a field they have nothing for; that is "absent", not a broken answer. */
 const optionalText = z
@@ -102,7 +103,50 @@ export function normalizeClaims(claims: z.infer<typeof ClaimsOutputSchema>["clai
   });
 }
 
+/** Several briefs become one: the fullest brief leads, every source, point and idea is kept once, summaries are joined. */
+export function mergeBriefs(input: readonly Brief[]): Brief {
+  const richness = (b: Brief) => b.sources.length * 2 + b.keyPoints.length + b.angles.length;
+  const briefs = [...input].sort((a, b) => richness(b) - richness(a));
+  const first = briefs[0]!;
+  if (briefs.length === 1) return first;
+  const byUrl = new Map<string, Brief["sources"][number]>();
+  for (const b of briefs) for (const s of b.sources) if (s.url && !byUrl.has(s.url)) byUrl.set(s.url, s);
+  const seenHooks = new Set<string>();
+  const angles = briefs.flatMap((b) => b.angles).filter((a) => {
+    const key = a.hook.trim().toLowerCase();
+    if (!key || seenHooks.has(key)) return false;
+    seenHooks.add(key);
+    return true;
+  });
+  const seenIdeas = new Set<string>();
+  const postIdeas = briefs.flatMap((b) => b.postIdeas).filter((p) => {
+    const key = `${p.platform}:${p.text.trim().toLowerCase()}`;
+    if (seenIdeas.has(key)) return false;
+    seenIdeas.add(key);
+    return true;
+  });
+  return {
+    ...first,
+    summary: uniqueStrings(briefs.map((b) => b.summary)).join("\n\n"),
+    keyPoints: uniqueStrings(briefs.flatMap((b) => b.keyPoints)),
+    caveats: uniqueStrings(briefs.flatMap((b) => b.caveats)),
+    angles,
+    postIdeas,
+    sources: [...byUrl.values()],
+  };
+}
+
 async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Brief> {
+  const prefs = await councilPrefs(ctx);
+  const briefs = await council(
+    prefs,
+    (pref, index, others) => produceOneBrief(ctx, run, pref, seatStep("research", index, prefs.length), others),
+    recordSeatFailure(ctx, run.id, "research", prefs.length),
+  );
+  return mergeBriefs(briefs);
+}
+
+async function produceOneBrief(ctx: PipelineContext, run: RunSnapshot, pref: ProviderPreference, step: string, avoidModels: string[]): Promise<Brief> {
   const system = renderPrompt("research", {
     brandClause: brandClause(run),
     toolGuide: toolGuide(ctx.researchTools),
@@ -115,7 +159,9 @@ async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Bri
   const call = await callModel(ctx, {
     runId: run.id,
     organizationId: run.organizationId,
-    step: "research",
+    step,
+    pref,
+    avoidModels,
     live: { field: "summary" },
     promptKey: "research",
     capability: "json",
@@ -130,7 +176,7 @@ async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Bri
   const parsed = BriefSchema.safeParse(safeJson(call.text));
   if (parsed.success) return parsed.data;
   await ctx.store.addEvent(run.id, {
-    step: "research",
+    step,
     status: "SUCCEEDED",
     promptKey: call.promptKey,
     promptVersion: call.promptVersion,

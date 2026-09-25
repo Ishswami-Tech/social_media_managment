@@ -161,6 +161,10 @@ export function createPrismaProviderHealth(
 ): ProviderHealthPort {
   return {
     isOpen: (provider) => apply(provider, { type: "check", at: now() }, config),
+    isHealthy: async (provider) => {
+      const row = await prisma.providerHealth.findUnique({ where: { provider }, select: { state: true } });
+      return (row?.state ?? "CLOSED") === "CLOSED";
+    },
     recordSuccess: async (provider, latencyMs) => {
       await apply(provider, { type: "success", at: now(), latencyMs }, config);
     },

@@ -769,6 +769,8 @@ export interface AgentSeat {
   model?: string;
   /** Short display name of the model, e.g. "Gemini 2.5 Flash". */
   modelLabel?: string;
+  /** Every model that sat in this seat, first seen first: one entry normally, three when a council sat. */
+  models?: string[];
   state: ProgressStageState;
   /** Latest plain-language line for this seat. */
   detail: string;
@@ -810,11 +812,13 @@ const MODEL_WORDS: Record<string, string> = {
   preview: "Preview",
 };
 
-/** "claude-fable-5-1" → "Claude Fable 5.1", "gemini-2.5-flash" → "Gemini 2.5 Flash". */
+/** "claude-fable-5-1" → "Claude Fable 5.1", "gemini-2.5-flash" → "Gemini 2.5 Flash", "claude-opus-5[1m]" → "Claude Opus 5 1M". */
 export function modelLabel(model: string | null | undefined, provider?: string | null): string | undefined {
   if (!model) return provider ? providerName(provider) : undefined;
-  const bare = model.replace(/^.*\//, "").replace(/-\d{8}$/, "");
-  const words = bare.split(/[-_]/).filter(Boolean);
+  // A bracketed variant such as "[1m]" (the long-context edition) is a suffix, not part of the version.
+  const variant = model.match(/\[([^\]]+)\]\s*$/)?.[1]?.toUpperCase();
+  const bare = model.replace(/\[[^\]]*\]\s*$/, "").replace(/^.*\//, "").replace(/-\d{8}$/, "");
+  const words = [...bare.split(/[-_]/).filter(Boolean), ...(variant ? [variant] : [])];
   const out: string[] = [];
   for (const w of words) {
     const lower = w.toLowerCase();
@@ -841,12 +845,24 @@ function seatState(status: string): ProgressStageState {
 function singleSeat(role: SeatRole, name: string, key: ProgressStageKey, heads: readonly string[], stage: ProgressStage | undefined, ordered: readonly ProgressEvent[]): AgentSeat {
   const own = ordered.filter((e) => heads.includes(parseStep(e.step).head) && e.provider);
   const last = own[own.length - 1];
+  // A failed attempt that was handed to another model is not a seat on the bench.
+  const failedModels = new Set(own.filter((e) => e.status === "FAILED").map((e) => `${e.provider}::${e.model}`));
+  const succeeded = new Set(own.filter((e) => e.status === "SUCCEEDED").map((e) => `${e.provider}::${e.model}`));
+  const models = [
+    ...new Set(
+      own
+        .filter((e) => e.model && (!failedModels.has(`${e.provider}::${e.model}`) || succeeded.has(`${e.provider}::${e.model}`)))
+        .map((e) => modelLabel(e.model, e.provider))
+        .filter((m): m is string => Boolean(m)),
+    ),
+  ];
   return {
     role,
     name,
     provider: last?.provider ?? undefined,
     model: last?.model ?? undefined,
     modelLabel: modelLabel(last?.model, last?.provider),
+    ...(models.length > 0 ? { models } : {}),
     state: stage?.state ?? "pending",
     detail: stage?.activity.at(-1) ?? stage?.label ?? "",
     ...(last?.latencyMs ? { latencyMs: last.latencyMs } : {}),
@@ -920,7 +936,8 @@ export function buildBoard(status: string, events: readonly ProgressEvent[], acc
   const modelsByStage: Partial<Record<ProgressStageKey, string>> = {};
   for (const seat of seats) {
     const key: ProgressStageKey = seat.role === "research" ? "research" : seat.role === "strategy" ? "strategy" : seat.role === "review" ? "review" : seat.role === "judge" ? "judge" : "adapt";
-    if (seat.modelLabel) modelsByStage[key] = seat.modelLabel;
+    if (seat.models && seat.models.length > 1) modelsByStage[key] = `${seat.models.length} models`;
+    else if (seat.modelLabel) modelsByStage[key] = seat.modelLabel;
   }
   const writerModels = [...new Set([...writers.values()].map((w) => w.modelLabel).filter(Boolean))] as string[];
   if (writerModels.length > 0) modelsByStage.drafting = writerModels.length === 1 ? writerModels[0] : `${writerModels.length} models`;

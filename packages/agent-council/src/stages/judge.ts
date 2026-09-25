@@ -9,6 +9,7 @@ import type { DraftCandidate, JudgeVerdict, PipelineContext, ReviewNote, RunSnap
 import { PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, type ProviderPreference } from "./call";
+import { council, councilPrefs, recordSeatFailure, seatStep, uniqueStrings } from "./council";
 import { selectCandidates } from "./review";
 import { accountVars, stepName, strategyText, type RunAccountSnapshot } from "./shared";
 
@@ -89,33 +90,59 @@ async function judgeAccount(
   });
   const user = "Judge the candidates now. Return only the JSON object.";
   assertBlind(`${system}\n${user}`, drafts);
-  const { value } = await callJson(
-    ctx,
-    {
-      runId: run.id,
-      organizationId: run.organizationId,
-      step: stepName("judge", account),
-      live: { runAccountId: account.runAccountId, field: "rationale" },
-      promptKey: "judge",
-      pref: judgePreference(ctx, drafts),
-      avoidModels: [...new Set(drafts.map((d) => `${d.provider}::${d.model}`))],
-      temperature: 0.2,
-      expectedOutputTokens: JUDGE_OUTPUT_TOKENS,
-      system,
-      user,
-    },
-    JudgeOutputSchema,
+  const writersModels = new Set(drafts.map((d) => `${d.provider}::${d.model}`));
+  const prefs = await councilPrefs(ctx, writersModels);
+  const votes = await council(prefs, (pref, index, others) =>
+    callJson(
+      ctx,
+      {
+        runId: run.id,
+        organizationId: run.organizationId,
+        step: seatStep(stepName("judge", account), index, prefs.length),
+        live: { runAccountId: account.runAccountId, field: "rationale" },
+        promptKey: "judge",
+        pref: prefs.length > 1 ? pref : judgePreference(ctx, drafts),
+        avoidModels: [...writersModels, ...others],
+        temperature: 0.2,
+        expectedOutputTokens: JUDGE_OUTPUT_TOKENS,
+        system,
+        user,
+      },
+      JudgeOutputSchema,
+    ),
+    recordSeatFailure(ctx, run.id, stepName("judge", account), prefs.length),
   );
-  const verdict: JudgeVerdict = {
-    winner: resolveWinner(value, labels),
-    scores: value.scores.filter((s) => labels.includes(s.label)),
-    borrow: value.borrow,
-  };
+  const verdict = tally(votes.map((v) => v.value), labels);
   for (const score of verdict.scores) {
     const draft = drafts.find((d) => d.label === score.label);
     if (draft?.id) await ctx.store.updateDraftJudgement(draft.id, score.score, score.rationale);
   }
   await ctx.store.saveVerdict(account.runAccountId, verdict);
+}
+
+/**
+ * Several judges become one verdict: each label's score is the average over
+ * the judges who scored it, the winner is the best average, the rationale is
+ * the winning judges' reasons joined, and every borrowable element is kept.
+ */
+export function tally(
+  votes: readonly { winner: string; scores: { label: string; score: number; rationale: string }[]; borrow: string[] }[],
+  labels: readonly string[],
+): JudgeVerdict {
+  if (votes.length === 1) {
+    const only = votes[0]!;
+    return { winner: resolveWinner(only, labels), scores: only.scores.filter((s) => labels.includes(s.label)), borrow: only.borrow };
+  }
+  const scores = labels.flatMap((label) => {
+    const given = votes.flatMap((v) => v.scores.filter((s) => s.label === label));
+    if (given.length === 0) return [];
+    const score = Math.round((given.reduce((sum, s) => sum + s.score, 0) / given.length) * 10) / 10;
+    const rationale = uniqueStrings(given.map((s) => s.rationale)).join(" · ");
+    return [{ label, score, rationale }];
+  });
+  const ranked = [...scores].sort((a, b) => b.score - a.score);
+  const winner = ranked[0]?.label ?? resolveWinner(votes[0]!, labels);
+  return { winner, scores, borrow: uniqueStrings(votes.flatMap((v) => v.borrow)) };
 }
 
 /** JUDGING: a verdict per account with at least one valid draft. */

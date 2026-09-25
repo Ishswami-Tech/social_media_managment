@@ -9,6 +9,7 @@ import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { WRITER_LANES } from "../progress";
 import { callJson, type ProviderPreference } from "./call";
+import { coolingProviders, TOP_MODELS_PER_PROVIDER, topPerProvider } from "./council";
 import {
   accountVars,
   claimsText,
@@ -53,16 +54,20 @@ export function parseAllowedModels(
  * over the available providers with routing on auto when there is no
  * allow-list). A single provider writes three drafts at different temperatures.
  */
-export function planWriters(ctx: PipelineContext): WriterSlot[] {
+export function planWriters(ctx: PipelineContext, cooling: ReadonlySet<AIProviderName> = new Set()): WriterSlot[] {
   const allowed = parseAllowedModels(ctx.allowedModels, ctx.availableProviders);
-  const prefs: ProviderPreference[] = allowed.length > 0 ? allowed : distinctModels(ctx);
+  const prefs: ProviderPreference[] = allowed.length > 0 ? allowed : distinctModels(ctx, cooling);
   const pool = prefs.length > 0 ? prefs : [{}];
   const distinct = new Set(pool.map((p) => p.provider)).size;
-  const count = pool.length === 1 ? DRAFT_LABELS.length : Math.min(DRAFT_LABELS.length, pool.length);
+  // An allow-list of two models means two writers; an automatic pool always fields the full bench, cycling models.
+  const count = allowed.length > 0 && pool.length > 1 ? Math.min(DRAFT_LABELS.length, pool.length) : DRAFT_LABELS.length;
+  const hottest = SINGLE_PROVIDER_TEMPERATURES[SINGLE_PROVIDER_TEMPERATURES.length - 1] ?? MULTI_PROVIDER_TEMPERATURE;
   return DRAFT_LABELS.slice(0, count).map((label, index) => ({
     label,
     pref: pool[index % pool.length] ?? {},
-    temperature: distinct <= 1 ? (SINGLE_PROVIDER_TEMPERATURES[index] ?? MULTI_PROVIDER_TEMPERATURE) : MULTI_PROVIDER_TEMPERATURE,
+    // One provider: three temperatures. A writer that repeats a model runs hotter than the first one on it.
+    temperature:
+      distinct <= 1 ? (SINGLE_PROVIDER_TEMPERATURES[index] ?? MULTI_PROVIDER_TEMPERATURE) : index >= pool.length ? hottest : MULTI_PROVIDER_TEMPERATURE,
   }));
 }
 
@@ -71,9 +76,12 @@ export function planWriters(ctx: PipelineContext): WriterSlot[] {
  * each provider first, then each provider's next model, so no two writers share
  * a model while the organization has enough of them.
  */
-export function distinctModels(ctx: PipelineContext): ProviderPreference[] {
-  const all = ctx.router.candidates("json", ctx.availableProviders);
-  // Models the earlier agents used are skipped while enough others remain.
+export function distinctModels(ctx: PipelineContext, cooling: ReadonlySet<AIProviderName> = new Set()): ProviderPreference[] {
+  const everything = ctx.router.candidates("json", ctx.availableProviders);
+  // A provider that is cooling down is left out while another one is open.
+  const warm = everything.filter((c) => !cooling.has(c.provider));
+  const all = topPerProvider(warm.length > 0 ? warm : everything, TOP_MODELS_PER_PROVIDER);
+  // Models the earlier agents used are skipped while enough others remain among each provider's best.
   const inUse = ctx.modelsInUse ?? new Set<string>();
   const unused = all.filter((c) => !inUse.has(`${c.provider}::${c.model}`));
   const candidates = unused.length >= Math.min(DRAFT_LABELS.length, all.length) ? unused : all;
@@ -170,7 +178,7 @@ async function writeDraft(
  * A writer that fails only costs its own draft. Accounts go one after another.
  */
 export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
-  const slots = planWriters(ctx);
+  const slots = planWriters(ctx, await coolingProviders(ctx));
   let written = 0;
   for (const account of run.accounts) {
     let perAccount = 0;

@@ -12,6 +12,8 @@ import {
 } from "@platform/ai-core";
 
 const DEFAULT_BASE = "https://api.anthropic.com/v1";
+/** "Usage limit reached" style notices a gateway returns in place of a model answer. */
+const QUOTA_NOTICE = /usage limit reached|quota (?:reached|exceeded)|rate limit reached/i;
 const API_VERSION = "2023-06-01";
 /** Generous default: reasoning models spend thinking tokens from the same budget before answering. */
 const DEFAULT_MAX_TOKENS = 8_192;
@@ -141,6 +143,10 @@ export class AnthropicProvider implements AIProvider {
     // prefills) already answered with a complete object or a code fence.
     const lead = rawText.trimStart();
     const text = !prefill || lead.startsWith("{") || lead.startsWith("`") ? rawText : "{" + rawText;
+    // A gateway that has run out of quota may answer 200 with a notice instead of an error. That is a rate limit.
+    if (toolCalls.length === 0 && usage.inputTokens === 0 && usage.outputTokens === 0 && QUOTA_NOTICE.test(rawText)) {
+      throw new AIError(`Anthropic gateway quota reached: ${rawText.trim().slice(0, 160)}`, "PROVIDER_UNAVAILABLE", true, "ANTHROPIC", 429);
+    }
     if (!rawText && toolCalls.length === 0) {
       const truncated = stopReason === "max_tokens";
       throw new AIError(

@@ -9,6 +9,8 @@ import {
   type PublishPolicy,
 } from "../src/pipeline";
 import { isPipelineBlocked } from "../src/errors";
+import { createCircuitBreaker } from "../src/circuit-breaker";
+import { buildBoard, type ProgressEvent } from "../src/progress";
 import { planWriters } from "../src/stages/writers";
 import { assertBlind, buildCandidates, resolveWinner } from "../src/stages/judge";
 import { createTestContext, REVISED_TEXT, SYNTHESIZED_TEXT, WRITER_TEXTS } from "./helpers/fakes";
@@ -226,6 +228,37 @@ describe("runPipelineToCompletion", () => {
     expect(writers.some((c) => c.system.includes("Contrarian:"))).toBe(true);
   });
 
+  it("seats a council of three behind the researcher, strategist, reviewer and judge when asked", async () => {
+    const { ctx, script, memory } = setup();
+    ctx.councilSize = 3;
+    await runPipelineToCompletion(ctx, "run_1");
+    const stages = (stage: string) => script.calls.filter((c) => c.stage === stage);
+    expect(stages("RESEARCH").length).toBe(3);
+    expect(new Set(stages("RESEARCH").map((c) => c.provider)).size).toBe(3);
+    const accounts = memory.snapshot().accounts.length;
+    expect(stages("STRATEGY").length).toBe(3 * accounts);
+    // Four models in the fake org and three on each account's writers: the bench seats fewer than three blind judges.
+    expect(stages("JUDGE").length).toBeGreaterThanOrEqual(accounts);
+    expect(stages("JUDGE").length).toBeLessThan(3 * accounts);
+    expect(memory.snapshot().research).toBeDefined();
+    expect(memory.snapshot().accounts[0]?.strategy?.alternatives?.length).toBe(2);
+    // Each seat has its own step, so the board and the live text keep them apart.
+    const researchSteps = new Set(memory.events.filter((e) => e.step.startsWith("research")).map((e) => e.step));
+    expect([...researchSteps].sort()).toEqual(["research:m1", "research:m2", "research:m3"]);
+    const progressEvents: ProgressEvent[] = memory.events.map((e, i) => ({
+      id: `ev_${i}`,
+      step: e.step,
+      status: e.status,
+      provider: e.provider,
+      model: e.model,
+      at: new Date(i).toISOString(),
+    }));
+    const board = buildBoard("COMPLETED", progressEvents, []);
+    // Three briefs plus the facts pass: the researcher's bench lists every model that sat.
+    expect(board.seats.find((s) => s.role === "research")?.models?.length).toBeGreaterThanOrEqual(3);
+    expect(board.modelsByStage.research).toMatch(/^\d models$/);
+  });
+
   it("spreads the team over a provider's models instead of everyone using the top one", async () => {
     const { ctx, script } = setup({ availableProviders: ["GOOGLE"] });
     await runPipelineToCompletion(ctx, "run_1");
@@ -233,6 +266,22 @@ describe("runPipelineToCompletion", () => {
     expect(new Set(models)).toEqual(new Set(["gemini-test", "gemini-test-2"]));
     // The first two agents take the two models in turn rather than both taking the first.
     expect(models.slice(0, 2)).toEqual(["gemini-test", "gemini-test-2"]);
+  });
+
+  it("settles a half-open probe that lands on a broken model instead of leaving the provider locked", async () => {
+    let at = 1_000_000;
+    const breaker = createCircuitBreaker({ failureThreshold: 2, windowMs: 60_000, openMs: 1_000 }, () => at);
+    const { ctx, script } = createTestContext(baseRun({ accounts: [baseRun().accounts[0]!] }), { availableProviders: ["GOOGLE", "OPENAI"] });
+    ctx.health = breaker;
+    await breaker.recordFailure("GOOGLE", "quota");
+    await breaker.recordFailure("GOOGLE", "quota");
+    at += 5_000;
+    script.brokenModels.add("GOOGLE::gemini-test");
+    script.brokenModels.add("GOOGLE::gemini-test-2");
+    await runPipelineToCompletion(ctx, "run_1");
+    // The probe hit a model that cannot take the call; the provider itself is fine and the breaker knows it.
+    expect(breaker.snapshot("GOOGLE").state).toBe("CLOSED");
+    expect(ctx.deadModels?.has("GOOGLE::gemini-test")).toBe(true);
   });
 
   it("spreads writers over different providers when their planned provider is down", async () => {

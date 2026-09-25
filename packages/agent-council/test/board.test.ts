@@ -16,6 +16,7 @@ describe("modelLabel", () => {
     expect(modelLabel("claude-fable-5-1", "ANTHROPIC")).toBe("Claude Fable 5.1");
     expect(modelLabel("gpt-5-mini", "OPENAI")).toBe("GPT 5 Mini");
     expect(modelLabel("claude-sonnet-4-5-20250929")).toBe("Claude Sonnet 4.5");
+    expect(modelLabel("claude-fable-5-1[1m]", "ANTHROPIC")).toBe("Claude Fable 5.1 1M");
     expect(modelLabel(undefined, "GOOGLE")).toBe("Google");
     expect(modelLabel(undefined)).toBeUndefined();
   });

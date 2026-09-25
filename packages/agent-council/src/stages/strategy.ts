@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
+import { council, councilPrefs, recordSeatFailure, seatStep } from "./council";
 import { accountVars, claimsText, filterClaimIds, stepName, stringify, supportedClaims } from "./shared";
 import { selectSkills } from "./skills";
 
@@ -30,12 +31,16 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
   const claims = supportedClaims(run.claims);
   const brief = run.research ? stringify(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
   for (const account of run.accounts) {
-    const { value } = await callJson(
+    const prefs = await councilPrefs(ctx);
+    const proposals = await council(prefs, (pref, index, others) =>
+      callJson(
       ctx,
       {
         runId: run.id,
         organizationId: run.organizationId,
-        step: stepName("strategy", account),
+        step: seatStep(stepName("strategy", account), index, prefs.length),
+        pref,
+        avoidModels: others,
         live: { runAccountId: account.runAccountId, field: "angle" },
         promptKey: "strategy",
         temperature: 0.5,
@@ -52,11 +57,24 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
         user: "Design the strategy for this account now. Return only the JSON object.",
       },
       StrategyOutputSchema,
+      ),
+      recordSeatFailure(ctx, run.id, stepName("strategy", account), prefs.length),
     );
+    const scored = proposals.map((p) => ({ ...p, claimIds: filterClaimIds(p.value.claimIds, run.claims) }));
+    const best = pickStrategy(scored);
+    const others = scored.filter((p) => p !== best);
     const strategy: AccountStrategy = {
-      ...value,
-      claimIds: filterClaimIds(value.claimIds, run.claims),
+      ...best.value,
+      claimIds: best.claimIds,
+      ...(others.length > 0
+        ? { alternatives: others.map((o) => ({ angle: o.value.angle, hookType: o.value.hookType, model: o.call.model })) }
+        : {}),
     };
     await ctx.store.saveStrategy(account.runAccountId, strategy);
   }
+}
+
+/** The proposal that leans on the most allowed facts wins; ties go to the fuller rationale, then to the first. */
+export function pickStrategy<T extends { claimIds: string[]; value: { rationale: string } }>(proposals: readonly T[]): T {
+  return [...proposals].sort((a, b) => b.claimIds.length - a.claimIds.length || b.value.rationale.length - a.value.rationale.length)[0]!;
 }
