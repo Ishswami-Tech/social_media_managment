@@ -26,6 +26,8 @@ const WIDTH = 820;
 const HEIGHT = 270;
 const RADIUS = 30;
 const LABEL_MAX_CHARS = 34;
+/** The speech bubble above the agent at work. */
+const BUBBLE = { maxChars: 40, charWidth: 6.1, padding: 18, height: 22, lift: 38 };
 
 interface NodePoint {
   x: number;
@@ -49,8 +51,15 @@ function segmentPath(a: NodePoint, b: NodePoint): string {
   return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
 }
 
-function truncate(value: string): string {
-  return value.length > LABEL_MAX_CHARS ? `${value.slice(0, LABEL_MAX_CHARS - 1)}…` : value;
+function truncate(value: string, max: number = LABEL_MAX_CHARS): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/** Where the bubble sits: above the node, kept inside the picture. */
+function bubbleBox(p: NodePoint, text: string): { x: number; y: number; w: number } {
+  const w = Math.min(WIDTH - 24, text.length * BUBBLE.charWidth + BUBBLE.padding);
+  const x = Math.min(WIDTH - 12 - w, Math.max(12, p.x - w / 2));
+  return { x, y: p.y - RADIUS - BUBBLE.lift - BUBBLE.height, w };
 }
 
 const subscribeNever = (): (() => void) => () => {};
@@ -90,6 +99,26 @@ export function CouncilFlow({ stages, working, models = {}, selected = null, onS
   const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const points = useMemo(() => arcPoints(stages.length), [stages.length]);
   const activeIndex = stages.findIndex((s) => s.state === "active");
+  const activeStage = activeIndex >= 0 ? stages[activeIndex] : undefined;
+  const activePoint = activeIndex >= 0 ? points[activeIndex] : undefined;
+  const bubbleText = activeStage && activeStage.key !== "ready" ? truncate(activeStage.activity.at(-1) ?? activeStage.label, BUBBLE.maxChars) : undefined;
+  const accent = activeStage ? AGENTS[activeStage.key].from : undefined;
+
+  // GSAP: each new line the working agent says pops up in its bubble.
+  useEffect(() => {
+    const root = svg.current;
+    if (!root || reduced || !bubbleText) return;
+    const bubble = root.querySelector<SVGGElement>("g[data-bubble='true']");
+    if (!bubble) return;
+    const tween = gsap.fromTo(
+      bubble,
+      { opacity: 0, y: 8, scale: 0.85, transformOrigin: "50% 100%" },
+      { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.8)" },
+    );
+    return () => {
+      tween.kill();
+    };
+  }, [bubbleText, activeIndex, reduced, mounted]);
   const reached = activeIndex >= 0 ? activeIndex : stages.filter((s) => s.state === "done" || s.state === "skipped").length;
 
   // GSAP: the dashes travel along every segment the work has already crossed;
@@ -136,7 +165,7 @@ export function CouncilFlow({ stages, working, models = {}, selected = null, onS
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(var(--color-border)_1px,transparent_1px)] [background-size:18px_18px]"
       />
-      <AmbientCanvas active={working} className="pointer-events-none absolute inset-0 opacity-60" />
+      <AmbientCanvas active={working} accent={accent} className="pointer-events-none absolute inset-0 opacity-60" />
       <svg ref={svg} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="relative w-full" role="img" aria-label="Agents working on this post">
         <defs>
           {stages.map((s) => (
@@ -263,6 +292,39 @@ export function CouncilFlow({ stages, working, models = {}, selected = null, onS
             </motion.g>
           );
         })}
+        {bubbleText && activePoint && activeStage && (
+          <g data-bubble="true" className="pointer-events-none" aria-hidden>
+            {(() => {
+              const box = bubbleBox(activePoint, bubbleText);
+              return (
+                <>
+                  <rect
+                    x={box.x}
+                    y={box.y}
+                    width={box.w}
+                    height={BUBBLE.height}
+                    rx={BUBBLE.height / 2}
+                    fill={AGENTS[activeStage.key].from}
+                    opacity={0.92}
+                  />
+                  <path
+                    d={`M ${activePoint.x - 5} ${box.y + BUBBLE.height} L ${activePoint.x} ${box.y + BUBBLE.height + 6} L ${activePoint.x + 5} ${box.y + BUBBLE.height} Z`}
+                    fill={AGENTS[activeStage.key].from}
+                    opacity={0.92}
+                  />
+                  <text
+                    x={box.x + box.w / 2}
+                    y={box.y + BUBBLE.height / 2 + 4}
+                    textAnchor="middle"
+                    className="fill-white text-[11px] font-medium"
+                  >
+                    {bubbleText}
+                  </text>
+                </>
+              );
+            })()}
+          </g>
+        )}
       </svg>
     </div>
   );

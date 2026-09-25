@@ -656,6 +656,74 @@ export function buildProgress(
 }
 
 // ---------------------------------------------------------------------------
+// Transcript: the run as a conversation
+// ---------------------------------------------------------------------------
+
+export interface TranscriptMessage {
+  /** The event's id, stable across refreshes. */
+  id: string;
+  agent: ProgressStageKey;
+  /** Writer label (A, B, C) when the speaker is one of the writers. */
+  label?: string;
+  runAccountId?: string;
+  text: string;
+  tone: "info" | "success" | "failed";
+  /** ISO timestamp. */
+  at: string;
+  provider?: string | null;
+  model?: string | null;
+  /** Rich details the event carried: a draft preview, a verdict, the judge's scores. */
+  output?: ProgressEvent["output"];
+}
+
+function toneOf(status: string): TranscriptMessage["tone"] {
+  if (status === "FAILED") return "failed";
+  return status === "SUCCEEDED" ? "success" : "info";
+}
+
+/**
+ * One message per event that has something to say, oldest first, so the run
+ * reads like a room full of agents talking. Uses the same lines as the stage
+ * view; a line repeated by the same agent is said once.
+ */
+export function buildTranscript(
+  events: readonly ProgressEvent[],
+  accounts: readonly ProgressAccount[],
+  extras: ProgressExtras = {},
+): TranscriptMessage[] {
+  const ordered = latestAttempt([...events].sort(byTime));
+  const ctx: Ctx = {
+    accounts,
+    candidates: countCandidates(ordered),
+    many: accounts.length > 1,
+    claimCount: extras.claimCount,
+  };
+  const messages: TranscriptMessage[] = [];
+  for (const event of ordered) {
+    const key = stageOfStep(event.step);
+    if (!key) continue;
+    const text = lineFor(key, event, ctx);
+    if (!text) continue;
+    const previous = messages[messages.length - 1];
+    if (previous && previous.agent === key && previous.text === text) continue;
+    const parsed = parseStep(event.step);
+    messages.push({
+      id: event.id,
+      agent: key,
+      ...(key === "drafting" && parsed.label ? { label: parsed.label } : {}),
+      ...(parsed.runAccountId ? { runAccountId: parsed.runAccountId } : {}),
+      text,
+      tone: toneOf(event.status),
+      at: event.at,
+      provider: event.provider ?? null,
+      model: event.model ?? null,
+      ...(event.output ? { output: event.output } : {}),
+    });
+  }
+  return messages;
+}
+
+// ---------------------------------------------------------------------------
 // Live board: who is doing what, with which model
 // ---------------------------------------------------------------------------
 

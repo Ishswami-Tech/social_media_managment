@@ -13,8 +13,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, ChevronRight, Loader2, MinusCircle, XCircle } from "lucide-react";
-import { buildBoard, formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { Loader2 } from "lucide-react";
+import { buildBoard, buildTranscript, formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { CouncilRoom } from "@/components/agent/council-room";
 import { applyPartials } from "@platform/agent-council/live";
 import { CouncilBoard } from "@/components/agent/council-board";
 import { formatCents } from "@/components/agent/format";
@@ -126,85 +127,6 @@ async function post(path: string, body?: unknown): Promise<{ ok: boolean; messag
 
 function isDecision(value: string): value is ThreadDecision {
   return value === "PENDING" || value === "APPROVED" || value === "REJECTED";
-}
-
-/** The one line a collapsed row shows: what happened, and how long it took. */
-function rowSummary(stage: ProgressStage): string {
-  const parts = [stage.label];
-  const last = stage.activity.at(-1);
-  if (last) parts.push(last);
-  if (stage.state === "skipped" && !last) parts.push("skipped");
-  if (stage.state !== "active" && stage.durationMs !== undefined && stage.durationMs > 0)
-    parts.push(formatDuration(stage.durationMs));
-  return parts.join(" · ");
-}
-
-function StageIcon({ state }: { state: ProgressStage["state"] }) {
-  if (state === "active") return <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />;
-  if (state === "done") return <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" aria-hidden />;
-  if (state === "failed") return <XCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />;
-  return <MinusCircle className="size-3.5 shrink-0 text-muted-foreground/50" aria-hidden />;
-}
-
-// ---------------------------------------------------------------------------
-// Activity row
-// ---------------------------------------------------------------------------
-
-function ActivityRow({ stage }: { stage: ProgressStage }) {
-  const [open, setOpen] = useState(false);
-  const expanded = open || stage.state === "active";
-  const hasDetail = stage.activity.length > 0 || stage.costCents > 0;
-
-  return (
-    <li className="grid">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        disabled={!hasDetail}
-        aria-expanded={expanded}
-        className={cn(
-          "flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition",
-          hasDetail && "hover:bg-accent",
-          stage.state === "pending" && "text-muted-foreground/60",
-          stage.state === "failed" && "text-destructive",
-          stage.state !== "pending" && stage.state !== "failed" && "text-muted-foreground",
-        )}
-      >
-        <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90", !hasDetail && "opacity-0")}
-          aria-hidden
-        />
-        <StageIcon state={stage.state} />
-        <span className="min-w-0 truncate">{rowSummary(stage)}</span>
-      </button>
-
-      {expanded && stage.activity.length > 0 && (
-        <ul
-          aria-live={stage.state === "active" ? "polite" : "off"}
-          aria-label={`What happened: ${stage.label}`}
-          className="grid gap-0.5 pt-0.5 pb-1 pl-9"
-        >
-          {stage.activity.map((line, index) => (
-            <li
-              key={`${line}-${index}`}
-              className={cn(
-                "text-xs text-muted-foreground",
-                stage.state === "active" && index === stage.activity.length - 1 && "text-foreground/80",
-              )}
-            >
-              {line}
-            </li>
-          ))}
-          {open && stage.state !== "active" && (stage.costCents > 0 || stage.durationMs !== undefined) && (
-            <li className="text-xs text-muted-foreground tabular-nums">
-              {stage.costCents > 0 ? formatCents(stage.costCents) : "no cost"}
-              {stage.durationMs !== undefined ? ` · ${formatDuration(stage.durationMs)}` : ""}
-            </li>
-          )}
-        </ul>
-      )}
-    </li>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +395,10 @@ export function Thread({
     () => applyPartials(buildBoard(snapshot.status, snapshot.events, snapshot.accounts), snapshot.partials),
     [snapshot],
   );
+  const transcript = useMemo(
+    () => buildTranscript(snapshot.events, snapshot.accounts, { claimCount: snapshot.claimCount }),
+    [snapshot],
+  );
   const [showWork, setShowWork] = useState(false);
   const [selectedStage, setSelectedStage] = useState<ProgressStage["key"] | null>(null);
   const selectedDetail = selectedStage ? progress.stages.find((s) => s.key === selectedStage) : undefined;
@@ -637,11 +563,7 @@ export function Thread({
             {boardOpen && <CouncilBoard board={board} working={working} />}
           </div>
         )}
-        <ol className="grid gap-0.5">
-          {progress.stages.map((stage) => (
-            <ActivityRow key={stage.key} stage={stage} />
-          ))}
-        </ol>
+        <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />
 
         {stopped && reason && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">{reason}</p>
