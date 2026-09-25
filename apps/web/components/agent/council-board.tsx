@@ -62,7 +62,8 @@ function StateDot({ state }: { state: AgentSeat["state"] }) {
 
 function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
   const reduced = useReducedMotion();
-  const draft = useTypewriter(seat.draft, animate && !reduced);
+  // Live text is already arriving a few characters at a time; only a finished draft gets typed out.
+  const draft = useTypewriter(seat.draft, animate && !reduced && !seat.streaming);
   const scorePct = seat.score !== undefined ? Math.round((seat.score / JUDGE_MAX) * 100) : undefined;
   const identity = AGENTS.drafting;
   const Icon = identity.icon;

@@ -1,3 +1,4 @@
+import type { LiveBus } from "./live";
 /**
  * Shared contracts for the Agent Council. Everything the pipeline reads or
  * writes goes through these types and the `AgentRunStore` port, so the pure
@@ -260,6 +261,8 @@ export interface ProviderHealthPort {
 /** Everything a stage needs to call models and tools for one organization. */
 export interface PipelineContext {
   executor: AIExecutor;
+  /** Additive: where in-flight model text is pushed for people watching. Absent means no live text. */
+  live?: LiveBus;
   router: ModelRouter;
   /** Routing context factory (capability + optional explicit model) */
   routing: (capability: "text" | "json", pref?: { provider?: AIProviderName; model?: string }) => Promise<Omit<RoutingContext, "requiredCapability"> & { requiredCapability?: "text" | "json" }>;

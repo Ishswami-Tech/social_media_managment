@@ -1,13 +1,14 @@
 import {
   AIError,
-  getJson,
-  postJson,
   type AIProvider,
   type ChatMessage,
   type ProviderAuth,
   type TextRequest,
   type TextResponse,
   type ToolCall,
+  getJson,
+  postJson,
+  postSse,
 } from "@platform/ai-core";
 
 const DEFAULT_BASE = "https://api.anthropic.com/v1";
@@ -80,8 +81,87 @@ function split(messages: ChatMessage[]) {
   return { system: system || undefined, messages: rest };
 }
 
+interface StreamEvent {
+  type: string;
+  message?: { usage?: { input_tokens?: number } };
+  delta?: { type?: string; text?: string; stop_reason?: string };
+  usage?: { output_tokens?: number };
+  error?: { message?: string };
+}
+
 export class AnthropicProvider implements AIProvider {
   readonly name = "ANTHROPIC" as const;
+
+  /** Same request with `stream: true`; text deltas go to `req.onChunk` as they land. */
+  private async streamText(
+    req: TextRequest,
+    auth: ProviderAuth,
+    body: Record<string, unknown>,
+    prefill: boolean | undefined,
+    started: number,
+  ): Promise<TextResponse> {
+    let rawText = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let stopReason: string | undefined;
+    await postSse(
+      "ANTHROPIC",
+      `${apiBase(auth)}/messages`,
+      { ...body, stream: true },
+      { "x-api-key": auth.apiKey, "anthropic-version": API_VERSION },
+      (data) => {
+        const ev = data as StreamEvent;
+        if (ev.type === "message_start") inputTokens = ev.message?.usage?.input_tokens ?? 0;
+        else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
+          rawText += ev.delta.text;
+          req.onChunk?.(ev.delta.text);
+        } else if (ev.type === "message_delta") {
+          stopReason = ev.delta?.stop_reason ?? stopReason;
+          outputTokens = ev.usage?.output_tokens ?? outputTokens;
+        } else if (ev.type === "error") {
+          throw new AIError(ev.error?.message ?? "Anthropic stream error", "PROVIDER_UNAVAILABLE", true, "ANTHROPIC");
+        }
+      },
+      { signal: req.abortSignal },
+    );
+    return this.finish(req, rawText, [], prefill, { inputTokens, outputTokens }, stopReason, started);
+  }
+
+  /** Shared tail of both paths: prefill repair, the empty-answer check, the response shape. */
+  private finish(
+    req: TextRequest,
+    rawText: string,
+    toolCalls: ToolCall[],
+    prefill: boolean | undefined,
+    usage: { inputTokens: number; outputTokens: number },
+    stopReason: string | undefined,
+    started: number,
+  ): TextResponse {
+    // Re-attach the prefilled "{" unless the model (or a gateway that ignores
+    // prefills) already answered with a complete object or a code fence.
+    const lead = rawText.trimStart();
+    const text = !prefill || lead.startsWith("{") || lead.startsWith("`") ? rawText : "{" + rawText;
+    if (!rawText && toolCalls.length === 0) {
+      const truncated = stopReason === "max_tokens";
+      throw new AIError(
+        truncated
+          ? "Anthropic hit max_tokens before producing any text (reasoning consumed the budget); raise maxTokens"
+          : "Anthropic returned empty content",
+        "PROVIDER_UNAVAILABLE",
+        true,
+        "ANTHROPIC",
+      );
+    }
+    return {
+      text,
+      toolCalls: toolCalls.length ? toolCalls : undefined,
+      usage,
+      model: req.model,
+      provider: "ANTHROPIC",
+      finishReason: stopReason,
+      latencyMs: Date.now() - started,
+    };
+  }
 
   async generateText(req: TextRequest, auth: ProviderAuth): Promise<TextResponse> {
     const started = Date.now();
@@ -97,6 +177,7 @@ export class AnthropicProvider implements AIProvider {
       // Prefill the assistant turn so the model starts directly with the JSON object.
       (body.messages as unknown[]).push({ role: "assistant", content: "{" });
     }
+    if (req.onChunk && !usingTools) return this.streamText(req, auth, body, prefill, started);
     const data = await postJson<{
       content: { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
       stop_reason?: string;
@@ -115,30 +196,15 @@ export class AnthropicProvider implements AIProvider {
       .filter((c) => c.type === "text")
       .map((c) => c.text ?? "")
       .join("");
-    // Re-attach the prefilled "{" unless the model (or a gateway that ignores
-    // prefills) already answered with a complete object or a code fence.
-    const lead = rawText.trimStart();
-    const text = !prefill || lead.startsWith("{") || lead.startsWith("`") ? rawText : "{" + rawText;
-    if (!rawText && toolCalls.length === 0) {
-      const truncated = data.stop_reason === "max_tokens";
-      throw new AIError(
-        truncated
-          ? "Anthropic hit max_tokens before producing any text (reasoning consumed the budget); raise maxTokens"
-          : "Anthropic returned empty content",
-        "PROVIDER_UNAVAILABLE",
-        true,
-        "ANTHROPIC",
-      );
-    }
-    return {
-      text,
-      toolCalls: toolCalls.length ? toolCalls : undefined,
-      usage: { inputTokens: data.usage?.input_tokens ?? 0, outputTokens: data.usage?.output_tokens ?? 0 },
-      model: req.model,
-      provider: "ANTHROPIC",
-      finishReason: data.stop_reason,
-      latencyMs: Date.now() - started,
-    };
+    return this.finish(
+      req,
+      rawText,
+      toolCalls,
+      prefill,
+      { inputTokens: data.usage?.input_tokens ?? 0, outputTokens: data.usage?.output_tokens ?? 0 },
+      data.stop_reason,
+      started,
+    );
   }
 
   async healthCheck(auth: ProviderAuth) {

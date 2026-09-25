@@ -684,6 +684,8 @@ export interface AgentSeat {
   reviewVerdict?: string;
   reviewIssues?: number;
   winner?: boolean;
+  /** Writers: the draft shown is live partial text, still arriving. */
+  streaming?: boolean;
 }
 
 export interface AgentBoard {

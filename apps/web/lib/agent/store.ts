@@ -1,3 +1,4 @@
+import { publishRun } from "@/lib/agent/live";
 import type {
   AccountBrain,
   AccountRecommendation,
@@ -268,10 +269,12 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
         data: statusUpdate(current, status, extra, now()),
       });
       if (updated.count === 0) throw new Error(`Agent run ${runId} changed status concurrently; refusing ${status}`);
+      publishRun(runId, { type: "poke" });
     },
 
     async markStep(runId, currentStep) {
       await prisma.agentRun.update({ where: { id: runId }, data: { currentStep } });
+      publishRun(runId, { type: "poke" });
     },
 
     async saveSkills(runId, skillIds) {
@@ -376,11 +379,13 @@ export function createPrismaRunStore(now: () => Date = () => new Date()): AgentR
           error: event.error ?? null,
         },
       });
+      publishRun(runId, { type: "poke" });
     },
 
     async addCost(runId, cents) {
       if (!Number.isFinite(cents) || cents <= 0) return;
       await prisma.agentRun.update({ where: { id: runId }, data: { spentCents: { increment: cents } } });
+      publishRun(runId, { type: "poke" });
     },
 
     async updateDraftJudgement(draftId, score, rationale) {

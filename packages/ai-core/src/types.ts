@@ -49,6 +49,11 @@ export interface TextRequest {
   abortSignal?: AbortSignal;
   /** Tools the model may call; when present the response may carry toolCalls instead of text. */
   tools?: ToolDefinition[];
+  /**
+   * Receives each text delta as the model produces it, when the provider can
+   * stream and no tools are involved. The returned `text` is still complete.
+   */
+  onChunk?: (delta: string) => void;
 }
 
 export interface Usage {

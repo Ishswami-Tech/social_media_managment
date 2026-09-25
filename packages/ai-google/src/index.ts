@@ -1,7 +1,5 @@
 import {
   AIError,
-  getJson,
-  postJson,
   type AIProvider,
   type ChatMessage,
   type EmbeddingRequest,
@@ -12,6 +10,9 @@ import {
   type TextRequest,
   type TextResponse,
   type ToolCall,
+  getJson,
+  postJson,
+  postSse,
 } from "@platform/ai-core";
 
 /**
@@ -122,6 +123,61 @@ export class GoogleProvider implements AIProvider {
     return { "x-goog-api-key": auth.apiKey };
   }
 
+  /** `streamGenerateContent` over SSE; text parts go to `req.onChunk` as they land. */
+  private async streamText(
+    req: TextRequest,
+    auth: ProviderAuth,
+    body: Record<string, unknown>,
+    started: number,
+  ): Promise<TextResponse> {
+    let text = "";
+    let finishReason: string | undefined;
+    let usage: GenerateResponse["usageMetadata"];
+    await postSse(
+      "GOOGLE",
+      `${auth.baseUrl ?? DEFAULT_BASE}/models/${req.model}:streamGenerateContent?alt=sse`,
+      body,
+      this.headers(auth),
+      (data) => {
+        const chunk = data as GenerateResponse;
+        if (chunk.promptFeedback?.blockReason)
+          throw new AIError(`Gemini blocked the prompt: ${chunk.promptFeedback.blockReason}`, "CONTENT_FILTERED", false, "GOOGLE");
+        const cand = chunk.candidates?.[0];
+        const delta = (cand?.content?.parts ?? [])
+          .filter((p) => !p.thought)
+          .map((p) => p.text ?? "")
+          .join("");
+        if (delta) {
+          text += delta;
+          req.onChunk?.(delta);
+        }
+        if (cand?.finishReason) finishReason = cand.finishReason;
+        if (chunk.usageMetadata) usage = chunk.usageMetadata;
+      },
+      { signal: req.abortSignal },
+    );
+    if (!text)
+      throw new AIError(
+        finishReason === "MAX_TOKENS"
+          ? "Gemini hit maxOutputTokens before producing any text (thinking consumed the budget); raise maxTokens"
+          : `Gemini returned no text${finishReason ? ` (finishReason: ${finishReason})` : ""}`,
+        "PROVIDER_UNAVAILABLE",
+        true,
+        "GOOGLE",
+      );
+    return {
+      text,
+      usage: {
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
+      },
+      model: req.model,
+      provider: "GOOGLE",
+      finishReason,
+      latencyMs: Date.now() - started,
+    };
+  }
+
   async generateText(req: TextRequest, auth: ProviderAuth): Promise<TextResponse> {
     const started = Date.now();
     const { system, contents } = toContents(req.messages);
@@ -147,6 +203,7 @@ export class GoogleProvider implements AIProvider {
         },
       ];
     }
+    if (req.onChunk && !usingTools) return this.streamText(req, auth, body, started);
     const data = await postJson<GenerateResponse>(
       "GOOGLE",
       `${auth.baseUrl ?? DEFAULT_BASE}/models/${req.model}:generateContent`,

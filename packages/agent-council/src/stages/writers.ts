@@ -121,6 +121,7 @@ async function writeDraft(
       step: stepName("writer", account, slot.label),
       promptKey: "writer",
       pref: slot.pref,
+      live: { label: slot.label, runAccountId: account.runAccountId },
       avoidModels: siblings.models,
       avoidProviders: siblings.providers,
       temperature: slot.temperature,

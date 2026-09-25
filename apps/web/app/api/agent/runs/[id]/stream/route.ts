@@ -1,10 +1,13 @@
 /**
  * Live progress for one campaign, as Server-Sent Events.
  *
- * The worker runs in another process and only leaves a trail of `AgentRunEvent`
+ * The worker runs in another process and leaves a trail of `AgentRunEvent`
  * rows behind, so this route tails those rows: a `snapshot` on connect, then an
  * `event` message per new row and a `status` message whenever the run moves or
- * spends more, until the run settles (or fifteen minutes pass).
+ * spends more, until the run settles (or fifteen minutes pass). The worker also
+ * pokes a Redis channel after every write, which makes the next look at the
+ * database immediate, and pushes `partial` messages with a model's text so far,
+ * which are forwarded as they are. Without Redis the poll alone still works.
  *
  * Every read is scoped by `organizationId`, including the event rows, which are
  * reached through their run.
@@ -14,6 +17,7 @@ import type { ProgressAccount } from "@platform/agent-council/progress";
 import { notFound, withOrg } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { PROGRESS_EVENT_LIMIT, progressEventSelect, toProgressAccount, toProgressEvent } from "@/lib/agent/progress";
+import { liveBus, runChannel, type LiveMessage } from "@/lib/agent/live";
 
 export const dynamic = "force-dynamic";
 
@@ -102,13 +106,18 @@ export const GET = (req: Request, { params }: { params: Promise<{ id: string }> 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         let closed = false;
-        const timers: { poll?: ReturnType<typeof setTimeout>; beat?: ReturnType<typeof setInterval> } = {};
+        const timers: {
+          poll?: ReturnType<typeof setTimeout>;
+          beat?: ReturnType<typeof setInterval>;
+          unsubscribe?: () => Promise<void>;
+        } = {};
 
         const stop = () => {
           if (closed) return;
           closed = true;
           if (timers.poll) clearTimeout(timers.poll);
           if (timers.beat) clearInterval(timers.beat);
+          if (timers.unsubscribe) void timers.unsubscribe();
           req.signal.removeEventListener("abort", stop);
           try {
             controller.close();
@@ -172,8 +181,22 @@ export const GET = (req: Request, { params }: { params: Promise<{ id: string }> 
           return true;
         };
 
+        let ticking = false;
+        let again = false;
+        const schedule = () => {
+          if (closed) return;
+          if (timers.poll) clearTimeout(timers.poll);
+          timers.poll = setTimeout(() => void tick(), POLL_MS);
+        };
         const tick = async (): Promise<void> => {
           if (closed) return;
+          // A poke during a read means the database has more; look again right after.
+          if (ticking) {
+            again = true;
+            return;
+          }
+          ticking = true;
+          if (timers.poll) clearTimeout(timers.poll);
           try {
             const current = await readState(id, organizationId);
             if (!current) return stop();
@@ -189,8 +212,14 @@ export const GET = (req: Request, { params }: { params: Promise<{ id: string }> 
             // A transient database problem should not kill the page; the client
             // reconnects (and falls back to polling) on its own.
             return stop();
+          } finally {
+            ticking = false;
           }
-          timers.poll = setTimeout(() => void tick(), POLL_MS);
+          if (again) {
+            again = false;
+            return void tick();
+          }
+          schedule();
         };
 
         if (SETTLED.has(last.status)) {
@@ -200,6 +229,19 @@ export const GET = (req: Request, { params }: { params: Promise<{ id: string }> 
 
         timers.beat = setInterval(() => write(": ping\n\n"), HEARTBEAT_MS);
         req.signal.addEventListener("abort", stop);
+        liveBus()
+          .subscribe(runChannel(id), (message) => {
+            const m = message as LiveMessage;
+            if (m.type === "partial") send("partial", m);
+            else void tick();
+          })
+          .then((unsubscribe) => {
+            if (closed) void unsubscribe();
+            else timers.unsubscribe = unsubscribe;
+          })
+          .catch(() => {
+            // No Redis: the poll below still delivers everything, just later.
+          });
         timers.poll = setTimeout(() => void tick(), POLL_MS);
       },
       cancel() {

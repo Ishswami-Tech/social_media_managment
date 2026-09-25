@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, MinusCircle, XCircle } from "lucide-react";
 import { buildBoard, formatDuration, type ProgressStage } from "@platform/agent-council/progress";
+import { applyPartials } from "@platform/agent-council/live";
 import { CouncilBoard } from "@/components/agent/council-board";
 import { formatCents } from "@/components/agent/format";
 import { useRunProgress, type RunInitial } from "@/components/agent/live-progress";
@@ -461,7 +462,10 @@ export function Thread({
 
   const status = snapshot.status;
   const working = !isSettled(status) || status === "APPROVED";
-  const board = useMemo(() => buildBoard(snapshot.status, snapshot.events, snapshot.accounts), [snapshot]);
+  const board = useMemo(
+    () => applyPartials(buildBoard(snapshot.status, snapshot.events, snapshot.accounts), snapshot.partials),
+    [snapshot],
+  );
   const [showWork, setShowWork] = useState(false);
   const [selectedStage, setSelectedStage] = useState<ProgressStage["key"] | null>(null);
   const selectedDetail = selectedStage ? progress.stages.find((s) => s.key === selectedStage) : undefined;

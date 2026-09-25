@@ -33,6 +33,7 @@ import {
   type RunProgress,
   progressOutput,
 } from "@platform/agent-council/progress";
+import type { LivePartial } from "@platform/agent-council/live";
 import { formatCents } from "@/components/agent/format";
 import { isSettled } from "@/components/home/labels";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,8 @@ export interface RunSnapshot {
   claimCount: number;
   accounts: ProgressAccount[];
   events: ProgressEvent[];
+  /** Text still arriving from in-flight model calls, by step. Only the stream delivers these. */
+  partials?: Record<string, LivePartial>;
 }
 
 /** The server-rendered starting point, plus when the work began. */
@@ -140,6 +143,16 @@ function mergeEvent(events: ProgressEvent[], incoming: ProgressEvent): ProgressE
   if (events.some((e) => e.id === incoming.id)) return events;
   const next = [...events, incoming];
   return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next;
+}
+
+/** A finished step's stored event replaces whatever partial text was showing for it. */
+function withoutPartial(
+  partials: Record<string, LivePartial> | undefined,
+  event: ProgressEvent,
+): Record<string, LivePartial> | undefined {
+  if (!partials || event.status === "STARTED" || !(event.step in partials)) return partials;
+  const { [event.step]: _dropped, ...rest } = partials;
+  return rest;
 }
 
 function parse<T>(raw: string): T | null {
@@ -261,7 +274,13 @@ export function useRunProgress(runId: string, initial: RunInitial, onReady?: () 
       es.addEventListener("event", (e) => {
         const data = parse<ProgressEvent>((e as MessageEvent<string>).data);
         if (!data) return;
-        setSnapshot((cur) => ({ ...cur, events: mergeEvent(cur.events, data) }));
+        setSnapshot((cur) => ({ ...cur, events: mergeEvent(cur.events, data), partials: withoutPartial(cur.partials, data) }));
+      });
+
+      es.addEventListener("partial", (e) => {
+        const data = parse<LivePartial>((e as MessageEvent<string>).data);
+        if (!data) return;
+        setSnapshot((cur) => ({ ...cur, partials: { ...cur.partials, [data.step]: data } }));
       });
 
       es.addEventListener("status", (e) => {

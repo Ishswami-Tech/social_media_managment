@@ -10,6 +10,7 @@ import { estimateCallCents, estimateTokens, usageToCents } from "../budget";
 import type { PipelineContext } from "../contracts";
 import { errorMessage, PipelineBlocked } from "../errors";
 import { getPrompt } from "../prompts";
+import { partialTextField } from "../live";
 
 /** Replay events keep a bounded copy of what went into and came out of a call. */
 export const MAX_EVENT_CHARS = 2_000;
@@ -88,6 +89,37 @@ export interface ModelCallInput {
   avoidModels?: readonly string[];
   /** Providers other writers of the same account already use; avoided first, so drafts come from different houses. */
   avoidProviders?: readonly AIProviderName[];
+  /** Set to push the model's text to watchers as it is produced (writers do). */
+  live?: { label?: string; runAccountId?: string };
+}
+
+/** Partials are pushed at most this often per call; the last stored event carries the full text anyway. */
+const LIVE_THROTTLE_MS = 150;
+
+/** A chunk sink that publishes readable partial text through the live bus, or nothing when nobody listens. */
+function liveChunkSink(
+  ctx: PipelineContext,
+  input: ModelCallInput,
+  decision: ModelDecision,
+): ((delta: string) => void) | undefined {
+  const bus = ctx.live;
+  if (!bus || !input.live) return undefined;
+  let buffer = "";
+  let lastSent = 0;
+  return (delta) => {
+    buffer += delta;
+    const now = Date.now();
+    if (now - lastSent < LIVE_THROTTLE_MS) return;
+    lastSent = now;
+    bus.partial(input.runId, {
+      step: input.step,
+      ...input.live,
+      provider: decision.provider,
+      model: decision.model,
+      text: input.json ? partialTextField(buffer) : buffer,
+      chars: buffer.length,
+    });
+  };
 }
 
 export interface ModelCallResult {
@@ -202,10 +234,10 @@ async function execute(ctx: PipelineContext, input: ModelCallInput, decision: Mo
   const expectedOutput = Math.max(MIN_MAX_TOKENS, input.expectedOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
   const maxTokens = expectedOutput + THINKING_HEADROOM_TOKENS;
   try {
-    return await executeWithBudget(ctx, input, decision, maxTokens);
+    return await executeWithBudget(ctx, input, decision, maxTokens, liveChunkSink(ctx, input, decision));
   } catch (error) {
     if (!isBudgetExhausted(error) || maxTokens >= MAX_RETRY_TOKENS) throw error;
-    return executeWithBudget(ctx, input, decision, Math.min(MAX_RETRY_TOKENS, maxTokens * 2));
+    return executeWithBudget(ctx, input, decision, Math.min(MAX_RETRY_TOKENS, maxTokens * 2), liveChunkSink(ctx, input, decision));
   }
 }
 
@@ -214,6 +246,7 @@ async function executeWithBudget(
   input: ModelCallInput,
   decision: ModelDecision,
   maxTokens: number,
+  onChunk?: (delta: string) => void,
 ): Promise<Attempt> {
   const started = Date.now();
   if (input.tools) {
@@ -237,6 +270,7 @@ async function executeWithBudget(
     temperature: input.temperature,
     maxTokens,
     operation: "GENERATE",
+    ...(onChunk ? { onChunk } : {}),
   });
   return { text: res.text, usage: res.usage, latencyMs: res.latencyMs || Date.now() - started };
 }

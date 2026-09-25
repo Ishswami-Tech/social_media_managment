@@ -4,6 +4,7 @@ import { aiRuntime } from "@/lib/ai";
 import { createPrismaBudget } from "@/lib/agent/budget";
 import { createPrismaProviderHealth } from "@/lib/agent/provider-health";
 import { createPrismaRunStore } from "@/lib/agent/store";
+import { publishRun } from "@/lib/agent/live";
 import { prisma } from "@/lib/db";
 import { pluginTools } from "@/lib/plugins";
 import { buildOrgResearchTools } from "@/lib/research";
@@ -83,6 +84,7 @@ export async function buildPipelineContext(organizationId: string, runId?: strin
     store: createPrismaRunStore(),
     budget: createPrismaBudget(),
     health: createPrismaProviderHealth(),
+    live: { partial: (runId, message) => publishRun(runId, { type: "partial", ...message }) },
     recentTexts,
   };
 }

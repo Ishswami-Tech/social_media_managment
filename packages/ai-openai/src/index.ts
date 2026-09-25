@@ -1,7 +1,5 @@
 import {
   AIError,
-  getJson,
-  postJson,
   type AIProvider,
   type ChatMessage,
   type EmbeddingRequest,
@@ -11,6 +9,9 @@ import {
   type ProviderAuth,
   type TextRequest,
   type TextResponse,
+  getJson,
+  postJson,
+  postSse,
 } from "@platform/ai-core";
 
 const DEFAULT_BASE = "https://api.openai.com/v1";
@@ -40,8 +41,44 @@ function safeJson(text: string): Record<string, unknown> {
   }
 }
 
+interface StreamChunk {
+  choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[];
+  usage?: { prompt_tokens: number; completion_tokens: number } | null;
+}
+
 export class OpenAIProvider implements AIProvider {
   readonly name = "OPENAI" as const;
+
+  /** Same request with `stream: true`; content deltas go to `req.onChunk` as they land. */
+  private async streamText(
+    req: TextRequest,
+    auth: ProviderAuth,
+    body: Record<string, unknown>,
+    started: number,
+  ): Promise<TextResponse> {
+    let text = "";
+    let finishReason: string | undefined;
+    let usage = { inputTokens: 0, outputTokens: 0 };
+    await postSse(
+      "OPENAI",
+      `${auth.baseUrl ?? DEFAULT_BASE}/chat/completions`,
+      { ...body, stream: true, stream_options: { include_usage: true } },
+      { authorization: `Bearer ${auth.apiKey}` },
+      (data) => {
+        const chunk = data as StreamChunk;
+        const choice = chunk.choices?.[0];
+        if (choice?.delta?.content) {
+          text += choice.delta.content;
+          req.onChunk?.(choice.delta.content);
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        if (chunk.usage) usage = { inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens };
+      },
+      { signal: req.abortSignal },
+    );
+    if (!text) throw new AIError("OpenAI returned no text", "PROVIDER_UNAVAILABLE", true, "OPENAI");
+    return { text, usage, model: req.model, provider: "OPENAI", finishReason, latencyMs: Date.now() - started };
+  }
 
   async generateText(req: TextRequest, auth: ProviderAuth): Promise<TextResponse> {
     const started = Date.now();
@@ -57,6 +94,7 @@ export class OpenAIProvider implements AIProvider {
         json_schema: { name: "output", schema: req.jsonSchema, strict: false },
       };
     else if (req.json) body.response_format = { type: "json_object" };
+    if (req.onChunk && !req.tools?.length) return this.streamText(req, auth, body, started);
     const data = await postJson<{
       choices: {
         message: {

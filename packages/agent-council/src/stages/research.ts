@@ -17,19 +17,34 @@ const RESEARCH_OUTPUT_TOKENS = 2_500;
 const CLAIMS_OUTPUT_TOKENS = 1_500;
 const CLAIMS_BRIEF_CHARS = 12_000;
 
+/** Models write `null` for a field they have nothing for; that is "absent", not a broken answer. */
+const optionalText = z
+  .string()
+  .nullish()
+  .transform((v) => (v ? v : undefined));
+
 export const ClaimsOutputSchema = z.object({
   claims: z
     .array(
       z.object({
         statement: z.string().min(1),
-        sourceUrl: z.string().optional(),
-        sourceTitle: z.string().optional(),
-        evidence: z.string().optional(),
-        confidence: z.number().min(0).max(1).default(0.5),
-        status: z.enum(["SUPPORTED", "UNSUPPORTED", "UNVERIFIED"]).default("UNVERIFIED"),
+        sourceUrl: optionalText,
+        sourceTitle: optionalText,
+        evidence: optionalText,
+        confidence: z
+          .number()
+          .min(0)
+          .max(1)
+          .nullish()
+          .transform((v) => v ?? 0.5),
+        status: z
+          .enum(["SUPPORTED", "UNSUPPORTED", "UNVERIFIED"])
+          .nullish()
+          .transform((v) => v ?? "UNVERIFIED"),
       }),
     )
-    .default([]),
+    .nullish()
+    .transform((v) => v ?? []),
 });
 
 /** Used when the research agent returns something that is not a valid brief. */
