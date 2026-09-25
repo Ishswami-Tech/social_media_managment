@@ -94,7 +94,7 @@ export interface ModelCallInput {
    * the JSON key whose value is worth reading while it is still arriving
    * ("text" for drafts, "angle" for the strategy, and so on).
    */
-  live?: { label?: string; runAccountId?: string; field?: string };
+  live?: { label?: string; runAccountId?: string; field?: string; noteField?: string };
 }
 
 /** The one string worth showing from a tool call's arguments: the query, the URL, whatever came first. */
@@ -153,6 +153,7 @@ function liveChunkSink(
       provider: decision.provider,
       model: decision.model,
       text: input.json ? partialTextField(buffer, input.live?.field ?? "text") : buffer,
+      ...(input.json && input.live?.noteField ? { note: partialTextField(buffer, input.live.noteField) } : {}),
       chars: buffer.length,
     });
   };

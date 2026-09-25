@@ -237,7 +237,8 @@ describe("runPipelineToCompletion", () => {
     // Three writers, two live providers: at most one pair may share a provider, and none may sit on Google.
     expect(providers).not.toContain("GOOGLE");
     expect(new Set(providers).size).toBe(2);
-    expect(writers.map((c) => c.system.match(/YOUR LANE[^\n]*\n(\w+):/)?.[1])).toEqual(["Story", "Evidence", "Contrarian"]);
+    // Writers run side by side, so the order of their calls is not fixed; each lane is used exactly once.
+    expect(writers.map((c) => c.system.match(/YOUR LANE[^\n]*\n(\w+):/)?.[1]).sort()).toEqual(["Contrarian", "Evidence", "Story"]);
   });
 
   it("fails the call when every provider is out of quota", async () => {

@@ -22,7 +22,7 @@ import { useRunProgress, type RunInitial } from "@/components/agent/live-progres
 import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { PerformanceBadge, type PerformanceBadgeProps } from "@/components/agent/performance-badge";
-import { SpotlightStage } from "@/components/agent/spotlight-stage";
+import { MissionControl } from "@/components/agent/mission-control";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { Celebrate } from "@/components/agent/celebrate";
 import { PostPreview } from "@/components/preview/post-preview";
@@ -513,12 +513,12 @@ export function Thread({
 
       {/* What the AI did about it: the council at a glance, then the detail. */}
       <div className="grid max-w-[95%] gap-2">
-        <SpotlightStage
+        <MissionControl
           stages={progress.stages}
-          working={working}
-          models={board.modelsByStage}
+          board={board}
+          transcript={transcript}
           partials={snapshot.partials}
-          writers={board.writers}
+          working={working}
           startedAt={initial.startedAt}
           stats={stageStats}
         />

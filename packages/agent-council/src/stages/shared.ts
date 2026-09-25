@@ -10,6 +10,8 @@ export const DRAFT_LABELS = ["A", "B", "C"] as const;
 
 /** Model output shared by writer, revision and synthesis. */
 export const DraftOutputSchema = z.object({
+  /** The writer's one-line plan; streamed to watchers, never published. */
+  plan: z.string().optional(),
   text: z.string().min(1),
   hashtags: z.array(z.string()).default([]),
   claimIds: z.array(z.string()).default([]),

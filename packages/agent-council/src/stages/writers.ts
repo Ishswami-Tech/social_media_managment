@@ -121,7 +121,7 @@ async function writeDraft(
       step: stepName("writer", account, slot.label),
       promptKey: "writer",
       pref: slot.pref,
-      live: { label: slot.label, runAccountId: account.runAccountId },
+      live: { label: slot.label, runAccountId: account.runAccountId, field: "text", noteField: "plan" },
       avoidModels: siblings.models,
       avoidProviders: siblings.providers,
       temperature: slot.temperature,
@@ -159,27 +159,30 @@ async function writeDraft(
   };
 }
 
-/** DRAFTING: writes and persists the candidate drafts of every account. */
+/**
+ * DRAFTING: the writers of one account work at the same time, each on its own
+ * model and lane; their drafts are saved in label order once all have answered.
+ * A writer that fails only costs its own draft. Accounts go one after another.
+ */
 export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
   const slots = planWriters(ctx);
   let written = 0;
   for (const account of run.accounts) {
     let perAccount = 0;
-    const done: DraftCandidate[] = [];
-    for (const slot of slots) {
-      try {
-        const draft = await writeDraft(ctx, run, account, slot, slots, done);
-        await ctx.store.saveDraft(run.id, account.runAccountId, draft);
-        done.push(draft);
+    const results = await Promise.allSettled(slots.map((slot) => writeDraft(ctx, run, account, slot, slots, [])));
+    for (const [index, result] of results.entries()) {
+      const slot = slots[index]!;
+      if (result.status === "fulfilled") {
+        await ctx.store.saveDraft(run.id, account.runAccountId, result.value);
         perAccount += 1;
-      } catch (error) {
-        if (isPipelineBlocked(error)) throw error;
-        await ctx.store.addEvent(run.id, {
-          step: stepName("writer", account, slot.label),
-          status: "SKIPPED",
-          error: errorMessage(error),
-        });
+        continue;
       }
+      if (isPipelineBlocked(result.reason)) throw result.reason;
+      await ctx.store.addEvent(run.id, {
+        step: stepName("writer", account, slot.label),
+        status: "SKIPPED",
+        error: errorMessage(result.reason),
+      });
     }
     if (perAccount === 0) {
       await ctx.store.addEvent(run.id, {

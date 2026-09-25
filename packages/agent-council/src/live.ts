@@ -21,6 +21,8 @@ export interface LivePartial {
   model: string;
   /** The readable text so far (the `text` field of a JSON answer, or the raw text). */
   text: string;
+  /** The agent's stated plan so far, when its answer carries one. */
+  note?: string;
   /** Raw characters received, including JSON scaffolding. */
   chars: number;
 }

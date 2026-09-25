@@ -2,7 +2,7 @@ import { definePrompt } from "./registry";
 
 export const WRITER_PROMPT = definePrompt(
   "writer",
-  3,
+  4,
   `STAGE: WRITER
 You are one of several writers on an Agent Council. Write ONE publish-ready {{platform}} post for the account below, following the strategy exactly. Your draft will be checked by deterministic rules and judged blind against other drafts, so quality and discipline both matter.
 
@@ -32,6 +32,6 @@ HARD RULES (a violation gets the draft rejected)
 7. Write like a person: specific, concrete, no clichés ("game-changer", "in today's fast-paced world", "unlock"), no emoji walls.
 
 OUTPUT
-Return ONLY a JSON object (no markdown fences):
-{"text": "the post text without hashtags", "hashtags": ["#tag"], "claimIds": ["ids of the allowed claims you used"]}`,
+Return ONLY a JSON object (no markdown fences). Put "plan" first: one sentence on what you will lead with and what you will leave out.
+{"plan": "one sentence", "text": "the post text without hashtags", "hashtags": ["#tag"], "claimIds": ["ids of the allowed claims you used"]}`,
 );
