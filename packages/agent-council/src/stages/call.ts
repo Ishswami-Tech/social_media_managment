@@ -198,9 +198,15 @@ async function resolveProviderAvoiding(
 ): Promise<ModelDecision> {
   const avoidModels = (input.avoidModels ?? []).filter((m) => !excludedModels.includes(m));
   const avoidProviders = (input.avoidProviders ?? []).filter((p) => !excluded.has(p));
+  // Models teammates already used: steered away from unless the caller pinned a model.
+  const inUse = input.pref?.model
+    ? []
+    : [...(ctx.modelsInUse ?? [])].filter((m) => !excludedModels.includes(m) && !avoidModels.includes(m));
   const passes: { providers: ReadonlySet<AIProviderName>; models: readonly string[] }[] = [];
-  if (avoidProviders.length > 0) passes.push({ providers: new Set([...excluded, ...avoidProviders]), models: [...excludedModels, ...avoidModels] });
-  if (avoidModels.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels] });
+  if (avoidProviders.length > 0)
+    passes.push({ providers: new Set([...excluded, ...avoidProviders]), models: [...excludedModels, ...avoidModels, ...inUse] });
+  if (avoidModels.length > 0 || inUse.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels, ...inUse] });
+  if (avoidModels.length > 0 && inUse.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels] });
   for (const pass of passes) {
     if (ctx.availableProviders.every((p) => pass.providers.has(p))) continue;
     try {
@@ -406,6 +412,7 @@ async function callProvider(
   try {
     const attempt = await execute(ctx, input, decision);
     const costCents = usageToCents(ctx.router, decision.provider, decision.model, attempt.usage);
+    ctx.modelsInUse?.add(`${decision.provider}::${decision.model}`);
     await ctx.budget.settle(reservation.reservationId, costCents);
     await ctx.health.recordSuccess(decision.provider, attempt.latencyMs);
     await ctx.store.addCost(input.runId, costCents);

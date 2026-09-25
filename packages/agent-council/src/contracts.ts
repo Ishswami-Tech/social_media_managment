@@ -291,6 +291,13 @@ export interface PipelineContext {
    */
   deadModels?: Set<string>;
   /**
+   * Additive: "PROVIDER::model" pairs other agents of this run have already
+   * used. A call with no explicit model steers away from them while another
+   * model is available, so the team spreads over the catalogue instead of
+   * everyone landing on the top entry. Never persisted.
+   */
+  modelsInUse?: Set<string>;
+  /**
    * Additive: skill playbooks attached to this campaign. Appended to the system
    * prompt of every stage that writes text (writer, revision, synthesis, adapt).
    */

@@ -405,6 +405,7 @@ export function createTestContext(
     researchTools: [NOOP_TOOL],
     ...(options.skills ? { skills: options.skills } : {}),
     deadModels: new Set<string>(),
+    modelsInUse: new Set<string>(),
     store: memory.store,
     budget: money.budget,
     health: createCircuitBreaker(),

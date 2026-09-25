@@ -8,8 +8,9 @@
  * Solid dark panel, no glass. Framer Motion moves things; the packets on the
  * graph are plain CSS.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import gsap from "gsap";
 import { ArrowRight, Award, Check, Sparkles, Wrench, X } from "lucide-react";
 import {
   formatDuration,
@@ -28,6 +29,27 @@ import { CountUp } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 
 const subscribeNever = (): (() => void) => () => {};
+
+/** "Claude Fable 5.1" → "Fable 5.1": the vendor is obvious from the colour, the variant is what matters here. */
+function shortModel(label: string | undefined): string | undefined {
+  return label?.replace(/^(Claude|OpenAI|Google)\s+/i, "");
+}
+
+/** Five bars that dance while the team works, still when it rests. */
+function Signal({ working, animate }: { working: boolean; animate: boolean }) {
+  return (
+    <span className="inline-flex h-3 items-end gap-[2px]" aria-hidden>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <motion.span
+          key={i}
+          className={cn("w-[3px] rounded-sm", working ? "bg-emerald-500 dark:bg-emerald-400" : "bg-muted-foreground/40 dark:bg-white/30")}
+          animate={working && animate ? { height: ["30%", "100%", "45%", "85%", "30%"] } : { height: "35%" }}
+          transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut", delay: i * 0.12 }}
+        />
+      ))}
+    </span>
+  );
+}
 const PANEL = "rounded-xl bg-muted/60 p-3 dark:bg-muted/60 dark:bg-white/[0.04]";
 const CAP = "text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground dark:text-muted-foreground/80 dark:text-white/45";
 
@@ -139,7 +161,7 @@ function NodeCard({ stage, model, animate, children }: { stage: ProgressStage; m
           <Duty stage={stage} />
         </span>
         <span className="block truncate text-[10.5px] text-muted-foreground dark:text-white/55">{children ?? (pending ? identity.role : (stage.activity.at(-1) ?? identity.role))}</span>
-        {model && !pending && <span className="block truncate text-[10px] text-muted-foreground/70 dark:text-white/40">{model}</span>}
+        {model && !pending && <span className="block truncate text-[10px] text-muted-foreground/70 dark:text-white/40">{shortModel(model)}</span>}
       </span>
       {done && <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />}
       {failed && <X className="size-3.5 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden />}
@@ -170,7 +192,7 @@ function WriterTile({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
       <span className="text-[11px] font-medium" style={{ color: identity.to }}>
         {seat.label}
       </span>
-      <span className="w-full max-w-full truncate text-[9.5px] text-muted-foreground dark:text-white/50">{seat.modelLabel ?? (seat.state === "pending" ? "waiting" : "…")}</span>
+      <span className="w-full max-w-full break-words text-[9.5px] leading-tight text-muted-foreground dark:text-white/50">{shortModel(seat.modelLabel) ?? (seat.state === "pending" ? "waiting" : "…")}</span>
     </motion.div>
   );
 }
@@ -187,7 +209,13 @@ function TeamGraph({ stages, board, animate }: { stages: ProgressStage[]; board:
           const doneWire = i > 0 && i <= activeIndex - 1;
           const isWriters = stage.key === "drafting" && board.writers.length > 0;
           return (
-            <div key={stage.key} className="min-w-0">
+            <motion.div
+              key={stage.key}
+              className="min-w-0"
+              initial={animate ? { opacity: 0, x: -10 } : false}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.05, duration: 0.35 }}
+            >
               {into && <Wire flowing={flowing} done={doneWire || (activeIndex < 0 && stage.state !== "pending")} animate={animate} />}
               {isWriters ? (
                 <div className={cn("min-w-0 rounded-lg", stage.state === "pending" && "opacity-45")}>
@@ -201,7 +229,7 @@ function TeamGraph({ stages, board, animate }: { stages: ProgressStage[]; board:
               ) : (
                 <NodeCard stage={stage} model={board.modelsByStage[stage.key]} animate={animate} />
               )}
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -345,17 +373,37 @@ export function MissionControl({ stages, board, transcript, partials, working, s
   const briefs = useMemo(() => handoffs(stages), [stages]);
   const done = stages.filter((s) => s.state === "done" || s.state === "skipped").length;
   const percent = Math.round((done / stages.length) * 100);
-  const models = new Set(Object.values(board.modelsByStage)).size;
+  const models = new Set([...Object.values(board.modelsByStage), ...board.writers.flatMap((w) => (w.modelLabel ? [w.modelLabel] : []))]).size;
   const failedCalls = transcript.filter((m) => m.tone === "failed").length;
+  const activeKey = stages.find((s) => s.state === "active")?.key ?? null;
+  const room = useRef<HTMLElement>(null);
+
+  // GSAP: a handoff sends a light sweep across the room.
+  useEffect(() => {
+    const root = room.current;
+    if (!root || !animate || !activeKey) return;
+    const sweep = root.querySelector<HTMLElement>("[data-sweep]");
+    if (!sweep) return;
+    const tween = gsap.fromTo(sweep, { xPercent: -130, opacity: 0.5 }, { xPercent: 130, opacity: 0, duration: 1.1, ease: "power2.inOut" });
+    return () => {
+      tween.kill();
+    };
+  }, [activeKey, animate]);
 
   return (
     <section
+      ref={room}
       aria-label="Mission control"
       className={cn("relative isolate overflow-hidden rounded-3xl border bg-card p-4 text-foreground dark:border-transparent dark:bg-[#0b0a14] dark:text-white sm:p-5", className)}
     >
+      <div
+        data-sweep
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-brand/20 to-transparent opacity-0 dark:via-white/20"
+      />
       <header className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground dark:text-white/55">
         <span className="flex items-center gap-2">
-          <span className={cn("size-1.5 rounded-full", working ? "animate-pulse bg-emerald-400" : "bg-white/40")} aria-hidden />
+          <Signal working={working} animate={animate} />
           {working ? "Live" : "Finished"}
           {elapsedMs !== null && <span className="tabular-nums text-foreground/80 dark:text-white/80">· {formatDuration(elapsedMs)}</span>}
         </span>

@@ -72,8 +72,13 @@ export function planWriters(ctx: PipelineContext): WriterSlot[] {
  * a model while the organization has enough of them.
  */
 export function distinctModels(ctx: PipelineContext): ProviderPreference[] {
+  const all = ctx.router.candidates("json", ctx.availableProviders);
+  // Models the earlier agents used are skipped while enough others remain.
+  const inUse = ctx.modelsInUse ?? new Set<string>();
+  const unused = all.filter((c) => !inUse.has(`${c.provider}::${c.model}`));
+  const candidates = unused.length >= Math.min(DRAFT_LABELS.length, all.length) ? unused : all;
   const byProvider = new Map<AIProviderName, ProviderPreference[]>();
-  for (const c of ctx.router.candidates("json", ctx.availableProviders)) {
+  for (const c of candidates) {
     const list = byProvider.get(c.provider) ?? [];
     if (list.length < DRAFT_LABELS.length) byProvider.set(c.provider, [...list, { provider: c.provider, model: c.model }]);
   }

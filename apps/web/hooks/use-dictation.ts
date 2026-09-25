@@ -48,7 +48,7 @@ export interface Dictation {
   error: string | null;
   /** The browser refused the microphone; the person has to allow it in the address bar. */
   blocked: boolean;
-  start: () => void;
+  start: () => Promise<void>;
   stop: () => void;
   toggle: () => void;
 }
@@ -73,9 +73,27 @@ export function useDictation(): Dictation {
     recognition.current?.stop();
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const Ctor = recognitionCtor();
     if (!Ctor || recognition.current) return;
+    // Ask for the microphone outright so the browser shows its permission
+    // prompt; speech recognition alone can fail silently when it is still undecided.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+    } catch (e) {
+      const name = (e as { name?: string }).name ?? "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setBlocked(true);
+        setError(ERROR_WORDS["not-allowed"]!);
+      } else if (name === "NotFoundError") {
+        setError(ERROR_WORDS["audio-capture"]!);
+      } else {
+        setError("Could not open the microphone.");
+      }
+      return;
+    }
+    if (recognition.current) return;
     const r = new Ctor();
     r.lang = navigator.language || "en-US";
     r.continuous = true;
@@ -116,7 +134,7 @@ export function useDictation(): Dictation {
 
   const toggle = useCallback(() => {
     if (recognition.current) stop();
-    else start();
+    else void start();
   }, [start, stop]);
 
   // Leaving the page mid-sentence must not keep the microphone open.

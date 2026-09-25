@@ -226,6 +226,15 @@ describe("runPipelineToCompletion", () => {
     expect(writers.some((c) => c.system.includes("Contrarian:"))).toBe(true);
   });
 
+  it("spreads the team over a provider's models instead of everyone using the top one", async () => {
+    const { ctx, script } = setup({ availableProviders: ["GOOGLE"] });
+    await runPipelineToCompletion(ctx, "run_1");
+    const models = script.calls.map((c) => c.model);
+    expect(new Set(models)).toEqual(new Set(["gemini-test", "gemini-test-2"]));
+    // The first two agents take the two models in turn rather than both taking the first.
+    expect(models.slice(0, 2)).toEqual(["gemini-test", "gemini-test-2"]);
+  });
+
   it("spreads writers over different providers when their planned provider is down", async () => {
     const { ctx, script } = createTestContext(baseRun({ accounts: [baseRun().accounts[0]!] }), {
       availableProviders: ["GOOGLE", "OPENAI", "ANTHROPIC"],
