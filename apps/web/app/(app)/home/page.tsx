@@ -24,6 +24,7 @@ import { loadAlsoWaiting, loadModelsToday } from "@/lib/home/overview";
 import { providerHealthSummary } from "@/lib/agent/provider-health";
 import { resolveAuth } from "@/lib/ai";
 import { Reveal } from "@/components/ui/reveal";
+import { TeamStandby } from "@/components/agent/team-standby";
 
 export const metadata = { title: "Home" };
 
@@ -307,11 +308,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {threads.length === 0 ? (
         <div className="grid gap-4 py-6">
-          <h2 className="text-xl font-semibold tracking-tight">Nothing in progress. Tell me what to post about.</h2>
+          <TeamStandby />
+          <h2 className="text-xl font-semibold tracking-tight">Your council is standing by. Tell it what to post about.</h2>
           <p className="max-w-prose text-sm text-muted-foreground">
-            One agent researches it with sources, one plans the angle, several writers on different models
-            draft it, a reviewer checks it for the platform, a blind judge picks the best, and you approve.
-            Want a whole month at once? Start on{" "}
+            Scout researches it with sources, Compass picks the angle, three Quills on different models write it,
+            Lens checks it for the platform, Verdict judges blind, Polish fits it, and you approve. Want a whole month?
+            Start on{" "}
             <Link href="/plan" className="underline underline-offset-4">
               Plan
             </Link>

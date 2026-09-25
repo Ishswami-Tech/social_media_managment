@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Bot,
   Calendar,
   FileText,
   Home,
@@ -24,9 +25,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavIcon, NavItem } from "./nav";
+import { TeamPulse } from "./team-pulse";
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   home: Home,
+  agents: Bot,
   create: PenSquare,
   posts: FileText,
   calendar: Calendar,
@@ -113,6 +116,9 @@ export function Sidebar({ main, more, whatsapp = [], org = [], isSuperAdmin, org
             </div>
           </details>
         )}
+        <div className="mt-4">
+          <TeamPulse />
+        </div>
         {isSuperAdmin && (
           <div className="mt-4 border-t pt-2">
             <Link
