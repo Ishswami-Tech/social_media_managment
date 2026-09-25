@@ -57,27 +57,20 @@ function buildAuth() {
                 userAgent: session.userAgent,
               });
             }
-            // If no active organization, create a default one for the user.
+            // A fresh session has no active organization. Point it at one the
+            // user already belongs to; only a brand-new user gets a default one.
             const current = (session as { activeOrganizationId?: string | null }).activeOrganizationId;
             if (!current) {
-              const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { name: true, id: true } });
-              if (user) {
-                const slug = `org-${user.id.slice(0, 8)}`;
-                const org = await prisma.organization.create({
-                  data: {
-                    name: `${user.name ?? "My"} Organization`,
-                    slug,
-                    status: "ACTIVE",
-                    members: { create: { userId: user.id, role: "OWNER", status: "ACTIVE" } },
-                  },
-                  select: { id: true },
-                });
-                await prisma.organizationSettings.create({
-                  data: { organizationId: org.id },
-                });
+              const membership = await prisma.member.findFirst({
+                where: { userId: session.userId, status: "ACTIVE" },
+                orderBy: { createdAt: "asc" },
+                select: { organizationId: true },
+              });
+              const organizationId = membership?.organizationId ?? (await createDefaultOrganization(session.userId));
+              if (organizationId) {
                 await prisma.session.update({
                   where: { id: session.id },
-                  data: { activeOrganizationId: org.id },
+                  data: { activeOrganizationId: organizationId },
                 });
               }
             }
@@ -203,6 +196,26 @@ export function getAuth(): Auth {
  * is deferred to first use so route collection at build time never needs
  * secrets. All property access is forwarded to the real instance.
  */
+/** First sign-in of a user with no organization: one is made for them, named after them. */
+async function createDefaultOrganization(userId: string): Promise<string | undefined> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, id: true } });
+  if (!user) return undefined;
+  const slug = `org-${user.id.slice(0, 8)}`;
+  const org = await prisma.organization.upsert({
+    where: { slug },
+    update: { members: { create: { userId: user.id, role: "OWNER", status: "ACTIVE" } } },
+    create: {
+      name: `${user.name ?? "My"} Organization`,
+      slug,
+      status: "ACTIVE",
+      members: { create: { userId: user.id, role: "OWNER", status: "ACTIVE" } },
+      settings: { create: {} },
+    },
+    select: { id: true },
+  });
+  return org.id;
+}
+
 export const auth: Auth = new Proxy({} as Auth, {
   get(_target, prop) {
     // Framework/runtime probes (thenable checks, React element checks, serialisation)
