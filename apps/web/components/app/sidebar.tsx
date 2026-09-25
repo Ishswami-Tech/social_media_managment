@@ -88,8 +88,8 @@ export function Sidebar({ main, more, whatsapp = [], org = [], isSuperAdmin, org
   const moreOpen = secondary.some((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar/70 text-sidebar-foreground backdrop-blur-xl md:flex">
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border/60 px-4 font-semibold">
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4 font-semibold">
         <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-2 text-white shadow-[0_6px_16px_-6px_color-mix(in_oklch,var(--brand)_70%,transparent)]">
           <Sparkles className="size-4" />
         </span>

@@ -73,8 +73,8 @@ function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
       initial={reduced ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "relative grid content-start gap-2 rounded-xl border bg-white/60 p-3 text-sm backdrop-blur-xl dark:bg-white/[0.04]",
-        seat.winner ? "border-emerald-500/60 shadow-[0_0_0_3px_color-mix(in_oklch,#10b981_18%,transparent)]" : "border-white/60 dark:border-white/10",
+        "relative grid content-start gap-2 rounded-xl border bg-card p-3 text-sm",
+        seat.winner ? "border-emerald-500/60 shadow-[0_0_0_3px_color-mix(in_oklch,#10b981_18%,transparent)]" : "border-border dark:border-border",
       )}
     >
       {seat.winner && (
@@ -100,7 +100,7 @@ function WriterCard({ seat, animate }: { seat: AgentSeat; animate: boolean }) {
         </span>
         {seat.label && WRITER_LANES[seat.label] && (
           <span
-            className="rounded-full border border-white/60 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:border-white/10"
+            className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground dark:border-border"
             title={WRITER_LANES[seat.label]!.brief}
           >
             {WRITER_LANES[seat.label]!.name} lane
@@ -178,8 +178,8 @@ export function CouncilBoard({ board, working }: { board: AgentBoard; working: b
           <li
             key={seat.role}
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs backdrop-blur-xl",
-              seat.state === "active" ? "border-transparent shadow-sm" : "border-white/60 bg-white/50 dark:border-white/10 dark:bg-white/[0.04]",
+              "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs",
+              seat.state === "active" ? "border-transparent shadow-sm" : "border-border bg-card dark:border-border",
             )}
             style={seat.state === "active" ? { backgroundImage: `linear-gradient(135deg, ${identity.from}22, ${identity.to}22)` } : undefined}
             title={`${identity.role}: ${seat.detail}`}

@@ -287,7 +287,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   }));
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+      <div className="mx-auto w-full max-w-3xl flex-1">
       <div className="flex items-center justify-between gap-3 pb-4">
         <h1 className="text-sm font-medium text-muted-foreground">Today</h1>
         <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
@@ -302,18 +303,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
           That page is not available to your role. Ask someone who owns this workspace.
         </p>
-      )}
-
-      {canCreate ? (
-        <ComposerBar
-          placement="top"
-          accounts={composerAccounts}
-          skills={customSkills}
-          plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
-          models={composerModels}
-        />
-      ) : (
-        <p className="mb-6 text-sm text-muted-foreground">Your role can read posts but not write them.</p>
       )}
 
       {threads.length === 0 ? (
@@ -341,6 +330,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       )}
 
       <AlsoWaiting items={alsoWaiting} />
+      </div>
+
+      {canCreate ? (
+        <ComposerBar
+          accounts={composerAccounts}
+          skills={customSkills}
+          plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
+          models={composerModels}
+        />
+      ) : (
+        <p className="sticky bottom-0 -mx-4 bg-background px-4 py-3 text-sm text-muted-foreground md:-mx-6 md:px-6">
+          Your role can read posts but not write them.
+        </p>
+      )}
     </div>
   );
 }

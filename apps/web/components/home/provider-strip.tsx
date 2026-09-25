@@ -28,7 +28,7 @@ export function ProviderStrip({ providers }: { providers: ProviderStatus[] }) {
         return (
           <li
             key={p.provider}
-            className={cn("inline-flex items-center gap-1.5 rounded-full border bg-white/50 px-2.5 py-1 text-xs backdrop-blur-xl dark:bg-white/[0.04]", TONE[p.state])}
+            className={cn("inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs", TONE[p.state])}
             title={p.reason ?? (p.avgLatencyMs ? `avg ${(p.avgLatencyMs / 1000).toFixed(1)} s` : "healthy")}
           >
             <Icon className="size-3.5" aria-hidden />

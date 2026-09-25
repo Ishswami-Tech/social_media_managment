@@ -69,7 +69,7 @@ export function TodayBar({ stats }: { stats: TodayStats }) {
           </>
         );
         const className =
-          "grid gap-1 rounded-xl border border-white/60 bg-white/55 px-3 py-2.5 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-white/[0.04]";
+          "grid gap-1 rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-border";
         return t.href ? (
           <Link key={t.label} href={t.href} className={className}>
             {body}

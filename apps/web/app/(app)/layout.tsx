@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <div className="relative flex h-screen min-w-0 flex-1 flex-col overflow-y-auto">
         <Aurora />
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl md:px-6">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border/60 bg-background px-4 md:px-6">
           <div className="text-sm text-muted-foreground md:hidden">{ctx.organization.name}</div>
           <div className="hidden md:block" />
           <div className="flex items-center gap-3">

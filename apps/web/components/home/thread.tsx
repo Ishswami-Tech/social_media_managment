@@ -197,7 +197,7 @@ function ResultCard({
   const published = Boolean(account.postId);
 
   return (
-    <article className="relative grid gap-3 rounded-2xl border border-white/60 bg-white/60 p-3 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+    <article className="relative grid gap-3 rounded-2xl border border-border bg-card p-3 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] dark:border-border">
       <Celebrate token={celebration} />
       <header className="flex flex-wrap items-center gap-2">
         <PlatformIcon platform={account.platform} />
@@ -294,7 +294,7 @@ function ResultCard({
             />
           )}
           {scheduling && (
-            <div className="grid gap-1 rounded-lg border border-white/60 bg-white/50 p-2 text-xs backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="grid gap-1 rounded-lg border border-border bg-card p-2 text-xs dark:border-border">
               <label className="grid gap-1">
                 <span className="text-muted-foreground">Publish at (your local time)</span>
                 <Input type="datetime-local" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} className="h-8 w-56 text-xs" />

@@ -161,7 +161,7 @@ const TRIGGER_CLASS =
 type Placement = "top" | "bottom";
 
 const WRAPPER: Record<Placement, string> = {
-  bottom: "sticky bottom-0 z-10 -mx-4 border-t bg-background/85 px-4 py-3 backdrop-blur md:-mx-6 md:px-6",
+  bottom: "sticky bottom-0 z-10 -mx-4 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-8 md:-mx-6 md:px-6",
   top: "mb-6",
 };
 
@@ -302,7 +302,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
           </div>
         )}
 
-        <div className="grid gap-2 rounded-2xl border border-white/70 bg-white/70 p-2 shadow-[0_18px_50px_-24px_rgba(80,60,200,0.45)] backdrop-blur-xl transition-[box-shadow,border-color] focus-within:border-brand/50 focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--brand)_14%,transparent),0_18px_50px_-20px_color-mix(in_oklch,var(--brand)_45%,transparent)] dark:border-white/10 dark:bg-white/[0.05]">
+        <div className="grid gap-2 rounded-[26px] border bg-card p-2.5 shadow-[0_16px_48px_-18px_rgba(0,0,0,0.35)] transition-[box-shadow,border-color] focus-within:border-brand/50 focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--brand)_14%,transparent),0_16px_48px_-18px_color-mix(in_oklch,var(--brand)_45%,transparent)] dark:shadow-[0_16px_48px_-18px_rgba(0,0,0,0.8)]">
           <Textarea
             ref={textarea}
             value={text}
@@ -321,7 +321,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
             }}
             placeholder={placement === "top" ? "What's on your mind? Tell me what to post about." : "What do you want to post about?"}
             aria-label="What do you want to post about?"
-            className="max-h-[200px] min-h-9 resize-none border-0 bg-transparent px-2 py-1.5 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
+            className="max-h-[200px] min-h-10 resize-none border-0 bg-transparent px-3 py-2 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
 
           <div className="flex flex-wrap items-center gap-1.5">

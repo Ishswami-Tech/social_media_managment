@@ -109,7 +109,7 @@ export function PromptLab({ prompts, runs }: { prompts: PromptOption[]; runs: La
 
   return (
     <div className="grid gap-4">
-      <section className="grid gap-3 rounded-2xl border border-white/60 bg-white/55 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+      <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 dark:border-border">
         <div className="grid gap-3 md:grid-cols-3">
           <label className="grid gap-1 text-sm">
             <span className="font-medium">Prompt</span>
@@ -201,7 +201,7 @@ export function PromptLab({ prompts, runs }: { prompts: PromptOption[]; runs: La
 
       {result && (
         <section className="grid gap-3">
-          <details className="rounded-xl border border-white/60 bg-white/50 p-3 text-xs backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+          <details className="rounded-xl border border-border bg-card p-3 text-xs dark:border-border">
             <summary className="cursor-pointer font-medium">
               Rendered prompt · {PROMPT_LABELS[result.promptKey] ?? result.promptKey} v{result.promptVersion} · {result.system.length.toLocaleString()} chars
             </summary>
@@ -221,7 +221,7 @@ export function PromptLab({ prompts, runs }: { prompts: PromptOption[]; runs: La
 function ResultCard({ result, run, accountId }: { result: LabModelResult; run: LabRunOption | undefined; accountId: string }) {
   const account = run?.accounts.find((a) => a.id === accountId);
   return (
-    <article className={cn("grid content-start gap-2 rounded-xl border bg-white/60 p-3 text-sm backdrop-blur-xl dark:bg-white/[0.04]", result.ok ? "border-white/60 dark:border-white/10" : "border-destructive/50")}>
+    <article className={cn("grid content-start gap-2 rounded-xl border bg-card p-3 text-sm", result.ok ? "border-border dark:border-border" : "border-destructive/50")}>
       <header className="flex flex-wrap items-center gap-2">
         {account && <PlatformIcon platform={account.platform} className="size-4 text-[8px]" />}
         <span className="font-semibold">{result.model}</span>

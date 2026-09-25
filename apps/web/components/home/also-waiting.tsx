@@ -16,7 +16,7 @@ export function AlsoWaiting({ items }: { items: WaitingItem[] }) {
   return (
     <section
       aria-label="Also waiting for you"
-      className="grid gap-1 rounded-2xl border border-white/60 bg-white/55 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]"
+      className="grid gap-1 rounded-2xl border border-border bg-card p-3 dark:border-border"
     >
       <h2 className="flex items-center gap-1.5 px-2 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
         <Inbox className="size-3.5" aria-hidden /> Also waiting for you · {items.length}

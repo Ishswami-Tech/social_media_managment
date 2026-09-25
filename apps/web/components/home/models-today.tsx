@@ -14,7 +14,7 @@ export function ModelsToday({ models }: { models: ModelUse[] }) {
       {models.map((m) => (
         <span
           key={`${m.provider}:${m.model}`}
-          className="inline-flex items-center gap-1 rounded-full border bg-white/50 px-2.5 py-1 backdrop-blur-xl dark:bg-white/[0.04]"
+          className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1"
           title={`${m.providerLabel} · ${m.model}`}
         >
           <span className="font-medium">{m.label}</span>

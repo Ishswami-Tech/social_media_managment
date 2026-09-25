@@ -89,7 +89,7 @@ function PlanForm({ accounts, onCreated }: { accounts: PlanAccount[]; onCreated:
   }
 
   return (
-    <section className="grid gap-3 rounded-2xl border border-white/60 bg-white/55 p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+    <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] dark:border-border">
       <h2 className="text-base font-semibold">Plan a month</h2>
       <Textarea
         value={theme}
@@ -156,7 +156,7 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
 
   const started = plan.items.filter((i) => i.runId).length;
   return (
-    <section className="grid gap-3 rounded-2xl border border-white/60 bg-white/55 p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04]">
+    <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-[0_18px_50px_-30px_rgba(80,60,200,0.35)] dark:border-border">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">{plan.theme}</h2>
@@ -168,7 +168,7 @@ function PlanCard({ plan, canStart }: { plan: ContentPlanView; canStart: boolean
       <div className="relative grid gap-3 pl-6 before:absolute before:bottom-3 before:left-[9px] before:top-3 before:w-px before:bg-gradient-to-b before:from-brand/60 before:via-border before:to-brand-2/60" role="list">
         {plan.items.map((item, index) => (
           <Reveal key={`${item.date}-${index}`} index={index}>
-            <div role="listitem" className="relative grid gap-1 rounded-xl border border-white/60 bg-white/60 p-3 text-sm shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-md md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3 dark:border-white/10 dark:bg-white/[0.04]">
+            <div role="listitem" className="relative grid gap-1 rounded-xl border border-border bg-card p-3 text-sm shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:grid-cols-[7rem_1fr_auto] md:items-start md:gap-3 dark:border-border">
             <span aria-hidden className={cn("absolute -left-6 top-4 size-[11px] rounded-full ring-4 ring-background", item.runId ? "bg-emerald-500" : "bg-gradient-to-br from-brand to-brand-2")} />
             <div className="grid gap-1 text-xs text-muted-foreground">
               <span className="font-medium text-foreground">{item.date}</span>

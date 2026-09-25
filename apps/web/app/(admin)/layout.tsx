@@ -23,7 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-end border-b bg-background/80 px-6 backdrop-blur">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-end border-b bg-background px-6">
           <UserMenu
             user={{ name: session.user.name, email: session.user.email, image: session.user.image }}
             role="SUPER ADMIN"
