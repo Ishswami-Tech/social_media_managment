@@ -18,6 +18,7 @@ import { Reveal } from "@/components/ui/reveal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { MicButton } from "@/components/ui/mic-button";
 
 export interface PlanAccount {
   id: string;
@@ -132,13 +133,17 @@ function PlanForm({ accounts, onCreated, onCancel }: { accounts: PlanAccount[]; 
         )}
       </div>
       <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Name (optional), e.g. October launch" />
-      <Textarea
-        value={theme}
-        onChange={(e) => setTheme(e.target.value)}
-        rows={3}
-        maxLength={2000}
-        placeholder="What should this month sell or establish? e.g. Get cafe owners to try WhatsApp ordering; we have 3 customer stories and a free setup offer."
-      />
+      <div className="relative">
+        <Textarea
+          value={theme}
+          onChange={(e) => setTheme(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          className="pr-10"
+          placeholder="What should this month sell or establish? e.g. Get cafe owners to try WhatsApp ordering; we have 3 customer stories and a free setup offer."
+        />
+        <MicButton value={theme} onChange={setTheme} className="absolute right-2 top-2" />
+      </div>
       <Input value={audience} onChange={(e) => setAudience(e.target.value)} maxLength={500} placeholder="Audience (optional), e.g. independent cafe owners in Pune" />
       <div className="flex flex-wrap items-center gap-2">
         {accounts.map((a) => {

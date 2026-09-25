@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowUp, Check, Cpu, ImagePlus, Loader2, Plug, Plus, ShieldCheck, X } from "lucide-react";
+import { MicButton } from "@/components/ui/mic-button";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { Button } from "@/components/ui/button";
@@ -470,6 +471,14 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
             </button>
 
             <span className="ml-auto flex items-center gap-2">
+              <MicButton
+                value={text}
+                onChange={(next) => {
+                  setText(next);
+                  window.setTimeout(grow, 0);
+                }}
+                disabled={busy}
+              />
               {tooManyAccounts && (
                 <span className="text-xs text-muted-foreground">Pick at most {MAX_ACCOUNTS} accounts.</span>
               )}

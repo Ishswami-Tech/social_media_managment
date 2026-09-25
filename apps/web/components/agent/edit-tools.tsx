@@ -10,6 +10,7 @@ import { Loader2, Save, Wand2 } from "lucide-react";
 import type { PerformanceBadgeProps } from "@/components/agent/performance-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MicButton } from "@/components/ui/mic-button";
 
 export interface EditedAccount {
   text: string;
@@ -90,6 +91,7 @@ export function EditTools({ runId, accountId, text, savedText, disabled, onUpdat
           aria-label="Revise with AI"
           className="min-w-[16rem] flex-1"
         />
+        <MicButton value={instruction} onChange={setInstruction} disabled={busy} />
         <Button size="sm" variant="outline" onClick={() => void revise()} disabled={busy || instruction.trim().length < 2}>
           {revising ? <Loader2 className="animate-spin" aria-hidden /> : <Wand2 aria-hidden />} Revise with AI
         </Button>
