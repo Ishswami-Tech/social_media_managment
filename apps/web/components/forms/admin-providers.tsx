@@ -34,6 +34,12 @@ const PROVIDER_TYPES = [
     baseUrlRequired: false,
   },
   {
+    value: "META",
+    label: "Meta AI (Muse Spark)",
+    placeholder: "https://api.meta.ai/v1",
+    baseUrlRequired: false,
+  },
+  {
     value: "HUGGINGFACE",
     label: "Hugging Face (images, free tier)",
     placeholder: "https://router.huggingface.co/hf-inference",
@@ -57,7 +63,7 @@ type ProviderType = (typeof PROVIDER_TYPES)[number]["value"];
 
 function typeFor(connection: ProviderConnection): ProviderType {
   const stored = connection.provider.toUpperCase();
-  if (stored === "ANTHROPIC" || stored === "GOOGLE" || stored === "HUGGINGFACE" || stored === "POLLINATIONS") return stored;
+  if (stored === "ANTHROPIC" || stored === "GOOGLE" || stored === "META" || stored === "HUGGINGFACE" || stored === "POLLINATIONS") return stored;
   return connection.baseUrl ? "GATEWAY" : "OPENAI";
 }
 

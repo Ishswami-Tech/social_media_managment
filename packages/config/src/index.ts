@@ -6,62 +6,87 @@ const optionalString = z
   .optional()
   .transform((v) => (v === "" ? undefined : v));
 
-export const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  APP_URL: z.string().url().default("http://localhost:3000"),
-  WEBHOOK_BASE_URL: z.string().url().optional(),
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    APP_URL: z.string().url().default("http://localhost:3000"),
+    WEBHOOK_BASE_URL: z.string().url().optional(),
 
-  DATABASE_URL: z.string().min(1),
-  DIRECT_URL: optionalString,
-  REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
+    DATABASE_URL: z.string().min(1),
+    DIRECT_URL: optionalString,
+    REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
 
-  AUTH_SECRET: z.string().min(16, "AUTH_SECRET must be at least 16 characters"),
-  ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must be 32 bytes (base64 or hex)"),
+    AUTH_SECRET: z.string().min(16, "AUTH_SECRET must be at least 16 characters"),
+    ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must be 32 bytes (base64 or hex)"),
 
-  R2_ACCOUNT_ID: optionalString,
-  R2_ACCESS_KEY_ID: optionalString,
-  R2_SECRET_ACCESS_KEY: optionalString,
-  R2_BUCKET: optionalString,
-  R2_PUBLIC_BASE_URL: optionalString,
-  MEDIA_LOCAL_DIR: optionalString,
+    S3_ENDPOINT: optionalString.pipe(
+      z
+        .string()
+        .url()
+        .refine((value) => new URL(value).protocol === "https:", "S3 endpoint must use HTTPS")
+        .optional(),
+    ),
+    S3_REGION: optionalString,
+    S3_ACCESS_KEY_ID: optionalString,
+    S3_SECRET_ACCESS_KEY: optionalString,
+    S3_BUCKET: optionalString,
+    S3_PUBLIC_BASE_URL: optionalString.pipe(z.string().url().optional()),
 
-  LINKEDIN_CLIENT_ID: optionalString,
-  LINKEDIN_CLIENT_SECRET: optionalString,
-  /** YYYYMM `LinkedIn-Version` header; LinkedIn retires versions after ~1 year. */
-  LINKEDIN_API_VERSION: optionalString.refine((v) => v === undefined || /^\d{6}$/.test(v), {
-    message: "LINKEDIN_API_VERSION must be YYYYMM, e.g. 202609",
-  }),
-  META_APP_ID: optionalString,
-  META_APP_SECRET: optionalString,
-  META_WEBHOOK_VERIFY_TOKEN: optionalString,
+    R2_ACCOUNT_ID: optionalString,
+    R2_ACCESS_KEY_ID: optionalString,
+    R2_SECRET_ACCESS_KEY: optionalString,
+    R2_BUCKET: optionalString,
+    R2_PUBLIC_BASE_URL: optionalString,
+    MEDIA_LOCAL_DIR: optionalString,
 
-  OPENAI_API_KEY: optionalString,
-  ANTHROPIC_API_KEY: optionalString,
-  ANTHROPIC_BASE_URL: optionalString,
-  GOOGLE_AI_API_KEY: optionalString,
-  /** Free-tier image providers: a Hugging Face token (monthly credits) and an optional Pollinations token. */
-  HUGGINGFACE_API_KEY: optionalString,
-  POLLINATIONS_API_KEY: optionalString,
-  /** Set to "false" to stop using the keyless Pollinations image API as a last resort. */
-  POLLINATIONS_ENABLED: optionalString,
-  TAVILY_API_KEY: optionalString,
-  BRAVE_SEARCH_API_KEY: optionalString,
+    LINKEDIN_CLIENT_ID: optionalString,
+    LINKEDIN_CLIENT_SECRET: optionalString,
+    /** YYYYMM `LinkedIn-Version` header; LinkedIn retires versions after ~1 year. */
+    LINKEDIN_API_VERSION: optionalString.refine((v) => v === undefined || /^\d{6}$/.test(v), {
+      message: "LINKEDIN_API_VERSION must be YYYYMM, e.g. 202609",
+    }),
+    META_APP_ID: optionalString,
+    META_APP_SECRET: optionalString,
+    META_WEBHOOK_VERIFY_TOKEN: optionalString,
 
-  RESEND_API_KEY: optionalString,
-  EMAIL_FROM: optionalString,
+    OPENAI_API_KEY: optionalString,
+    ANTHROPIC_API_KEY: optionalString,
+    ANTHROPIC_BASE_URL: optionalString,
+    GOOGLE_AI_API_KEY: optionalString,
+    /** Meta AI (Muse Spark) through the Responses API; the base URL defaults to https://api.meta.ai/v1. */
+    META_API_KEY: optionalString,
+    META_BASE_URL: optionalString,
+    /** Free-tier image providers: a Hugging Face token (monthly credits) and an optional Pollinations token. */
+    HUGGINGFACE_API_KEY: optionalString,
+    POLLINATIONS_API_KEY: optionalString,
+    /** Set to "false" to stop using the keyless Pollinations image API as a last resort. */
+    POLLINATIONS_ENABLED: optionalString,
+    TAVILY_API_KEY: optionalString,
+    BRAVE_SEARCH_API_KEY: optionalString,
 
-  CRON_SECRET: optionalString,
-  SENTRY_DSN: optionalString,
-  LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+    RESEND_API_KEY: optionalString,
+    EMAIL_FROM: optionalString,
 
-  /** Per-organization budget for AI endpoints; 0 disables. */
-  AI_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(0).default(60),
-  /** Allow plugins (MCP servers / HTTP tools) on private or loopback addresses, e.g. self-hosted on a LAN. */
-  PLUGIN_ALLOW_PRIVATE_URLS: z
-    .string()
-    .optional()
-    .transform((v) => v === "1" || v === "true"),
-});
+    CRON_SECRET: optionalString,
+    SENTRY_DSN: optionalString,
+    LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+
+    /** Per-organization budget for AI endpoints; 0 disables. */
+    AI_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(0).default(60),
+    /** Allow plugins (MCP servers / HTTP tools) on private or loopback addresses, e.g. self-hosted on a LAN. */
+    PLUGIN_ALLOW_PRIVATE_URLS: z
+      .string()
+      .optional()
+      .transform((v) => v === "1" || v === "true"),
+  })
+  .superRefine((env, ctx) => {
+    const required = ["S3_ENDPOINT", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET"] as const;
+    if (required.some((key) => env[key]) || env.S3_PUBLIC_BASE_URL) {
+      for (const key of required) {
+        if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "Required when S3 storage is configured" });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

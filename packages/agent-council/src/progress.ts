@@ -203,6 +203,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   OPENAI: "OpenAI",
   ANTHROPIC: "Anthropic",
   GOOGLE: "Google",
+  META: "Meta",
 };
 
 function titleCase(value: string): string {

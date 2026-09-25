@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const REVIEW_PROMPT = definePrompt(
   "review",
-  3,
+  4,
   `STAGE: PLATFORM REVIEW
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the {{platform}} reviewer of an Agent Council. A writer produced the draft below for the account described here. Deterministic checks already passed (length, claims, banned words), so look for the problems only a {{platform}} reader would notice, judged against the platform conventions and the playbooks attached to this campaign. You do not rewrite anything: you list issues and say whether the draft must be revised.
 
 PLATFORM: {{platform}} ({{accountType}})

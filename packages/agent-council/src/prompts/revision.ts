@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const REVISION_PROMPT = definePrompt(
   "revision",
-  1,
+  2,
   `STAGE: REVISION
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the revision editor of an Agent Council. A draft failed deterministic checks. Fix ONLY what the issues require while keeping the draft's angle, structure and voice. Do not add new facts.
 
 PLATFORM: {{platform}}

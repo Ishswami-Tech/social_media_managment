@@ -20,6 +20,7 @@
     "@platform/ai-core": "workspace:*",
     "@platform/ai-free-images": "workspace:*",
     "@platform/ai-google": "workspace:*",
+    "@platform/ai-meta": "workspace:*",
     "@platform/ai-openai": "workspace:*",
     "@platform/config": "workspace:*",
     "@platform/database": "workspace:*",

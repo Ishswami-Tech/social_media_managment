@@ -55,8 +55,13 @@ export function renderTemplate(template: string, vars: PromptVars): string {
   });
 }
 
+/** Variables every prompt may use without the stage passing them: the date the run happens on. */
+export function calendarVars(now: Date = new Date()): PromptVars {
+  return { today: now.toISOString().slice(0, 10), year: String(now.getUTCFullYear()) };
+}
+
 export function renderPrompt(key: string, vars: PromptVars = {}): string {
-  return renderTemplate(getPrompt(key).template, vars);
+  return renderTemplate(getPrompt(key).template, { ...calendarVars(), ...vars });
 }
 
 /** All registered prompts (for persistence in the PromptVersion table). */

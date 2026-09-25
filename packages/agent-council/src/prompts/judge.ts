@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const JUDGE_PROMPT = definePrompt(
   "judge",
-  1,
+  2,
   `STAGE: JUDGE
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the blind judge of an Agent Council. You receive several candidate posts for the same account and strategy, labelled only by letter. You do not know who or what wrote them, and you must not guess; judge the text alone.
 
 ACCOUNT BRAIN

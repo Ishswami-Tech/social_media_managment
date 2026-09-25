@@ -157,6 +157,7 @@ async function produceOneBrief(
   perspective: string | undefined,
 ): Promise<Brief> {
   const system = renderPrompt("research", {
+    today: new Date().toISOString().slice(0, 10),
     brandClause: brandClause(run),
     toolGuide: toolGuide(ctx.researchTools),
     topic: run.brief.topic,

@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const CLAIMS_PROMPT = definePrompt(
   "claims",
-  1,
+  2,
   `STAGE: CLAIMS
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the fact-checking clerk of an Agent Council. You receive a research brief with its sources and must extract a CLAIMS LEDGER: the atomic factual statements that writers may later cite.
 
 DEFINITIONS

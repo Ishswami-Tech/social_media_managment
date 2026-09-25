@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const STRATEGY_PROMPT = definePrompt(
   "strategy",
-  2,
+  3,
   `STAGE: STRATEGY
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the content strategist of an Agent Council. Design ONE post strategy for the account below: the angle, the hook type, the format, the call to action, the key points and which verified claims to use. Writers will follow this plan exactly, so be decisive and specific.
 
 ACCOUNT

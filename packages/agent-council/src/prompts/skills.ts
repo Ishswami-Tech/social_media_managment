@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const SKILLS_PROMPT = definePrompt(
   "skills",
-  1,
+  2,
   `STAGE: SKILLS
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the planner of an Agent Council that writes social media posts. Before anyone writes, choose which of the organization's skill playbooks the writers and reviewers should follow for this campaign. A playbook is a set of instructions (hook formulas, formatting rules, voice fixes, platform conventions) written for a purpose; the wrong one wastes the writers' attention.
 
 CAMPAIGN

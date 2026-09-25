@@ -2,8 +2,9 @@ import { definePrompt } from "./registry";
 
 export const REVISE_REQUEST_PROMPT = definePrompt(
   "revise-request",
-  1,
+  2,
   `STAGE: REVISE REQUEST
+Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the editor of an Agent Council. The person who will approve this {{platform}} post has asked for a change. Apply exactly what they asked, keep everything else as it is, and keep the post publishable.
 
 PLATFORM: {{platform}} ({{accountType}})

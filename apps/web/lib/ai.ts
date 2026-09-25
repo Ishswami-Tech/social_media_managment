@@ -12,6 +12,7 @@ import { AnthropicProvider } from "@platform/ai-anthropic";
 import { HuggingFaceProvider, PollinationsProvider } from "@platform/ai-free-images";
 import { GoogleProvider } from "@platform/ai-google";
 import { OpenAIProvider } from "@platform/ai-openai";
+import { MetaProvider } from "@platform/ai-meta";
 import type { AICapability, AIProviderName } from "@platform/types";
 import { createHash } from "node:crypto";
 import { keyring, prisma } from "./db";
@@ -22,6 +23,7 @@ const realProviders = new Map<AIProviderName, AIProvider>([
   ["OPENAI", new OpenAIProvider()],
   ["ANTHROPIC", new AnthropicProvider()],
   ["GOOGLE", new GoogleProvider()],
+  ["META", new MetaProvider()],
   ["HUGGINGFACE", new HuggingFaceProvider()],
   ["POLLINATIONS", new PollinationsProvider()],
 ]);
@@ -64,6 +66,7 @@ export function normalizeProvider(name: string | null | undefined): AIProviderNa
   const n = (name ?? "").trim().toLowerCase();
   if (n.includes("anthropic") || n.includes("claude")) return "ANTHROPIC";
   if (n.includes("google") || n.includes("gemini")) return "GOOGLE";
+  if (n.includes("meta") || n.includes("muse") || n.includes("llama")) return "META";
   if (n.includes("hugging") || n === "hf" || n.startsWith("hf ")) return "HUGGINGFACE";
   if (n.includes("pollinations")) return "POLLINATIONS";
   return "OPENAI";
@@ -136,6 +139,7 @@ export async function platformAISources(): Promise<PlatformAISource[]> {
     ["OPENAI", env.OPENAI_API_KEY, undefined],
     ["ANTHROPIC", env.ANTHROPIC_API_KEY, env.ANTHROPIC_BASE_URL],
     ["GOOGLE", env.GOOGLE_AI_API_KEY, undefined],
+    ["META", env.META_API_KEY, env.META_BASE_URL],
     ["HUGGINGFACE", env.HUGGINGFACE_API_KEY, undefined],
     // Pollinations needs no key: on by default as the image provider of last resort.
     ["POLLINATIONS", env.POLLINATIONS_ENABLED === "false" ? undefined : (env.POLLINATIONS_API_KEY ?? ""), undefined],
@@ -190,6 +194,23 @@ function normalizeCapabilities(caps: string[]): AICapability[] {
   return [...set];
 }
 
+const IMAGE_MODEL = /image|imagen|dall-e|nano-banana|flux|stable-diffusion|sdxl|sd3|midjourney|ideogram/i;
+const NOT_A_CONTENT_MODEL = /audio|tts|speech|transcri|whisper|realtime|lyria|music|video|veo|sora|embed|moderation|omni-.*audio|rerank/i;
+
+/**
+ * What a listed model is for, read from its name: image models make images
+ * and never write posts; audio, video, embedding and moderation models do
+ * neither here. Everything else is a content model. A listing that already
+ * says "image" is trusted.
+ */
+export function classifyModel(id: string, reported: readonly string[]): AICapability[] {
+  const said = new Set(reported as AICapability[]);
+  if (said.has("image") && !said.has("text")) return ["image"];
+  if (IMAGE_MODEL.test(id)) return ["image"];
+  if (NOT_A_CONTENT_MODEL.test(id)) return [];
+  return normalizeCapabilities(reported.length > 0 ? [...reported] : ["text"]);
+}
+
 /**
  * Lists the models a provider endpoint currently serves. Results are cached for
  * a few minutes per endpoint+credential; failures return undefined so callers
@@ -210,7 +231,8 @@ async function listLiveModels(
     const listed = await impl.listModels(auth);
     const models = listed
       .filter((m) => provider !== "OPENAI" || OPENAI_MODEL_PREFIXES.some((p) => m.id.toLowerCase().startsWith(p)))
-      .map((m) => ({ id: m.id, displayName: m.displayName, capabilities: normalizeCapabilities(m.capabilities) }));
+      .map((m) => ({ id: m.id, displayName: m.displayName, capabilities: classifyModel(m.id, m.capabilities) }))
+      .filter((m) => m.capabilities.length > 0);
     cache.set(cacheKey, { at: Date.now(), models });
     return models;
   } catch (e) {
@@ -222,7 +244,7 @@ async function listLiveModels(
 /** What a platform source currently serves: its allow-list when it has one, otherwise a live listing. */
 export async function platformSourceModels(source: PlatformAISource): Promise<LiveModel[]> {
   if (source.models)
-    return source.models.map((id) => ({ id, displayName: id, capabilities: DEFAULT_TEXT_CAPABILITIES }));
+    return source.models.map((id) => ({ id, displayName: id, capabilities: classifyModel(id, DEFAULT_TEXT_CAPABILITIES) })).filter((m) => m.capabilities.length > 0);
   return (await listLiveModels(source.provider, source.auth, source.scope)) ?? [];
 }
 
@@ -254,7 +276,7 @@ export async function discoverModels(organizationId: string): Promise<Selectable
     if (c.models) {
       try {
         const ids = JSON.parse(c.models) as string[];
-        models = ids.map((id) => ({ id, displayName: id, capabilities: DEFAULT_TEXT_CAPABILITIES }));
+        models = ids.map((id) => ({ id, displayName: id, capabilities: classifyModel(id, DEFAULT_TEXT_CAPABILITIES) })).filter((m) => m.capabilities.length > 0);
       } catch {
         models = undefined;
       }
