@@ -443,26 +443,53 @@ async function callProvider(
 }
 
 /** `callModel` in JSON mode with schema validation; a parse failure is recorded before it bubbles up. */
+/**
+ * A JSON call that survives one bad answer: when the model's JSON cannot be
+ * parsed or does not fit the schema, the same call goes once more to a
+ * different model (the broken one is avoided). A second bad answer is the
+ * caller's problem, as before.
+ */
 export async function callJson<T>(
   ctx: PipelineContext,
   input: Omit<ModelCallInput, "capability" | "json">,
   schema: z.ZodType<T>,
 ): Promise<{ value: T; call: ModelCallResult }> {
-  const call = await callModel(ctx, { ...input, capability: "json", json: true });
+  const first = await callModel(ctx, { ...input, capability: "json", json: true });
   try {
-    return { value: parseJsonOutput(schema, call.text), call };
+    return { value: parseJsonOutput(schema, first.text), call: first };
   } catch (error) {
-    await ctx.store.addEvent(input.runId, {
-      step: input.step,
-      status: "FAILED",
-      promptKey: call.promptKey,
-      promptVersion: call.promptVersion,
-      promptHash: call.promptHash,
-      provider: call.provider,
-      model: call.model,
-      error: `The model's JSON did not match the expected shape: ${errorMessage(error)}`,
-      validation: errorMessage(error),
-    });
+    await recordBadJson(ctx, input, first, error);
+  }
+  const retry = await callModel(ctx, {
+    ...input,
+    capability: "json",
+    json: true,
+    avoidModels: [...(input.avoidModels ?? []), `${first.provider}::${first.model}`],
+    user: `${input.user}\nThe previous answer was not valid JSON. Return one complete, valid JSON object and nothing else.`,
+  });
+  try {
+    return { value: parseJsonOutput(schema, retry.text), call: retry };
+  } catch (error) {
+    await recordBadJson(ctx, input, retry, error);
     throw error;
   }
+}
+
+async function recordBadJson(
+  ctx: PipelineContext,
+  input: Pick<ModelCallInput, "runId" | "step">,
+  call: ModelCallResult,
+  error: unknown,
+): Promise<void> {
+  await ctx.store.addEvent(input.runId, {
+    step: input.step,
+    status: "FAILED",
+    promptKey: call.promptKey,
+    promptVersion: call.promptVersion,
+    promptHash: call.promptHash,
+    provider: call.provider,
+    model: call.model,
+    error: `The model's JSON did not match the expected shape: ${errorMessage(error)}`,
+    validation: errorMessage(error),
+  });
 }
