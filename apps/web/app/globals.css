@@ -158,3 +158,13 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Mission control: a light passing over the card of the agent at work. */
+@keyframes mc-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
