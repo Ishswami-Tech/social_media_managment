@@ -1,0 +1,35 @@
+# The web app and the worker, and nothing else.
+#
+# No database and no Redis: production connects to services the host already
+# runs (managed Postgres, Dragonfly). Set DATABASE_URL and REDIS_URL, along
+# with the rest of .env.example, in the environment before starting.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Deploying through Temps does not use this file at all: Temps builds each
+# service from nixpacks.toml and nixpacks.worker.toml. Keep this for hosts
+# that run plain Docker.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the managed Postgres}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL to the managed Dragonfly or Redis}
+    ports:
+      - "${PORT:-3000}:3000"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the managed Postgres}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL to the managed Dragonfly or Redis}
+    restart: unless-stopped

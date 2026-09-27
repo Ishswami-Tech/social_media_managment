@@ -33,10 +33,12 @@ packages/social-linkedin      LinkedIn adapter (member + organization publishing
 packages/social-meta          Meta OAuth, Facebook Pages, Instagram publishing, webhook signature
 packages/whatsapp             WhatsApp Cloud API client + webhook parser
 packages/ai-core              AIProvider contract, ModelRouter, AIExecutor (failover), content operations
-packages/ai-openai|anthropic|google   Provider implementations (text, image, embeddings, health)
+packages/ai-openai|anthropic|google|meta   Provider implementations (text, image, embeddings, health)
 packages/media                Upload validation, magic-byte sniffing, R2 storage, renditions
 packages/queue                Queue names, job payloads, backoff/retry policy, BullMQ registry
-docker/                       Dockerfiles for web and worker; docker-compose.yml at the root
+docker/                       Dockerfiles for web and worker. docker-compose.yml runs Postgres and Redis
+                              for local development; docker-compose.prod.yml runs only the app, against
+                              managed data services
 ```
 
 ## Getting started
