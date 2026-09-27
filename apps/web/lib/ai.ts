@@ -143,7 +143,7 @@ export async function platformAISources(): Promise<PlatformAISource[]> {
     ["OPENAI", env.OPENAI_API_KEY, undefined],
     ["ANTHROPIC", env.ANTHROPIC_API_KEY, env.ANTHROPIC_BASE_URL],
     ["GOOGLE", env.GOOGLE_AI_API_KEY, undefined],
-    ["META", env.META_API_KEY, env.META_BASE_URL],
+    ["META", env.META_AI_API_KEY, env.META_AI_BASE_URL],
     ["HUGGINGFACE", env.HUGGINGFACE_API_KEY, undefined],
     // Pollinations needs no key: on by default as the image provider of last resort.
     ["POLLINATIONS", env.POLLINATIONS_ENABLED === "false" ? undefined : (env.POLLINATIONS_API_KEY ?? ""), undefined],

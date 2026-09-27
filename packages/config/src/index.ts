@@ -54,8 +54,8 @@ export const envSchema = z
     ANTHROPIC_BASE_URL: optionalString,
     GOOGLE_AI_API_KEY: optionalString,
     /** Meta AI (Muse Spark) through the Responses API; the base URL defaults to https://api.meta.ai/v1. */
-    META_API_KEY: optionalString,
-    META_BASE_URL: optionalString,
+    META_AI_API_KEY: optionalString,
+    META_AI_BASE_URL: optionalString,
     /** Free-tier image providers: a Hugging Face token (monthly credits) and an optional Pollinations token. */
     HUGGINGFACE_API_KEY: optionalString,
     POLLINATIONS_API_KEY: optionalString,
