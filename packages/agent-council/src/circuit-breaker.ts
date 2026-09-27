@@ -111,7 +111,9 @@ export function createCircuitBreaker(
       return apply(provider, { type: "check", at: now() });
     },
     async isHealthy(provider) {
-      return current(provider).state === "CLOSED";
+      const record = current(provider);
+      // Closed, or open long enough that the next call earns a probe: either way the planner may seat it.
+      return record.state === "CLOSED" || now() - record.changedAt >= config.openMs;
     },
     async recordSuccess(provider) {
       apply(provider, { type: "success", at: now() });

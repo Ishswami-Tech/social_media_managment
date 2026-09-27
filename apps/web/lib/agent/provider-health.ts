@@ -162,8 +162,11 @@ export function createPrismaProviderHealth(
   return {
     isOpen: (provider) => apply(provider, { type: "check", at: now() }, config),
     isHealthy: async (provider) => {
-      const row = await prisma.providerHealth.findUnique({ where: { provider }, select: { state: true } });
-      return (row?.state ?? "CLOSED") === "CLOSED";
+      const row = await prisma.providerHealth.findUnique({ where: { provider }, select: { state: true, openedUntil: true } });
+      if (!row || row.state === "CLOSED") return true;
+      // An open window that has passed is not a reason to leave the provider off the bench: the call it is
+      // seated for takes the probe. Without this a provider stays excluded until some other call pokes it.
+      return deadlinePassed({ ...CLOSED_RECORD, openedUntil: row.openedUntil }, now());
     },
     recordSuccess: async (provider, latencyMs) => {
       await apply(provider, { type: "success", at: now(), latencyMs }, config);

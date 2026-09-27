@@ -75,8 +75,8 @@ describe("a council behind one seat", () => {
     await breaker.recordFailure("GOOGLE", "quota");
     expect(await breaker.isHealthy("GOOGLE")).toBe(false);
     at += 5_000;
-    // Still not closed: planning leaves Google out, and the one probe is still there for a real call.
-    expect(await breaker.isHealthy("GOOGLE")).toBe(false);
+    // The window has passed: the planner may seat Google again, and the probe it needs is still unspent.
+    expect(await breaker.isHealthy("GOOGLE")).toBe(true);
     expect(await breaker.isOpen("GOOGLE")).toBe(false);
     expect(await breaker.isOpen("GOOGLE")).toBe(true);
     await breaker.recordSuccess("GOOGLE", 10);
@@ -87,6 +87,9 @@ describe("a council behind one seat", () => {
     await breaker.recordFailure("OPENAI", "no credits");
     await breaker.recordFailure("OPENAI", "no credits");
     expect([...(await coolingProviders(ctx))]).toEqual(["OPENAI"]);
+    // Once its window passes, OpenAI is back on the bench without anyone touching the breaker.
+    at += 2_000;
+    expect([...(await coolingProviders(ctx))]).toEqual([]);
   });
 
   it("keeps the answers it got and puts a lost seat on the record", async () => {
