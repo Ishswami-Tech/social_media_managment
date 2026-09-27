@@ -39,8 +39,8 @@ ENV DATABASE_URL=postgresql://build:build@localhost:5432/build \
     ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 RUN pnpm --filter @platform/database generate \
  && pnpm --filter web build \
- && cp -r apps/web/public apps/web/.next/standalone/apps/web/public \
- && cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+ && cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
+ && if [ -d apps/web/public ]; then cp -r apps/web/public apps/web/.next/standalone/apps/web/public; fi
 
 # ---- runtime ----
 # The worker needs the workspace and its dev dependencies (tsx, the Prisma

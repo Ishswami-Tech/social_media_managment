@@ -1,0 +1,23 @@
+# Build from the repository root. The default service is the web app.
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
+NEXT_TELEMETRY_DISABLED = "1"
+
+[phases.setup]
+nixPkgs = ["...", "openssl"]
+
+# Keep the Node provider's Corepack/pnpm install phase. package.json pins pnpm.
+[phases.build]
+cmds = [
+  "pnpm db:generate",
+  "pnpm --filter web build",
+  "cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static",
+  "if [ -d apps/web/public ]; then cp -r apps/web/public apps/web/.next/standalone/apps/web/public; fi",
+]
+
+[start]
+cmd = "HOSTNAME=0.0.0.0 node apps/web/.next/standalone/apps/web/server.js"
