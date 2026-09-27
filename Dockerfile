@@ -21,17 +21,16 @@ RUN corepack enable \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-# ---- dependencies ----
-# Manifests first: this layer is reused until a package.json or the lockfile changes.
-FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/web/package.json apps/web/
-COPY packages/*/package.json packages/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
-
 # ---- build ----
-FROM deps AS build
+# The whole workspace is copied before installing on purpose. Copying the
+# manifests first would cache better, but `COPY packages/*/package.json
+# packages/` flattens every manifest onto one path, so pnpm sees a single
+# package and never installs the workspace's own dev dependencies: the
+# Prisma CLI goes missing and `prisma generate` fails. The pnpm store mount
+# keeps reinstalls quick anyway.
+FROM base AS build
 COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 # Placeholders only. A build has no request and no secrets: the real values
 # arrive in the environment at run time. Without them the env schema refuses
 # to load while Next renders any page that reaches for the session.

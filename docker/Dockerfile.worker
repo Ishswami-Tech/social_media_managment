@@ -4,11 +4,11 @@ ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/web/package.json apps/web/
-COPY packages/*/package.json packages/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+# Copy first, then install: `COPY packages/*/package.json packages/` flattens
+# every manifest onto one path, leaving pnpm without the workspace's dev
+# dependencies (tsx and the Prisma CLI among them).
 COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm --filter @platform/database generate
 

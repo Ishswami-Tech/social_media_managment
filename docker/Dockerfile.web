@@ -5,16 +5,13 @@ ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
 RUN corepack enable && apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-# ---- deps ----
-FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/web/package.json apps/web/
-COPY packages/*/package.json packages/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
-
 # ---- build ----
-FROM deps AS build
+# Copy first, then install: `COPY packages/*/package.json packages/` flattens
+# every manifest onto one path, leaving pnpm without the workspace's dev
+# dependencies (the Prisma CLI among them).
+FROM base AS build
 COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 # Build-time placeholders: the app reads real values at runtime.
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build \
     AUTH_SECRET=build-time-placeholder-secret-0000 \
