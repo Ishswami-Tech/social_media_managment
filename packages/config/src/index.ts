@@ -11,6 +11,13 @@ export const envSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_URL: z.string().url().default("http://localhost:3000"),
     WEBHOOK_BASE_URL: z.string().url().optional(),
+    /**
+     * Other origins sign-in may be reached from, comma separated. A deployment
+     * usually answers on more than one name (the platform's own hostname and a
+     * custom domain), and a sign-in from a name the server does not trust is
+     * refused. APP_URL is always trusted and need not be repeated here.
+     */
+    TRUSTED_ORIGINS: z.string().optional(),
 
     DATABASE_URL: z.string().min(1),
     DIRECT_URL: optionalString,

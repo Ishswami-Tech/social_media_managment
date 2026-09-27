@@ -16,6 +16,24 @@ import { sendEmail } from "./email";
  * - `organization` plugin: tenants, memberships, invitations and the active
  *   organization stored on the session. Roles use the spec's names.
  */
+/**
+ * APP_URL plus anything in TRUSTED_ORIGINS, each an origin with no trailing
+ * slash and no duplicates. Sign-in from an untrusted origin is refused, which
+ * is how a working deployment reached by a second hostname stops being able
+ * to log anyone in.
+ */
+export function trustedOrigins(appUrl: string, extra: string | undefined): string[] {
+  const asOrigin = (value: string): string | undefined => {
+    try {
+      return new URL(value.trim()).origin;
+    } catch {
+      return undefined;
+    }
+  };
+  const all = [appUrl, ...(extra ?? "").split(",")].map(asOrigin).filter((o): o is string => Boolean(o));
+  return [...new Set(all)];
+}
+
 function buildAuth() {
   const env = getEnv();
   return betterAuth({
@@ -23,7 +41,7 @@ function buildAuth() {
     baseURL: env.APP_URL,
     secret: env.AUTH_SECRET,
     database: prismaAdapter(prisma, { provider: "postgresql" }),
-    trustedOrigins: [env.APP_URL],
+    trustedOrigins: trustedOrigins(env.APP_URL, env.TRUSTED_ORIGINS),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 10,
