@@ -12,7 +12,11 @@ import { errorInfo, logger } from "@/lib/logger";
 /** Matches `OrganizationSettings.agentMonthlyBudgetCents` default for organizations without a settings row. */
 const DEFAULT_MONTHLY_BUDGET_CENTS = 5000;
 const SERIALIZATION_FAILURE = "P2034";
-const MAX_TX_ATTEMPTS = 3;
+const MAX_TX_ATTEMPTS = 6;
+/** Postgres and the query engine word a lost serializable transaction several ways; all of them mean "try again". */
+const CONFLICT_TEXT = /write conflict|deadlock|could not serialize|transactionwriteconflict|concurrent update/i;
+/** Backing off by a jittered step keeps retried reservations from colliding again in lockstep. */
+const RETRY_BASE_MS = 25;
 
 export interface BudgetCaps {
   /** Cents already committed this month: RESERVED estimates + SETTLED actuals. */
@@ -66,8 +70,19 @@ export function committedCents(rows: readonly ReservationRow[]): { reservedCents
   );
 }
 
-function isSerializationFailure(e: unknown): boolean {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === SERIALIZATION_FAILURE;
+/**
+ * A reservation that lost its serializable transaction to a sibling. Councils
+ * reserve three at a time, so this is ordinary contention, not a failure: it is
+ * matched by Prisma's code and by the wording the engine uses when it raises
+ * the conflict without one.
+ */
+export function isSerializationFailure(e: unknown): boolean {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === SERIALIZATION_FAILURE) return true;
+  return e instanceof Error && CONFLICT_TEXT.test(`${e.name} ${e.message}`);
+}
+
+function retryDelayMs(attempt: number): number {
+  return RETRY_BASE_MS * 2 ** (attempt - 1) * (0.5 + Math.random());
 }
 
 async function reserveOnce(
@@ -119,6 +134,7 @@ export function createPrismaBudget(now: () => Date = () => new Date()): BudgetPo
         } catch (e) {
           if (!isSerializationFailure(e) || attempt >= MAX_TX_ATTEMPTS) throw e;
           logger.debug("budget reservation retried after serialization failure", { runId, attempt, ...errorInfo(e) });
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
         }
       }
     },
