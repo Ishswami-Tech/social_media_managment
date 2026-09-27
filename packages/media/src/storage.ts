@@ -18,7 +18,18 @@ export interface StorageConfig {
   endpoint?: string;
 }
 
-export type StorageKind = "r2" | "memory" | "disk";
+export interface S3StorageConfig {
+  endpoint: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  /** Full public bucket/CDN base URL. Omit to use private signed downloads. */
+  publicBaseUrl?: string;
+  forcePathStyle?: boolean;
+}
+
+export type StorageKind = "s3" | "r2" | "memory" | "disk";
 
 export interface ObjectStorage {
   /** Backend identifier; compare this rather than using instanceof (module identity can differ under hot reload). */
@@ -32,17 +43,21 @@ export interface ObjectStorage {
   publicUrl(key: string): string | undefined;
 }
 
-/** Cloudflare R2 (S3-compatible) storage client. */
-export class R2Storage implements ObjectStorage {
-  readonly kind = "r2" as const;
+/** S3-compatible storage, including Contabo's path-style endpoints. */
+export class S3Storage implements ObjectStorage {
+  readonly kind: "s3" | "r2" = "s3";
   private readonly client: S3Client;
 
-  constructor(private readonly cfg: StorageConfig) {
+  constructor(private readonly cfg: S3StorageConfig) {
     this.client = new S3Client({
-      region: "auto",
-      endpoint: cfg.endpoint ?? `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+      region: cfg.region,
+      endpoint: cfg.endpoint,
       credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
-      forcePathStyle: !!cfg.endpoint,
+      forcePathStyle: cfg.forcePathStyle ?? true,
+      // Avoid optional AWS checksum extensions on S3-compatible providers and
+      // presigned browser PUTs (whose bytes are unknown when signing).
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
 
@@ -92,11 +107,27 @@ export class R2Storage implements ObjectStorage {
   }
 
   publicUrl(key: string): string | undefined {
-    return this.cfg.publicBaseUrl ? `${this.cfg.publicBaseUrl.replace(/\/$/, "")}/${key}` : undefined;
+    return this.cfg.publicBaseUrl
+      ? `${this.cfg.publicBaseUrl.replace(/\/+$/, "")}/${key.split("/").map(encodeURIComponent).join("/")}`
+      : undefined;
   }
 }
 
-/** In-memory storage for tests and local development without R2 credentials. */
+/** Compatibility for existing R2 deployments. */
+export class R2Storage extends S3Storage {
+  override readonly kind = "r2" as const;
+
+  constructor(cfg: StorageConfig) {
+    super({
+      ...cfg,
+      endpoint: cfg.endpoint ?? `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+      region: "auto",
+      forcePathStyle: !!cfg.endpoint,
+    });
+  }
+}
+
+/** In-memory storage for tests and local development without object storage credentials. */
 export class MemoryStorage implements ObjectStorage {
   readonly kind = "memory" as const;
   readonly objects = new Map<string, { body: Buffer; mimeType: string }>();
@@ -128,7 +159,7 @@ export class MemoryStorage implements ObjectStorage {
 }
 
 /**
- * Local-disk storage for development and single-node deployments without R2.
+ * Local-disk storage for development and single-node deployments without S3.
  * Objects live under `rootDir/<key>`; both the web and worker processes see
  * the same files. Signed URLs point at the app's dev media route.
  */

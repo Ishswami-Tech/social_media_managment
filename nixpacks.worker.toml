@@ -1,0 +1,19 @@
+# Set NIXPACKS_CONFIG_FILE=nixpacks.worker.toml on the worker service.
+# Build context must remain the repository root, not apps/web.
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
+NEXT_TELEMETRY_DISABLED = "1"
+
+[phases.setup]
+nixPkgs = ["...", "openssl", "ffmpeg"]
+
+# The worker runs TypeScript through tsx; retain development dependencies.
+[phases.build]
+cmds = ["pnpm db:generate"]
+
+[start]
+cmd = "pnpm worker"

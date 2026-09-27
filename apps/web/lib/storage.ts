@@ -1,5 +1,5 @@
 import path from "node:path";
-import { DiskStorage, R2Storage, type ObjectStorage } from "@platform/media";
+import { DiskStorage, R2Storage, S3Storage, type ObjectStorage } from "@platform/media";
 import { getEnv } from "./env";
 import { logger } from "./logger";
 
@@ -8,15 +8,24 @@ declare global {
 }
 
 /**
- * Object storage: Cloudflare R2 when configured, otherwise a local-disk
+ * Object storage: Contabo/S3 when configured, legacy R2, otherwise a local-disk
  * backend (shared by the web and worker processes) served through
  * /api/media/dev. Local disk is fine for development and single-node
- * deployments but is not replicated; production should configure R2.
+ * deployments but is not replicated; production should configure S3.
  */
 export function storage(): ObjectStorage {
   if (globalThis.__platformStorage) return globalThis.__platformStorage;
   const env = getEnv();
-  if (env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET) {
+  if (env.S3_ENDPOINT && env.S3_REGION && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_BUCKET) {
+    globalThis.__platformStorage = new S3Storage({
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      bucket: env.S3_BUCKET,
+      publicBaseUrl: env.S3_PUBLIC_BASE_URL,
+    });
+  } else if (env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET) {
     globalThis.__platformStorage = new R2Storage({
       accountId: env.R2_ACCOUNT_ID,
       accessKeyId: env.R2_ACCESS_KEY_ID,
@@ -32,8 +41,8 @@ export function storage(): ObjectStorage {
     if (env.NODE_ENV === "production")
       logger.warn(
         serverless
-          ? "R2 is not configured; media is stored in /tmp and will NOT persist between invocations. Configure R2_* for production."
-          : "R2 is not configured; using local-disk media storage",
+          ? "Object storage is not configured; media is stored in /tmp and will NOT persist between invocations. Configure S3_* for production."
+          : "Object storage is not configured; using local-disk media storage",
         { dir },
       );
     globalThis.__platformStorage = new DiskStorage(dir, `${env.APP_URL}/api/media/dev`);
