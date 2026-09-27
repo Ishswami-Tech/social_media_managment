@@ -48,7 +48,9 @@ RUN pnpm --filter @platform/database generate \
 # alone; the web role still runs from that standalone output.
 FROM build AS runtime
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
-RUN groupadd -r app && useradd -r -g app app && chown -R app:app /app
+# The worker shells out to pnpm at start-up, and corepack wants a writable
+# home for its cache, so the service user gets a real one.
+RUN groupadd -r app && useradd -r -m -d /home/app -g app app && chown -R app:app /app /home/app
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

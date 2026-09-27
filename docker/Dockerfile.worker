@@ -13,7 +13,8 @@ ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm --filter @platform/database generate
 
 ENV NODE_ENV=production
-RUN groupadd -r app && useradd -r -g app app && chown -R app:app /app
+# corepack needs a writable home: the start command runs pnpm.
+RUN groupadd -r app && useradd -r -m -d /home/app -g app app && chown -R app:app /app /home/app
 USER app
 # Runs migrations, the idempotent seed (plans, AI catalogue, flags), then the BullMQ workers (spec §15).
 CMD ["sh", "-c", "pnpm --filter @platform/database migrate:deploy && pnpm --filter @platform/database seed && pnpm --filter web worker"]
