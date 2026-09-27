@@ -431,7 +431,7 @@ function NodeCard({
         {!pending && models && models.length > 1 ? (
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80 dark:text-white/50">
             <span className="font-medium" style={{ color: identity.to }}>
-              Council of {models.length}
+              {models.length} models
             </span>
             {models.map((m, i) => (
               <motion.span key={m} className="inline-flex min-w-0" initial={animate ? { opacity: 0, y: 4 } : false} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>

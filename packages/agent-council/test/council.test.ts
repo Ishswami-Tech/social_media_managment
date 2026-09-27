@@ -7,6 +7,7 @@ import { council, coolingProviders, councilPrefs, otherSeats, seatPerspective, t
 import { firstLine, lesson, mergeCouncilMemory } from "../src/council-memory";
 import { ModelRouter, type ModelInfo } from "@platform/ai-core";
 import { createCircuitBreaker } from "../src/circuit-breaker";
+import { resolveProvider } from "../src/stages/call";
 import { createTestContext } from "./helpers/fakes";
 import { baseRun } from "./helpers/run";
 
@@ -135,6 +136,41 @@ describe("a council behind one seat", () => {
     // One fresh model left among the best six: the bench reuses g1..g3 rather than seating g7..g9.
     expect((await councilPrefs(ctx)).map((p) => p.model)).toEqual(["g1", "g2", "g3"]);
     expect(topPerProvider(catalogue, 2).map((m) => m.model)).toEqual(["g1", "g2"]);
+  });
+
+  it("picks a provider without spending the breaker's probe", async () => {
+    const calls = { isOpen: 0, isHealthy: 0 };
+    const { ctx } = createTestContext(baseRun());
+    ctx.health = {
+      ...ctx.health,
+      isOpen: async () => {
+        calls.isOpen += 1;
+        return false;
+      },
+      isHealthy: async () => {
+        calls.isHealthy += 1;
+        return true;
+      },
+    };
+    const first = await resolveProvider(ctx, "json");
+    const second = await resolveProvider(ctx, "json");
+    // The probe belongs to the call that gets made, never to the search that chose it.
+    expect(calls.isOpen).toBe(0);
+    expect(calls.isHealthy).toBeGreaterThan(0);
+    expect(second.provider).toBe(first.provider);
+  });
+
+  it("closes a breaker on any success, so a recovered provider stops looking broken", async () => {
+    let at = 1_000_000;
+    const breaker = createCircuitBreaker({ failureThreshold: 2, windowMs: 60_000, openMs: 1_000 }, () => at);
+    await breaker.recordFailure("GOOGLE", "quota");
+    await breaker.recordFailure("GOOGLE", "quota");
+    expect(breaker.snapshot("GOOGLE").state).toBe("OPEN");
+    at += 5_000;
+    // The call that the expired window allowed came back fine; nothing should still say Google is down.
+    await breaker.recordSuccess("GOOGLE", 12);
+    expect(breaker.snapshot("GOOGLE").state).toBe("CLOSED");
+    expect(await breaker.isOpen("GOOGLE")).toBe(false);
   });
 
   it("tells each seat which models its colleagues hold", () => {

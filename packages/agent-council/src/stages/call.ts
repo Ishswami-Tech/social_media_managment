@@ -198,26 +198,49 @@ async function resolveProviderAvoiding(
   // only the failover away from it (when the pin cannot take the call) keeps clear of the others.
   const pinned = input.pref?.model ? `${input.pref.provider}::${input.pref.model}` : undefined;
   const inUse = [...(ctx.modelsInUse ?? [])].filter((m) => m !== pinned && !excludedModels.includes(m) && !avoidModels.includes(m));
+  // Strictest first, each one relaxing a preference: another provider, then a model nobody is on, then a model
+  // no colleague holds. The last of these matters most when providers are down, because it is the difference
+  // between a council of three models and three seats crowded onto one.
   const passes: { providers: ReadonlySet<AIProviderName>; models: readonly string[] }[] = [];
-  if (avoidProviders.length > 0)
-    passes.push({ providers: new Set([...excluded, ...avoidProviders]), models: [...excludedModels, ...avoidModels, ...inUse] });
-  if (avoidModels.length > 0 || inUse.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels, ...inUse] });
-  if (avoidModels.length > 0 && inUse.length > 0) passes.push({ providers: excluded, models: [...excludedModels, ...avoidModels] });
+  const add = (providers: ReadonlySet<AIProviderName>, models: readonly string[]) => {
+    const key = `${[...providers].sort().join(",")}|${[...new Set(models)].sort().join(",")}`;
+    if (!passes.some((p) => `${[...p.providers].sort().join(",")}|${[...new Set(p.models)].sort().join(",")}` === key)) {
+      passes.push({ providers, models });
+    }
+  };
+  if (avoidProviders.length > 0) add(new Set([...excluded, ...avoidProviders]), [...excludedModels, ...avoidModels, ...inUse]);
+  if (avoidModels.length > 0 || inUse.length > 0) add(excluded, [...excludedModels, ...avoidModels, ...inUse]);
+  if (avoidModels.length > 0) add(excluded, [...excludedModels, ...avoidModels]);
+  const health = new Map<AIProviderName, boolean>();
   for (const pass of passes) {
     if (ctx.availableProviders.every((p) => pass.providers.has(p))) continue;
     try {
-      return await resolveProvider(ctx, input.capability, input.pref, pass.providers, pass.models, stayWith && !pass.providers.has(stayWith) ? stayWith : undefined);
+      return await resolveProvider(ctx, input.capability, input.pref, pass.providers, pass.models, stayWith && !pass.providers.has(stayWith) ? stayWith : undefined, health);
     } catch (error) {
       if (!(error instanceof PipelineBlocked)) throw error;
     }
   }
-  return resolveProvider(ctx, input.capability, input.pref, excluded, excludedModels, stayWith);
+  return resolveProvider(ctx, input.capability, input.pref, excluded, excludedModels, stayWith, health);
 }
 
 /** How many models of one provider a single call may burn before moving to the next provider. */
 const MODELS_PER_PROVIDER = 2;
 /** Bad models (retired, empty answers) are cheap to skip: a provider gets this many of them before the call moves on. */
 const MODEL_FAILURES_PER_PROVIDER = 4;
+
+/**
+ * Whether a provider may be chosen, without touching its breaker. Asking
+ * `isOpen` hands out the one half-open probe, so a search that asks it —
+ * several times, across several passes — spends the probe the call itself
+ * needs and the later passes are refused for no reason.
+ */
+async function providerUsable(ctx: PipelineContext, provider: AIProviderName, seen: Map<AIProviderName, boolean>): Promise<boolean> {
+  const cached = seen.get(provider);
+  if (cached !== undefined) return cached;
+  const usable = ctx.health.isHealthy ? await ctx.health.isHealthy(provider) : !(await ctx.health.isOpen(provider));
+  seen.set(provider, usable);
+  return usable;
+}
 
 export async function resolveProvider(
   ctx: PipelineContext,
@@ -227,6 +250,8 @@ export async function resolveProvider(
   excludedModels: readonly string[] = [],
   /** Provider that just failed on one model: tried first again, with its next model. */
   stayWith?: AIProviderName,
+  /** Breaker answers already gathered for this call, so repeated passes agree with each other. */
+  health: Map<AIProviderName, boolean> = new Map(),
 ): Promise<ModelDecision> {
   const seen = new Set<string>();
   const dead = ctx.deadModels ? [...ctx.deadModels] : [];
@@ -250,7 +275,7 @@ export async function resolveProvider(
     const key = `${provider}::${model}`;
     if (seen.has(key) || excluded.has(provider) || excludedModels.includes(key)) continue;
     seen.add(key);
-    if (await ctx.health.isOpen(provider)) continue;
+    if (!(await providerUsable(ctx, provider, health))) continue;
     return {
       provider,
       model,

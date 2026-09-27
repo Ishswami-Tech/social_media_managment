@@ -72,9 +72,9 @@ function check(record: BreakerRecord, at: number, config: BreakerConfig): Breake
   return { record: { ...record, changedAt: at, probeInFlight: true }, open: false };
 }
 
+/** A call got through, so the provider works: the breaker closes whatever state it was in. */
 function onSuccess(record: BreakerRecord, at: number): BreakerRecord {
-  if (record.state === "HALF_OPEN") return { ...CLOSED_RECORD, changedAt: at };
-  return record;
+  return record.state === "CLOSED" ? record : { ...CLOSED_RECORD, changedAt: at };
 }
 
 function onFailure(record: BreakerRecord, at: number, error: string | undefined, config: BreakerConfig): BreakerTransition {
