@@ -6,6 +6,15 @@ import { ThemeToggle } from "@/components/app/theme-toggle";
 import { UserMenu } from "@/components/app/user-menu";
 import { MAIN_NAV, MORE_NAV, ORG_NAV, WHATSAPP_NAV, type NavItem } from "@/components/app/nav";
 
+/**
+ * Every route here reads the signed-in session, so none of them may be
+ * prerendered: a build has no request, and the session helpers reach for
+ * runtime secrets that only exist on the running server. Marking the layout
+ * dynamic keeps the whole group out of the static export.
+ */
+export const dynamic = "force-dynamic";
+
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireOrg();
   const whatsAppAccounts = await prisma.whatsAppAccount.count({ where: { organizationId: ctx.organization.id } });

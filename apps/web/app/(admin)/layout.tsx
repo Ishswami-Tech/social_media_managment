@@ -4,6 +4,15 @@ import { requireSuperAdmin } from "@/lib/session";
 import { AdminNav } from "@/components/app/admin-nav";
 import { UserMenu } from "@/components/app/user-menu";
 
+/**
+ * Every route here reads the signed-in session, so none of them may be
+ * prerendered: a build has no request, and the session helpers reach for
+ * runtime secrets that only exist on the running server. Marking the layout
+ * dynamic keeps the whole group out of the static export.
+ */
+export const dynamic = "force-dynamic";
+
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSuperAdmin();
   return (

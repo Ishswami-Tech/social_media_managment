@@ -2,6 +2,15 @@ import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { OrganizationPicker } from "@/components/forms/organization-picker";
 
+/**
+ * Every route here reads the signed-in session, so none of them may be
+ * prerendered: a build has no request, and the session helpers reach for
+ * runtime secrets that only exist on the running server. Marking the layout
+ * dynamic keeps the whole group out of the static export.
+ */
+export const dynamic = "force-dynamic";
+
+
 export const metadata = { title: "Select organization" };
 
 export default async function SelectOrganizationPage() {
