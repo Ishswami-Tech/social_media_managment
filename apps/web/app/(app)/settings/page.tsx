@@ -176,19 +176,9 @@ async function loadSettings(ctx: OrgContext): Promise<OrganizationSettingsValues
 
 async function AITab({ ctx }: { ctx: OrgContext }) {
   if (!ctx.can("org:settings")) return null;
-  const [settings, models, keys, rawConnections] = await Promise.all([
-    loadSettings(ctx),
-    selectableModels(ctx.organization.id),
-    prisma.organizationAIKey.findMany({
-      where: { organizationId: ctx.organization.id },
-      select: { provider: true, label: true, active: true },
-    }),
-    prisma.organizationAIConnection.findMany({
-      where: { organizationId: ctx.organization.id },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
-  const connections = rawConnections.map((c) => ({ ...c, lastTestedAt: c.lastTestedAt?.toISOString() ?? null }));
+  // Providers and their keys belong to the platform, not to an organization:
+  // they are managed once in Super Admin and shared by every tenant.
+  const [settings, models] = await Promise.all([loadSettings(ctx), selectableModels(ctx.organization.id)]);
   const [skills, plugins] = await Promise.all([
     listOrganizationSkills(ctx.organization.id).then((rows) =>
       rows.map((s) => ({ ...s, updatedAt: s.updatedAt.toISOString() })),
@@ -203,7 +193,7 @@ async function AITab({ ctx }: { ctx: OrgContext }) {
   ]);
   return (
     <section className="grid gap-4">
-      <AISettings settings={settings} models={models} keys={keys} connections={connections} />
+      <AISettings settings={settings} models={models} />
       <div id="skills">
         <SkillsManager skills={skills} />
       </div>
