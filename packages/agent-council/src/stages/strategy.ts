@@ -8,7 +8,7 @@ import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
 import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, withPerspective } from "./council";
-import { accountVars, claimsText, filterClaimIds, stepName, stringify, supportedClaims } from "./shared";
+import { accountVars, claimsText, encodeContext, filterClaimIds, stepName, supportedClaims } from "./shared";
 import { selectSkills } from "./skills";
 
 const STRATEGY_OUTPUT_TOKENS = 900;
@@ -29,7 +29,7 @@ export const StrategyOutputSchema = z.object({
 export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
   await selectSkills(ctx, run);
   const claims = supportedClaims(run.claims);
-  const brief = run.research ? stringify(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
+  const brief = run.research ? encodeContext(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
   for (const account of run.accounts) {
     const prefs = await councilPrefs(ctx);
     const proposals = await council(prefs, (pref, index, others) =>

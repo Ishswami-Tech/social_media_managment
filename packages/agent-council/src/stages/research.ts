@@ -11,7 +11,7 @@ import { errorMessage } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, callModel, type ProviderPreference } from "./call";
 import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
-import { stringify } from "./shared";
+import { encodeContext } from "./shared";
 
 const RESEARCH_MAX_STEPS = 6;
 const RESEARCH_OUTPUT_TOKENS = 2_500;
@@ -231,7 +231,7 @@ export async function researchStage(ctx: PipelineContext, run: RunSnapshot): Pro
       promptKey: "claims",
       temperature: 0.1,
       expectedOutputTokens: CLAIMS_OUTPUT_TOKENS,
-      system: renderPrompt("claims", { brief: stringify(brief).slice(0, CLAIMS_BRIEF_CHARS) }),
+      system: renderPrompt("claims", { brief: encodeContext(brief).slice(0, CLAIMS_BRIEF_CHARS) }),
       user: "Extract the claims ledger for this brief now. Return only the JSON object.",
     },
     ClaimsOutputSchema,
