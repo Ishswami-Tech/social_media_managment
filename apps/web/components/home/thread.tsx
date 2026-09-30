@@ -18,6 +18,9 @@ import { buildBoard, buildTranscript } from "@platform/agent-council/progress";
 import { CouncilRoom } from "@/components/agent/council-room";
 import { applyPartials } from "@platform/agent-council/live";
 import { CouncilBoard } from "@/components/agent/council-board";
+import { SimpleProgress } from "@/components/agent/simple-progress";
+import { useViewMode } from "@/hooks/use-view-mode";
+import { cn } from "@/lib/utils";
 import { useRunProgress, type RunInitial } from "@/components/agent/live-progress";
 import { isProducing, isSettled } from "@/components/home/labels";
 import { PlatformIcon } from "@/components/app/platform-icon";
@@ -405,6 +408,8 @@ export function Thread({
     }),
     [snapshot.claimCount, snapshot.spentCents, board.writers, transcript],
   );
+  const { mode, setMode } = useViewMode();
+  const detailed = mode === "detailed";
   const [showWork, setShowWork] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
   // While the agents work the stage tells the story; the drafts side by side come after.
@@ -511,18 +516,40 @@ export function Thread({
         </div>
       </div>
 
-      {/* What the AI did about it: the council at a glance, then the detail. */}
+      {/* What the AI did about it: plainly by default, with the machinery a click away. */}
       <div className="grid max-w-[95%] gap-2">
-        <MissionControl
-          stages={progress.stages}
-          board={board}
-          transcript={transcript}
-          partials={snapshot.partials}
-          working={working}
-          startedAt={initial.startedAt}
-          stats={stageStats}
-        />
-        {board.writers.length > 0 && (
+        <div className="flex justify-end">
+          <div className="inline-flex rounded-full border p-0.5 text-[11px] dark:border-white/15" role="group" aria-label="How much detail to show">
+            {(["simple", "detailed"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setMode(option)}
+                aria-pressed={mode === option}
+                className={cn(
+                  "rounded-full px-2.5 py-1 capitalize transition",
+                  mode === option ? "bg-foreground text-background dark:bg-white dark:text-black" : "text-muted-foreground hover:text-foreground dark:text-white/55",
+                )}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        {detailed ? (
+          <MissionControl
+            stages={progress.stages}
+            board={board}
+            transcript={transcript}
+            partials={snapshot.partials}
+            working={working}
+            startedAt={initial.startedAt}
+            stats={stageStats}
+          />
+        ) : (
+          <SimpleProgress stages={progress.stages} working={working} startedAt={initial.startedAt} />
+        )}
+        {detailed && board.writers.length > 0 && (
           <div className="grid gap-2">
             {!working && (
               <button
@@ -537,15 +564,17 @@ export function Thread({
             {boardOpen && <CouncilBoard board={board} working={working} />}
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setShowRoom((v) => !v)}
-          className="w-fit text-xs text-muted-foreground underline-offset-4 hover:underline"
-          aria-expanded={showRoom}
-        >
-          {showRoom ? "Hide the conversation" : `Show the conversation (${transcript.length})`}
-        </button>
-        {showRoom && <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />}
+        {detailed && (
+          <button
+            type="button"
+            onClick={() => setShowRoom((v) => !v)}
+            className="w-fit text-xs text-muted-foreground underline-offset-4 hover:underline"
+            aria-expanded={showRoom}
+          >
+            {showRoom ? "Hide the conversation" : `Show the conversation (${transcript.length})`}
+          </button>
+        )}
+        {detailed && showRoom && <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />}
 
         {stopped && reason && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">{reason}</p>
