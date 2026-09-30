@@ -8,7 +8,7 @@ import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
 import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, withPerspective } from "./council";
-import { accountVars, claimsText, encodeContext, filterClaimIds, stepName, supportedClaims } from "./shared";
+import { accountVars, claimsText, encodeContext, filterClaimIds, perAccount, stepName, supportedClaims } from "./shared";
 import { selectSkills } from "./skills";
 
 const STRATEGY_OUTPUT_TOKENS = 900;
@@ -30,7 +30,7 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
   await selectSkills(ctx, run);
   const claims = supportedClaims(run.claims);
   const brief = run.research ? encodeContext(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
-  for (const account of run.accounts) {
+  await perAccount(run.accounts, async (account) => {
     const prefs = await councilPrefs(ctx);
     const proposals = await council(prefs, (pref, index, others) =>
       callJson(
@@ -71,7 +71,7 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
         : {}),
     };
     await ctx.store.saveStrategy(account.runAccountId, strategy);
-  }
+  });
 }
 
 /** The proposal that leans on the most allowed facts wins; ties go to the fuller rationale, then to the first. */

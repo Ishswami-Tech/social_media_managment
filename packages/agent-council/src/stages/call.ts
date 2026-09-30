@@ -44,6 +44,17 @@ export function isProviderFailure(error: unknown): boolean {
  * no tool support): a 4xx other than 429 that the provider layer still marked
  * retryable. Such failures do not count against the provider's circuit breaker.
  */
+/**
+ * A model that will never work again, whatever the account or the moment: it
+ * was retired, or it does not serve this endpoint. Worth remembering past the
+ * end of the run, unlike a provider that is merely busy or out of credit.
+ */
+const RETIRED_MODEL = /has been deprecated|is not supported in the|does not exist|model not found|no longer available/i;
+
+export function isRetiredModel(error: unknown): boolean {
+  return error instanceof AIError && error.code === "PROVIDER_UNAVAILABLE" && RETIRED_MODEL.test(error.message);
+}
+
 export function isModelFailure(error: unknown): boolean {
   // An empty answer stays a provider failure on purpose: a gateway that has stopped serving returns empty
   // content for every model, and treating that as one bad model would burn the whole catalogue in seconds.
@@ -381,6 +392,10 @@ export async function callModel(ctx: PipelineContext, input: ModelCallInput): Pr
       excludedModels.push(`${decision.provider}::${decision.model}`);
       const modelFailure = isModelFailure(error);
       if (modelFailure) ctx.deadModels?.add(`${decision.provider}::${decision.model}`);
+      // Some models are not just failing, they are gone. Say so once instead of finding out every run.
+      if (isRetiredModel(error)) {
+        await ctx.retireModel?.(decision.provider, decision.model, errorMessage(error)).catch(() => undefined);
+      }
       // Same provider, next model, until it has burned its share; then the next provider. A bad model costs the
       // provider less than a provider-wide failure such as quota does.
       const tries = (burned.get(decision.provider) ?? 0) + (modelFailure ? 1 / MODEL_FAILURES_PER_PROVIDER : 1);

@@ -11,19 +11,7 @@ import { PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
 import { selectCandidates } from "./review";
-import {
-  accountVars,
-  checkInputFor,
-  claimsText,
-  DraftOutputSchema,
-  filterClaimIds,
-  stepName,
-  strategyText,
-  supportedClaims,
-  withSkills,
-  type RunAccountSnapshot,
-  stripInlineClaimIds,
-} from "./shared";
+import { accountVars, checkInputFor, claimsText, DraftOutputSchema, filterClaimIds, perAccount, stepName, strategyText, stripInlineClaimIds, supportedClaims, type RunAccountSnapshot, withSkills } from "./shared";
 import { synthesizeDraft } from "./synthesis";
 
 const ADAPT_OUTPUT_TOKENS = 1_200;
@@ -168,9 +156,6 @@ async function adaptAccount(ctx: PipelineContext, run: RunSnapshot, account: Run
 
 /** ADAPTING: one recommendation per account that still has a valid draft. */
 export async function adaptingStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
-  let produced = 0;
-  for (const account of run.accounts) {
-    if (await adaptAccount(ctx, run, account)) produced += 1;
-  }
-  if (produced === 0) throw new PipelineBlocked("no valid drafts");
+  const produced = await perAccount(run.accounts, (account) => adaptAccount(ctx, run, account));
+  if (!produced.some(Boolean)) throw new PipelineBlocked("no valid drafts");
 }

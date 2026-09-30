@@ -11,7 +11,7 @@ import { renderPrompt } from "../prompts";
 import { callJson, type ProviderPreference } from "./call";
 import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
 import { selectCandidates } from "./review";
-import { accountVars, stepName, strategyText, type RunAccountSnapshot } from "./shared";
+import { accountVars, perAccount, stepName, strategyText, type RunAccountSnapshot } from "./shared";
 
 const JUDGE_OUTPUT_TOKENS = 1_200;
 
@@ -147,8 +147,7 @@ export function tally(
 
 /** JUDGING: a verdict per account with at least one valid draft. */
 export async function judgeStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
-  let judged = 0;
-  for (const account of run.accounts) {
+  const judged = await perAccount(run.accounts, async (account) => {
     const drafts = selectCandidates(ctx, run, account);
     if (drafts.length === 0) {
       await ctx.store.addEvent(run.id, {
@@ -156,10 +155,10 @@ export async function judgeStage(ctx: PipelineContext, run: RunSnapshot): Promis
         status: "SKIPPED",
         error: "no valid draft to judge for this account",
       });
-      continue;
+      return false;
     }
     await judgeAccount(ctx, run, account, drafts);
-    judged += 1;
-  }
-  if (judged === 0) throw new PipelineBlocked("no valid drafts");
+    return true;
+  });
+  if (!judged.some(Boolean)) throw new PipelineBlocked("no valid drafts");
 }

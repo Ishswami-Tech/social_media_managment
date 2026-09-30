@@ -17,20 +17,7 @@ import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
 import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
-import {
-  accountVars,
-  checkInputFor,
-  claimsText,
-  DraftOutputSchema,
-  filterClaimIds,
-  plannedMedia,
-  stepName,
-  strategyText,
-  supportedClaims,
-  withSkills,
-  type RunAccountSnapshot,
-  stripInlineClaimIds,
-} from "./shared";
+import { accountVars, checkInputFor, claimsText, DraftOutputSchema, filterClaimIds, perAccount, plannedMedia, stepName, strategyText, stripInlineClaimIds, supportedClaims, type RunAccountSnapshot, withSkills } from "./shared";
 
 const REVISION_OUTPUT_TOKENS = 1_200;
 const REVIEW_OUTPUT_TOKENS = 600;
@@ -225,15 +212,25 @@ async function platformReview(
   account: RunAccountSnapshot,
   survivors: readonly DraftCandidate[],
 ): Promise<{ drafts: DraftCandidate[]; notes: ReviewNote[] }> {
-  const drafts: DraftCandidate[] = [];
-  const notes: ReviewNote[] = [];
-  for (const draft of survivors) {
+  // Each draft is reviewed and fixed independently, so they go together: three
+  // drafts in a row were three times the wait for no gain.
+  const reviewed = await Promise.all(survivors.map((draft) => reviewOne(ctx, run, account, draft)));
+  return {
+    drafts: reviewed.map((r) => r.draft),
+    notes: reviewed.flatMap((r) => (r.note ? [r.note] : [])),
+  };
+}
+
+async function reviewOne(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  account: RunAccountSnapshot,
+  draft: DraftCandidate,
+): Promise<{ draft: DraftCandidate; note?: ReviewNote }> {
+  {
     const review = await reviewDraft(ctx, run, account, draft);
-    if (!review) {
-      drafts.push(draft);
-      continue;
-    }
-    if (review.issues.length > 0) notes.push({ label: draft.label, issues: review.issues });
+    if (!review) return { draft };
+    const note = review.issues.length > 0 ? { label: draft.label, issues: review.issues } : undefined;
     let fixed: DraftCandidate | undefined;
     if (review.verdict === "REVISE") {
       fixed = await reviseDraft(ctx, run, account, draft, review.issues, "review-fix").catch(async (error: unknown) => {
@@ -251,9 +248,8 @@ async function platformReview(
       status: "SUCCEEDED",
       output: { verdict: review.verdict, issues: review.issues, fixed: Boolean(fixed) },
     });
-    drafts.push(fixed ?? draft);
+    return { draft: fixed ?? draft, ...(note ? { note } : {}) };
   }
-  return { drafts, notes };
 }
 
 async function reviewAccount(
@@ -299,8 +295,7 @@ async function reviewAccount(
 
 /** REVIEWING: checks, one revision pass, platform review with a fix pass; drops what still fails. */
 export async function reviewStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
-  let survivingTotal = 0;
-  for (const account of run.accounts) {
+  const counts = await perAccount(run.accounts, async (account) => {
     const survivors = await reviewAccount(ctx, run, account);
     if (survivors.length === 0) {
       await ctx.store.addEvent(run.id, {
@@ -308,11 +303,11 @@ export async function reviewStage(ctx: PipelineContext, run: RunSnapshot): Promi
         status: "SKIPPED",
         error: "no draft passed the checks for this account",
       });
-      continue;
+      return 0;
     }
     const { drafts, notes } = await platformReview(ctx, run, account, survivors);
-    survivingTotal += drafts.length;
     await ctx.store.saveReviewNotes(account.runAccountId, notes);
-  }
-  if (survivingTotal === 0) throw new PipelineBlocked("no valid drafts");
+    return drafts.length;
+  });
+  if (counts.reduce((a, b) => a + b, 0) === 0) throw new PipelineBlocked("no valid drafts");
 }

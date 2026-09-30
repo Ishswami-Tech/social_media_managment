@@ -319,6 +319,12 @@ export interface PipelineContext {
    */
   modelsInUse?: Set<string>;
   /**
+   * Additive: told when a model answers that it is retired or cannot serve this
+   * endpoint, so the catalogue can stop offering it. Absent means the discovery
+   * is forgotten when the run ends and made again on the next one.
+   */
+  retireModel?: (provider: AIProviderName, model: string, reason: string) => Promise<void>;
+  /**
    * Additive: how many models sit behind each single-seat agent. 3 means the
    * researcher asks three models and merges, the strategist hears three angles,
    * the reviewer pools three readings and the judge is three judges voting.

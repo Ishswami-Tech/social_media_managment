@@ -6,6 +6,7 @@ import { createPrismaProviderHealth } from "@/lib/agent/provider-health";
 import { createPrismaRunStore } from "@/lib/agent/store";
 import { publishRun } from "@/lib/agent/live";
 import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import { pluginTools } from "@/lib/plugins";
 import { buildOrgResearchTools } from "@/lib/research";
 import { toSkillCard } from "@/lib/agent/skill-cards";
@@ -80,6 +81,18 @@ export async function buildPipelineContext(organizationId: string, runId?: strin
     allowedModels,
     skills,
     deadModels: new Set<string>(),
+    /**
+     * A model that reports itself retired, or that cannot serve chat
+     * completions, is taken out of the catalogue rather than rediscovered on
+     * every run. Only the row is deactivated: Super Admin can turn it back on.
+     */
+    retireModel: async (provider, model, reason) => {
+      const { count } = await prisma.aIProviderConfig.updateMany({
+        where: { provider, model, active: true },
+        data: { active: false },
+      });
+      if (count > 0) logger.warn("model retired from the catalogue", { provider, model, reason: reason.slice(0, 160) });
+    },
     modelsInUse: new Set<string>(),
     councilSize: 3,
     researchTools: [...researchTools, ...plugins],

@@ -10,19 +10,7 @@ import { renderPrompt } from "../prompts";
 import { WRITER_LANES } from "../progress";
 import { callJson, type ProviderPreference } from "./call";
 import { coolingProviders, TOP_MODELS_PER_PROVIDER, topPerProvider } from "./council";
-import {
-  accountVars,
-  claimsText,
-  DRAFT_LABELS,
-  DraftOutputSchema,
-  filterClaimIds,
-  stepName,
-  strategyText,
-  supportedClaims,
-  withSkills,
-  type RunAccountSnapshot,
-  stripInlineClaimIds,
-} from "./shared";
+import { accountVars, claimsText, DRAFT_LABELS, DraftOutputSchema, filterClaimIds, perAccount, stepName, strategyText, stripInlineClaimIds, supportedClaims, type RunAccountSnapshot, withSkills } from "./shared";
 
 const WRITER_OUTPUT_TOKENS = 1_200;
 /** Used when a single provider writes every draft, so the drafts still differ. */
@@ -179,15 +167,14 @@ async function writeDraft(
  */
 export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
   const slots = planWriters(ctx, await coolingProviders(ctx));
-  let written = 0;
-  for (const account of run.accounts) {
-    let perAccount = 0;
+  const written = await perAccount(run.accounts, async (account) => {
+    let savedForAccount = 0;
     const results = await Promise.allSettled(slots.map((slot) => writeDraft(ctx, run, account, slot, slots, [])));
     for (const [index, result] of results.entries()) {
       const slot = slots[index]!;
       if (result.status === "fulfilled") {
         await ctx.store.saveDraft(run.id, account.runAccountId, result.value);
-        perAccount += 1;
+        savedForAccount += 1;
         continue;
       }
       if (isPipelineBlocked(result.reason)) throw result.reason;
@@ -197,14 +184,14 @@ export async function writersStage(ctx: PipelineContext, run: RunSnapshot): Prom
         error: errorMessage(result.reason),
       });
     }
-    if (perAccount === 0) {
+    if (savedForAccount === 0) {
       await ctx.store.addEvent(run.id, {
         step: stepName("writer", account),
         status: "SKIPPED",
         error: "no writer produced a usable draft for this account",
       });
     }
-    written += perAccount;
-  }
-  if (written === 0) throw new PipelineBlocked("no valid drafts");
+    return savedForAccount;
+  });
+  if (written.reduce((a, b) => a + b, 0) === 0) throw new PipelineBlocked("no valid drafts");
 }

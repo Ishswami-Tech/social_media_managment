@@ -184,10 +184,12 @@ describe("runPipelineToCompletion", () => {
     expect(String(research[2]!.validation)).toMatch(/trying another model/);
     expect(String(research[5]!.validation)).toMatch(/trying another provider/);
     expect(memory.recommendations).toHaveLength(2);
-    // Every auto-routed call tries Google first until the breaker opens (5 failures), then skips it.
+    // Every auto-routed call tries Google first until the breaker opens after five failures, then
+    // skips it. The accounts of a run work at the same time, so a couple of calls can be in flight
+    // when it trips: the point is that a dead provider is dropped quickly, not that the count is exact.
     const googleCalls = script.calls.filter((c) => c.provider === "GOOGLE").length;
     expect(googleCalls).toBeGreaterThanOrEqual(1);
-    expect(googleCalls).toBeLessThanOrEqual(5);
+    expect(googleCalls).toBeLessThanOrEqual(8);
     expect(memory.events.filter((e) => e.provider === "GOOGLE" && e.status === "SUCCEEDED")).toHaveLength(0);
   });
 

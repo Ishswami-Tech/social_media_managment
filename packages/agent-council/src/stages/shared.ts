@@ -5,6 +5,7 @@ import type { PlatformCapabilities } from "@platform/types";
 import { platformGuidance, withSkillInstructions } from "@platform/ai-core";
 import { hashtagLimit, type CheckInput } from "../checks";
 import type { AccountStrategy, ClaimRecord, DraftCandidate, PipelineContext, RunSnapshot } from "../contracts";
+import { isPipelineBlocked } from "../errors";
 
 /** Labels handed to the blind judge; also the writer slots. */
 export const DRAFT_LABELS = ["A", "B", "C"] as const;
@@ -201,6 +202,26 @@ export function plannedMedia(account: RunAccountSnapshot, mediaConcept?: string)
 }
 
 /** Replay step name; per-account steps carry the account id (events have no account column). */
+/**
+ * The accounts of a run, worked at the same time instead of one after another.
+ *
+ * Each account's strategy, drafts, review and verdict are independent, so a
+ * second account used to double the wall clock for no reason. Failure keeps the
+ * old meaning: a blocked pipeline stops everything, and any other error still
+ * fails the run, it just no longer decides how long the run takes.
+ */
+export async function perAccount<T>(
+  accounts: readonly RunAccountSnapshot[],
+  work: (account: RunAccountSnapshot) => Promise<T>,
+): Promise<T[]> {
+  const settled = await Promise.allSettled(accounts.map((account) => work(account)));
+  const blocked = settled.find((r) => r.status === "rejected" && isPipelineBlocked(r.reason));
+  if (blocked?.status === "rejected") throw blocked.reason;
+  const failed = settled.find((r) => r.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
+  return settled.map((r) => (r as PromiseFulfilledResult<T>).value);
+}
+
 export function stepName(stage: string, account?: RunAccountSnapshot, detail?: string): string {
   return [stage, account?.runAccountId, detail].filter(Boolean).join(":");
 }
