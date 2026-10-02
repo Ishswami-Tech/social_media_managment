@@ -11,8 +11,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUp, Check, Cpu, ImagePlus, Loader2, Plug, Plus, ShieldCheck, X } from "lucide-react";
+import { ArrowUp, BookOpen, Check, Cpu, ImagePlus, Loader2, Plug, Plus, Send, Settings2, ShieldCheck, Sparkles, X } from "lucide-react";
 import { MicButton } from "@/components/ui/mic-button";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,12 @@ interface Props {
    */
   onCreated?: (runId: string) => void;
   placement?: "top" | "bottom";
+  /** "detailed" shows every option as its own button; "simple" folds them under Options. */
+  density?: "simple" | "detailed";
+  /** One-click starting points shown under the box. */
+  ideas?: readonly string[];
+  /** "≈ $0.30 · 3 min", from recent runs. */
+  estimate?: string | null;
 }
 
 interface CreateResponse {
@@ -163,11 +170,13 @@ type Placement = "top" | "bottom";
 
 const WRAPPER: Record<Placement, string> = {
   bottom: "sticky bottom-0 z-10 -mx-4 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-8 md:-mx-6 md:px-6",
-  top: "mb-6",
+  top: "scroll-mt-20",
 };
 
-export function ComposerBar({ accounts, skills, plugins, models, onCreated, placement = "bottom" }: Props) {
+export function ComposerBar({ accounts, skills, plugins, models, onCreated, placement = "bottom", density: densityProp, ideas = [], estimate = null }: Props) {
   const router = useRouter();
+  const { mode } = useViewMode();
+  const density = densityProp ?? mode;
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>(() =>
@@ -178,6 +187,9 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
   const [assurance, setAssurance] = useState<Assurance>("JUDGE_ONLY");
   const [withImage, setWithImage] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [fullBrief, setFullBrief] = useState(false);
+  const [goal, setGoal] = useState("");
+  const [audience, setAudience] = useState("");
 
   const textModels = models.filter((m) => m.capabilities.includes("text"));
   const chosenModel = textModels.find((m) => modelKey(m) === model);
@@ -191,8 +203,8 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
 
   // The newest thread sits at the bottom, so that is where the page opens.
   useEffect(() => {
-    window.scrollTo({ top: document.body.scrollHeight });
-  }, []);
+    if (placement === "bottom") window.scrollTo({ top: document.body.scrollHeight });
+  }, [placement]);
 
   useEffect(() => {
     const onFill = (event: Event) => {
@@ -238,8 +250,8 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           topic: parsed.topic,
-          goal: parsed.goal,
-          ...(parsed.audience ? { audience: parsed.audience } : {}),
+          goal: goal.trim() || parsed.goal,
+          ...(audience.trim() || parsed.audience ? { audience: audience.trim() || parsed.audience } : {}),
           socialAccountIds: selectedAccounts,
           ...(selectedSkills.length ? { skillIds: selectedSkills } : {}),
           ...(model === AUTO_MODEL ? {} : { model }),
@@ -280,9 +292,282 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
     );
   }
 
+  if (placement === "top") {
+    const SMALL = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-[13px] hover:bg-accent disabled:opacity-50";
+    const modelLabelText = chosenModel ? shortModelName(chosenModel.displayName) : "auto routing";
+    const assuranceText = assurance === "HIGH_ASSURANCE" ? "High assurance" : "Judge only";
+    const accountMenu = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={cn(SMALL, "border-dashed")}>
+            <Plus className="size-3.5" aria-hidden /> Account
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuLabel className="text-xs text-muted-foreground">Post to</DropdownMenuLabel>
+          {accounts.map((account) => {
+            const on = selectedAccounts.includes(account.id);
+            return (
+              <DropdownMenuItem
+                key={account.id}
+                role="menuitemcheckbox"
+                aria-checked={on}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  toggleAccount(account.id);
+                }}
+              >
+                <Check className={on ? "opacity-100" : "opacity-0"} aria-hidden />
+                <PlatformIcon platform={account.platform} className="size-4 text-[8px]" />
+                <span className="truncate">{account.displayName}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+    const playbookItems = (
+      <>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Playbooks</DropdownMenuLabel>
+        {skills.length === 0 ? (
+          <DropdownMenuItem onSelect={() => router.push("/settings?tab=ai#skills")}>
+            <Plug /> Import playbooks in Settings…
+          </DropdownMenuItem>
+        ) : (
+          skills.map((skill) => {
+            const on = selectedSkills.includes(skill.id);
+            return (
+              <DropdownMenuItem
+                key={skill.id}
+                role="menuitemcheckbox"
+                aria-checked={on}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  toggleSkill(skill.id);
+                }}
+              >
+                <Check className={on ? "opacity-100" : "opacity-0"} aria-hidden />
+                <span className="grid">
+                  <span>{skill.name}</span>
+                  <span className="line-clamp-2 text-xs text-muted-foreground">{skill.description}</span>
+                </span>
+              </DropdownMenuItem>
+            );
+          })
+        )}
+        {plugins.length > 0 && (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            {plugins.length} plugin{plugins.length === 1 ? "" : "s"} available to the writers
+          </p>
+        )}
+      </>
+    );
+    const modelItems = (
+      <>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Model</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={model} onValueChange={setModel}>
+          <DropdownMenuRadioItem value={AUTO_MODEL}>Auto routing (three models)</DropdownMenuRadioItem>
+          {textModels.map((m) => (
+            <DropdownMenuRadioItem key={modelKey(m)} value={modelKey(m)}>
+              {m.displayName} · {m.provider}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </>
+    );
+    const assuranceItems = (
+      <>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">How carefully to check</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={assurance} onValueChange={(v) => setAssurance(v === "HIGH_ASSURANCE" ? "HIGH_ASSURANCE" : "JUDGE_ONLY")}>
+          <DropdownMenuRadioItem value="JUDGE_ONLY">Judge only</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="HIGH_ASSURANCE">High assurance (a second model reviews)</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </>
+    );
+
+    return (
+      <section
+        aria-label="Brief the council"
+        className="flex flex-col gap-3 rounded-[14px] border border-border bg-card px-[18px] pt-[18px] pb-3.5 shadow-[0_1px_0_rgba(20,22,26,0.04),0_10px_28px_-14px_rgba(20,22,26,0.22)] transition-[box-shadow,border-color] focus-within:border-signal/50 dark:shadow-none"
+      >
+        <label htmlFor="brief" className="text-[13px] font-semibold text-muted-foreground">
+          What should we post about next?
+        </label>
+        <div className="flex items-start gap-2.5">
+          <textarea
+            id="brief"
+            ref={textarea}
+            value={text}
+            rows={2}
+            maxLength={2000}
+            disabled={busy}
+            onChange={(e) => {
+              setText(e.target.value);
+              grow();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder="A win, a lesson, an announcement — one sentence is enough. The council does the rest."
+            className="min-w-0 flex-1 resize-none bg-transparent p-0 text-[17px] leading-[1.45] outline-none placeholder:text-muted-foreground md:text-[18px]"
+          />
+          <MicButton
+            value={text}
+            onChange={(next) => {
+              setText(next);
+              window.setTimeout(grow, 0);
+            }}
+            disabled={busy}
+            className="size-[42px] shrink-0 rounded-[10px] border border-border bg-card"
+          />
+        </div>
+
+        {fullBrief && (
+          <div className="grid gap-2 border-t border-rule pt-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-[12.5px] font-semibold text-muted-foreground">
+              Goal
+              <input
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="e.g. book assessments"
+                className="h-9 rounded-lg border border-input bg-card px-3 text-[14px] font-normal text-foreground outline-none focus:border-signal/60"
+              />
+            </label>
+            <label className="grid gap-1 text-[12.5px] font-semibold text-muted-foreground">
+              Audience
+              <input
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="e.g. retail CXOs in India"
+                className="h-9 rounded-lg border border-input bg-card px-3 text-[14px] font-normal text-foreground outline-none focus:border-signal/60"
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-rule pt-2.5">
+          {selectedAccounts.map((id) => {
+            const account = accounts.find((a) => a.id === id);
+            if (!account) return null;
+            return (
+              <span key={id} className="group inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#F1F2EF] pr-2 pl-1.5 text-[13px] dark:bg-white/[0.06]">
+                <PlatformIcon platform={account.platform} className="size-5 text-[8px]" />
+                <span className="max-w-40 truncate">{account.displayName}</span>
+                <button type="button" onClick={() => toggleAccount(id)} aria-label={`Remove ${account.displayName}`} className="text-muted-foreground hover:text-foreground">
+                  <X className="size-3" aria-hidden />
+                </button>
+              </span>
+            );
+          })}
+          {accountMenu}
+          {density === "simple" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={SMALL}>
+                  <Settings2 className="size-3.5" aria-hidden /> Options
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
+                {playbookItems}
+                <DropdownMenuSeparator />
+                {textModels.length > 0 && (
+                  <>
+                    {modelItems}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {assuranceItems}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setWithImage((v) => !v);
+                  }}
+                >
+                  <Check className={withImage ? "opacity-100" : "opacity-0"} aria-hidden /> Add an image
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className={SMALL}>
+                    <BookOpen className="size-3.5" aria-hidden /> Playbooks: {selectedSkills.length ? selectedSkills.length : "auto"}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-80 w-72 overflow-y-auto">
+                  {playbookItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {textModels.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className={SMALL}>
+                      <Sparkles className="size-3.5" aria-hidden /> Model: {modelLabelText}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
+                    {modelItems}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className={SMALL}>
+                    <ShieldCheck className="size-3.5" aria-hidden /> {assuranceText}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  {assuranceItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <button type="button" className={SMALL} onClick={() => setWithImage((v) => !v)} aria-pressed={withImage}>
+                <ImagePlus className="size-3.5" aria-hidden /> Image {withImage ? "on" : "off"}
+              </button>
+              {estimate && <span className="font-mono text-[12px] text-muted-foreground">{estimate}</span>}
+            </>
+          )}
+          <span className="ml-auto inline-flex items-center gap-3">
+            {tooManyAccounts && <span className="text-xs text-muted-foreground">Pick at most {MAX_ACCOUNTS} accounts.</span>}
+            <button type="button" onClick={() => setFullBrief((v) => !v)} className="text-[13px] text-[#3F454D] underline underline-offset-2 dark:text-muted-foreground" aria-expanded={fullBrief}>
+              {fullBrief ? "Short brief" : "Full brief"}
+            </button>
+            <Button variant="signal" onClick={() => void submit()} disabled={!ready || busy}>
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />} Send to council
+            </Button>
+          </span>
+        </div>
+
+        {ideas.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12.5px] text-muted-foreground">Ideas:</span>
+            {ideas.map((idea) => (
+              <button
+                key={idea}
+                type="button"
+                onClick={() => {
+                  setText(idea);
+                  window.setTimeout(grow, 0);
+                  textarea.current?.focus();
+                }}
+                className="min-h-7 rounded-full border border-border bg-[#F6F7F4] px-2.5 py-1 text-left text-[12.5px] leading-snug hover:bg-accent dark:bg-white/[0.04]"
+              >
+                {idea}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
+
   return (
     <div className={WRAPPER[placement]}>
-      <div className="mx-auto grid max-w-3xl gap-2">
+      <div className={cn("grid gap-2", placement === "bottom" && "mx-auto max-w-3xl")}>
         {(selectedSkills.length > 0 || selectedAccounts.length > 0) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {selectedAccounts.map((id) => {
@@ -303,7 +588,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
           </div>
         )}
 
-        <div className="grid gap-2 rounded-[26px] border bg-card p-2.5 shadow-[0_16px_48px_-18px_rgba(0,0,0,0.35)] transition-[box-shadow,border-color] focus-within:border-brand/50 focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--brand)_14%,transparent),0_16px_48px_-18px_color-mix(in_oklch,var(--brand)_45%,transparent)] dark:shadow-[0_16px_48px_-18px_rgba(0,0,0,0.8)]">
+        <div className="grid gap-2 rounded-xl border border-input bg-card p-3 transition-[box-shadow,border-color] focus-within:border-signal/60 focus-within:shadow-[0_0_0_4px_color-mix(in_oklab,var(--signal)_14%,transparent)]">
           <Textarea
             ref={textarea}
             value={text}
@@ -320,7 +605,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
                 void submit();
               }
             }}
-            placeholder={placement === "top" ? "What's on your mind? Tell me what to post about." : "What do you want to post about?"}
+            placeholder="What do you want to post about?"
             aria-label="What do you want to post about?"
             className="max-h-[200px] min-h-10 resize-none border-0 bg-transparent px-3 py-2 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
@@ -461,7 +746,7 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
 
             <button
               type="button"
-              className={cn(TRIGGER_CLASS, withImage && "border-primary/40 bg-primary/10 text-foreground")}
+              className={cn(TRIGGER_CLASS, withImage && "border-foreground/30 bg-muted text-foreground")}
               onClick={() => setWithImage((v) => !v)}
               aria-pressed={withImage}
               title={withImage ? "An image will be generated for each post" : "Text only; click to also generate an image"}
@@ -484,8 +769,9 @@ export function ComposerBar({ accounts, skills, plugins, models, onCreated, plac
               )}
               <Button
                 type="button"
+                variant="signal"
                 size="icon"
-                className="size-8 rounded-full"
+                className="size-9 rounded-lg"
                 onClick={() => void submit()}
                 disabled={!ready || busy}
                 aria-label={busy ? "Sending" : "Send"}

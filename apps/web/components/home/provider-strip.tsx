@@ -13,28 +13,34 @@ export interface ProviderStatus {
 
 const ICON = { ok: CheckCircle2, cooling: PauseCircle, failing: AlertTriangle } as const;
 const TONE = {
-  ok: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
-  cooling: "border-amber-500/50 text-amber-700 dark:text-amber-400",
-  failing: "border-destructive/50 text-destructive",
+  ok: "text-success",
+  cooling: "text-warn",
+  failing: "text-danger",
 } as const;
 
-/** One chip per configured AI provider, so "why did everything land on one model" answers itself. */
+/** One row per configured AI provider, so "why did everything land on one model" answers itself. */
 export function ProviderStrip({ providers }: { providers: ProviderStatus[] }) {
-  if (providers.length === 0) return null;
+  if (providers.length === 0) return <p className="text-[13px] text-muted-foreground">No AI provider is set up yet.</p>;
   return (
-    <ul className="mb-5 flex flex-wrap gap-2" aria-label="AI providers">
+    <ul className="grid gap-2" aria-label="AI providers">
       {providers.map((p) => {
         const Icon = ICON[p.state];
         return (
           <li
             key={p.provider}
-            className={cn("inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs", TONE[p.state])}
+            className="flex items-center gap-2.5 text-[13px]"
             title={p.reason ?? (p.avgLatencyMs ? `avg ${(p.avgLatencyMs / 1000).toFixed(1)} s` : "healthy")}
           >
-            <Icon className="size-3.5" aria-hidden />
+            <Icon className={cn("size-4 shrink-0", TONE[p.state])} aria-hidden />
             <span className="font-medium">{providerName(p.provider)}</span>
-            <span className="text-muted-foreground">
-              {p.state === "ok" ? "ready" : p.state === "cooling" ? `cooling down · ${p.reason ? shortReason(p.reason) : "recent errors"}` : shortReason(p.reason)}
+            <span className={cn("ml-auto truncate font-mono text-[12px]", p.state === "ok" ? "text-muted-foreground" : TONE[p.state])}>
+              {p.state === "ok"
+                ? p.avgLatencyMs
+                  ? `${(p.avgLatencyMs / 1000).toFixed(1)} s avg`
+                  : "ready"
+                : p.state === "cooling"
+                  ? `cooling · ${p.reason ? shortReason(p.reason) : "recent errors"}`
+                  : shortReason(p.reason)}
             </span>
           </li>
         );

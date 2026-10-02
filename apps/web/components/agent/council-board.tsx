@@ -181,7 +181,7 @@ export function CouncilBoard({ board, working }: { board: AgentBoard; working: b
               "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs",
               seat.state === "active" ? "border-transparent shadow-sm" : "border-border bg-card dark:border-border",
             )}
-            style={seat.state === "active" ? { backgroundImage: `linear-gradient(135deg, ${identity.from}22, ${identity.to}22)` } : undefined}
+            style={seat.state === "active" ? { backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${identity.from} 13%, transparent), color-mix(in oklab, ${identity.to} 13%, transparent))` } : undefined}
             title={`${identity.role}: ${seat.detail}`}
           >
             <span

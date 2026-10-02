@@ -16,7 +16,7 @@ import {
 
 export function ConnectButtons({ linkedin, meta }: { linkedin: boolean; meta: boolean }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button asChild variant={linkedin ? "default" : "outline"} disabled={!linkedin}>
         <a
           href={linkedin ? "/api/oauth/linkedin/start" : undefined}

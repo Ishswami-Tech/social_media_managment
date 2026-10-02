@@ -12,7 +12,7 @@ import { PlatformIcon } from "@/components/app/platform-icon";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-export const metadata = { title: "Analytics" };
+export const metadata = { title: "Results" };
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
 
@@ -42,7 +42,7 @@ export default async function AnalyticsPage() {
   return (
     <>
       <PageHeader
-        title="Analytics"
+        title="Results"
         description="Publishing outcomes, normalised engagement and AI spend for the last 30 days. Provider metrics are refreshed every 6 hours."
       >
         {canExport && (
@@ -51,7 +51,7 @@ export default async function AnalyticsPage() {
           </Button>
         )}
       </PageHeader>
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <StatCard title="Published" value={summary.published30d} />
         <StatCard title="Failed jobs" value={summary.posts.FAILED ?? 0} />
         <StatCard title="Impressions" value={e.impressions.toLocaleString()} hint="from provider snapshots" />
@@ -67,7 +67,7 @@ export default async function AnalyticsPage() {
           hint={`${summary.ai.inputTokens + summary.ai.outputTokens} tokens`}
         />
       </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader>
             <CardTitle>Recently published</CardTitle>

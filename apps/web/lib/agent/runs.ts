@@ -99,6 +99,7 @@ const runDetailInclude = {
           platform: true,
           displayName: true,
           avatarUrl: true,
+          accountType: true,
           status: true,
           agentAutoPublish: true,
           profile: true,
@@ -481,6 +482,53 @@ export async function applyAccountDecision(
 
   await settleRunAfterDecision(runId, actor.organizationId);
   return loadRun(actor.organizationId, runId);
+}
+
+/** Bulk approval: the campaigns the approver was looking at, never "whatever is waiting now". */
+export const approveAllInput = z.object({
+  runIds: z.array(z.string().min(1)).min(1).max(25),
+  comment: z.string().trim().max(2000).optional(),
+});
+export type ApproveAllInput = z.infer<typeof approveAllInput>;
+
+export interface ApproveAllResult {
+  approved: { runId: string; accounts: number }[];
+  skipped: { runId: string; reason: string }[];
+}
+
+/**
+ * Approves every still-pending account on each listed campaign, one campaign
+ * at a time through the same rules as a single approval (permission, no
+ * self-approval, still awaiting). A campaign that fails a rule is skipped
+ * with its reason; the others still go through.
+ */
+export async function approveAll(ctx: OrgContext, input: ApproveAllInput): Promise<ApproveAllResult> {
+  const runs = await prisma.agentRun.findMany({
+    where: { organizationId: ctx.organization.id, id: { in: [...new Set(input.runIds)] } },
+    select: { id: true, accounts: { where: { decision: "PENDING" }, select: { id: true } } },
+  });
+  const found = new Set(runs.map((r) => r.id));
+  const result: ApproveAllResult = {
+    approved: [],
+    skipped: input.runIds.filter((id) => !found.has(id)).map((runId) => ({ runId, reason: "Campaign not found" })),
+  };
+  for (const run of runs) {
+    if (run.accounts.length === 0) {
+      result.skipped.push({ runId: run.id, reason: "Already decided" });
+      continue;
+    }
+    try {
+      await decideAccounts(ctx, run.id, {
+        accountIds: run.accounts.map((a) => a.id),
+        decision: "APPROVED",
+        ...(input.comment ? { comment: input.comment } : {}),
+      });
+      result.approved.push({ runId: run.id, accounts: run.accounts.length });
+    } catch (e) {
+      result.skipped.push({ runId: run.id, reason: e instanceof ApiError ? e.message : "Could not approve" });
+    }
+  }
+  return result;
 }
 
 /** When every account is decided, move the run forward (apply or complete). */

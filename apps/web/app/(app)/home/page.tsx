@@ -1,58 +1,61 @@
-import Link from "next/link";
-import type { Prisma } from "@platform/database";
 import { requireOrg } from "@/lib/session";
+import { compactNumber } from "@/lib/utils";
 import { prisma } from "@/lib/db";
-import { composeFinalText } from "@/lib/agent/apply";
-import { loadRecommendationImages, type RecommendationImage } from "@/lib/agent/media";
-import { performanceFor } from "@/lib/agent/performance";
 import { runProgressSelect, toRunInitial } from "@/lib/agent/progress";
-import { selectableModels } from "@/lib/ai";
+import { selectableModels, resolveAuth } from "@/lib/ai";
 import { pluginSummaries } from "@/lib/plugins";
 import { listSkillSummaries } from "@/lib/skills";
-import {
-  ComposerBar,
-  ExamplePrompts,
-  type ComposerBarAccount,
-  type ComposerBarModel,
-} from "@/components/home/composer-bar";
-import { Thread, type ThreadAccount, type ThreadProps, type PostResults } from "@/components/home/thread";
-import { TodayBar, type TodayStats } from "@/components/home/today-bar";
-import { ProviderStrip, type ProviderStatus } from "@/components/home/provider-strip";
-import { AlsoWaiting } from "@/components/home/also-waiting";
-import { ModelsToday } from "@/components/home/models-today";
-import { loadAlsoWaiting, loadModelsToday } from "@/lib/home/overview";
+import { monthlyBudgetStatus } from "@/lib/agent/budget";
 import { providerHealthSummary } from "@/lib/agent/provider-health";
-import { resolveAuth } from "@/lib/ai";
-import { Reveal } from "@/components/ui/reveal";
-import { TeamStandby } from "@/components/agent/team-standby";
+import { platformName, providerName } from "@platform/agent-council/progress";
+import {
+  loadActivity,
+  loadAlsoWaiting,
+  loadQueues,
+  loadSpend,
+  loadTodayAgenda,
+  averageRunCents,
+  typicalRunMs,
+  type TodayAgenda,
+} from "@/lib/home/overview";
+import { ComposerBar, type ComposerBarAccount, type ComposerBarModel } from "@/components/home/composer-bar";
+import { ViewOnly, WritingNowCard } from "@/components/home/thread";
+import { AlsoWaiting, ApproveAllButton } from "@/components/home/also-waiting";
+import type { ProviderStatus } from "@/components/home/provider-strip";
+import {
+  ActivityLog,
+  AttentionCard,
+  GoingOutSoon,
+  HowItsGoing,
+  KpiStrip,
+  Learned,
+  NextSevenDays,
+  NextSteps,
+  PlanCard,
+  SectionHead,
+  SetupCard,
+  SpendCard,
+  SystemStatusCard,
+  TodayHero,
+  TodayTopBar,
+  WhatsAppCard,
+  type CouncilHealth,
+  type KpiTile,
+  type NextStep,
+} from "@/components/home/today-bar";
 
-export const metadata = { title: "Home" };
+export const metadata = { title: "Today" };
 
-/** Home is the opening screen: the one post being worked on right now. Everything else lives under Posts. */
-const MAX_THREADS = 1;
-/** A finished post stays on Home for this long after it was started; older ones live under Posts. */
-const RECENT_WINDOW_MS = 2 * 60 * 60_000;
-/** Errors older than this no longer colour a provider chip. */
+/** Errors older than this no longer colour a provider. */
 const PROVIDER_ERROR_WINDOW_MS = 30 * 60_000;
-const LIVE_STATUSES = [
-  "QUEUED",
-  "RESEARCHING",
-  "STRATEGIZING",
-  "DRAFTING",
-  "REVIEWING",
-  "JUDGING",
-  "ADAPTING",
-  "AWAITING_APPROVAL",
-  "APPROVED",
-  "PUBLISHING",
-  "PAUSED",
-  "BLOCKED",
-] as const;
+const WRITING_STATUSES = ["QUEUED", "RESEARCHING", "STRATEGIZING", "DRAFTING", "REVIEWING", "JUDGING", "ADAPTING", "PAUSED"] as const;
+const DEFAULT_MAX_ACTIVE_RUNS = 5;
 
-/** Runs created after this moment still belong on Home even when finished. */
-function recentCutoff(): Date {
-  return new Date(Date.now() - RECENT_WINDOW_MS);
-}
+const FALLBACK_IDEAS = [
+  "A lesson we learned shipping faster this quarter",
+  "Announce our new integration and why it matters",
+  "A customer story about cutting setup time in half",
+] as const;
 
 /** Each configured provider with what the circuit breaker knows about it. */
 async function providerStatuses(organizationId: string): Promise<ProviderStatus[]> {
@@ -67,285 +70,344 @@ async function providerStatuses(organizationId: string): Promise<ProviderStatus[
   });
 }
 
-const EXAMPLE_PROMPTS = [
-  "A lesson we learned shipping faster this quarter",
-  "Announce our new integration and why it matters",
-  "A customer story about cutting setup time in half",
-] as const;
-
-/** Everything a thread needs: the live view, plus what people read and decide on. */
-const threadSelect = {
-  ...runProgressSelect,
-  createdById: true,
-  assurance: true,
-  skillIds: true,
-  preferredModel: true,
-  wantsImage: true,
-  blockedReason: true,
-  error: true,
-  accounts: {
-    select: {
-      ...runProgressSelect.accounts.select,
-      finalHashtags: true,
-      strategy: true,
-      mediaAssetIds: true,
-      postId: true,
-      socialAccountId: true,
-      winnerDraftId: true,
-      drafts: { select: { id: true, judgeScore: true } },
-      socialAccount: { select: { displayName: true, avatarUrl: true, profile: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  },
-} satisfies Prisma.AgentRunSelect;
-
-type ThreadRow = Prisma.AgentRunGetPayload<{ select: typeof threadSelect }>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** `AgentRunAccount.strategy` is free-form JSON; only the one line people read is taken. */
-function readAngle(value: unknown): string | null {
-  if (!isRecord(value)) return null;
-  for (const key of ["angle", "rationale", "hookType"]) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+/** "Good afternoon" in the organization's time zone. */
+function greeting(timeZone: string): string {
+  let hour = new Date().getHours();
+  try {
+    hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(new Date()));
+  } catch {
+    // An unknown zone falls back to server time.
   }
-  return null;
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
 
-/** Learned posting windows from the account profile, in plain words. */
-function bestWindows(profile: { performance: Prisma.JsonValue | null } | null): string[] {
-  const perf = profile?.performance;
-  if (!isRecord(perf) || !Array.isArray(perf.bestPostingWindows)) return [];
-  return perf.bestPostingWindows.filter((w): w is string => typeof w === "string").slice(0, 3);
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
-const metric = (m: unknown, key: string): number | undefined =>
-  isRecord(m) && typeof m[key] === "number" ? (m[key] as number) : undefined;
-
-function toThreadAccount(
-  account: ThreadRow["accounts"][number],
-  images: ReadonlyMap<string, RecommendationImage>,
-  results: ReadonlyMap<string, PostResults>,
-): ThreadAccount {
-  const base = account.editedText ?? account.finalText ?? "";
-  const imageId = account.mediaAssetIds.find((id) => images.has(id));
-  return {
-    id: account.id,
-    platform: account.platform,
-    displayName: account.socialAccount.displayName,
-    avatarUrl: account.socialAccount.avatarUrl,
-    bestWindows: bestWindows(account.socialAccount.profile),
-    results: account.postId ? (results.get(`${account.postId}:${account.socialAccountId}`) ?? null) : null,
-    text: base ? composeFinalText(base, account.finalHashtags) : "",
-    why: readAngle(account.strategy),
-    image: imageId ? (images.get(imageId) ?? null) : null,
-    performance: performanceFor(account),
-    decision: account.decision,
-    postId: account.postId,
-  };
+function joinAnd(parts: string[]): string {
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : (parts[0] ?? "");
 }
 
-/** Latest analytics for the published variants behind these posts, keyed by `postId:socialAccountId`. */
-async function loadResults(postIds: string[]): Promise<Map<string, PostResults>> {
-  const ids = [...new Set(postIds)];
-  if (ids.length === 0) return new Map();
-  const variants = await prisma.postVariant.findMany({
-    where: { postId: { in: ids }, status: "PUBLISHED" },
-    select: {
-      postId: true,
-      socialAccountId: true,
-      publishedAt: true,
-      externalUrl: true,
-      snapshots: { orderBy: { capturedAt: "desc" }, take: 1, select: { metrics: true, capturedAt: true } },
-    },
-  });
-  return new Map(
-    variants.map((v) => {
-      const snap = v.snapshots[0];
-      return [
-        `${v.postId}:${v.socialAccountId}`,
-        {
-          publishedAt: v.publishedAt?.toISOString() ?? null,
-          externalUrl: v.externalUrl,
-          impressions: metric(snap?.metrics, "impressions"),
-          likes: metric(snap?.metrics, "likes"),
-          comments: metric(snap?.metrics, "comments"),
-          capturedAt: snap?.capturedAt.toISOString() ?? null,
-        },
-      ];
-    }),
-  );
+/** The opening sentence: what needs the person (in the signal colour), then the rest. */
+function summary(awaiting: number, agenda: TodayAgenda): { lead: string | null; rest: string } {
+  const accounts = agenda.attention.filter((a) => a.kind === "account").length;
+  const failures = agenda.attention.length - accounts;
+  const chats = agenda.inbox.length;
+  const others = [
+    accounts ? `${plural(accounts, "account needs", "accounts need")} reconnecting` : null,
+    failures ? `${plural(failures, "post needs", "posts need")} another try` : null,
+    chats ? `${plural(chats, "customer is", "customers are")} waiting on WhatsApp` : null,
+  ].filter((x): x is string => x !== null);
+  const lead = awaiting ? `${plural(awaiting, "post needs", "posts need")} your approval` : null;
+  const tail = others.length || awaiting ? "Everything else is on track." : "Nothing needs you right now.";
+  if (!lead) return { lead: null, rest: others.length ? `${joinAnd(others).replace(/^./, (c) => c.toUpperCase())}. ${tail}` : tail };
+  return { lead, rest: others.length ? `${joinAnd(others)}. ${tail}` : tail.replace(/^Everything/, "everything") };
 }
 
-/** The numbers on the Today bar: what waits, what went out, what is next, what did best. */
-async function loadTodayStats(organizationId: string): Promise<TodayStats> {
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-  const [awaiting, publishedThisMonth, next, snapshots] = await Promise.all([
-    prisma.agentRun.count({ where: { organizationId, status: "AWAITING_APPROVAL" } }),
-    prisma.postVariant.count({ where: { post: { organizationId }, status: "PUBLISHED", publishedAt: { gte: monthStart } } }),
-    prisma.post.findFirst({
-      where: { organizationId, status: { in: ["SCHEDULED", "APPROVED", "QUEUED"] }, scheduledAt: { gt: new Date() } },
-      orderBy: { scheduledAt: "asc" },
-      select: { scheduledAt: true },
-    }),
-    prisma.analyticsSnapshot.findMany({
-      where: { organizationId, scope: "POST", capturedAt: { gte: monthStart }, postVariant: { status: "PUBLISHED" } },
-      select: { metrics: true, postVariant: { select: { postId: true } } },
-    }),
-  ]);
-  const top = snapshots
-    .map((s) => ({ impressions: metric(s.metrics, "impressions") ?? 0, postId: s.postVariant?.postId ?? "" }))
-    .filter((s) => s.postId && s.impressions > 0)
-    .sort((a, b) => b.impressions - a.impressions)[0];
-  return {
-    awaiting,
-    publishedThisMonth,
-    nextScheduledAt: next?.scheduledAt?.toISOString() ?? null,
-    topReach: top ?? null,
-  };
+function health(providers: ProviderStatus[]): { state: CouncilHealth; text: string } {
+  if (providers.length === 0) return { state: "down", text: "No AI provider set up" };
+  const bad = providers.filter((p) => p.state !== "ok");
+  if (bad.length === providers.length) return { state: "down", text: "Every AI provider is failing" };
+  if (bad.length) return { state: "degraded", text: `Running slower · ${bad.map((b) => platformLabel(b.provider)).join(", ")} busy` };
+  return { state: "ok", text: "Council is running normally" };
 }
 
-/** "OPENAI::gpt-5" → the model's short display name, or the bare model id. */
-function modelChip(preferred: string | null, models: ComposerBarModel[]): string | null {
-  if (!preferred) return null;
-  const match = models.find((m) => `${m.provider}::${m.model}` === preferred);
-  const name = match?.displayName ?? preferred.split("::")[1] ?? preferred;
-  return name.split("(")[0]?.trim() ?? name;
+function platformLabel(provider: string): string {
+  return providerName(provider);
 }
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ forbidden?: string }> }) {
+function ageText(iso: string | undefined): string {
+  if (!iso) return "";
+  const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  return mins < 60 ? `${mins} min` : mins < 2880 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} d`;
+}
+
+export default async function TodayPage({ searchParams }: { searchParams: Promise<{ forbidden?: string }> }) {
   const ctx = await requireOrg();
   const { forbidden } = await searchParams;
   const organizationId = ctx.organization.id;
   const canCreate = ctx.can("ai:generate");
+  const canApprove = ctx.can("content:approve");
+  const canManage = ctx.can("content:create");
+  // Opening a run (review page, council room, live stream) needs one of these; read-only roles get plain lists.
+  const canViewRuns = canCreate || canApprove;
+  const canSettings = ctx.can("org:settings");
+  const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
 
-  const [accounts, runs, skills, plugins, models] = await Promise.all([
+  const [accounts, writing, skills, plugins, models, settings, whatsAppCount, providers] = await Promise.all([
     prisma.socialAccount.findMany({
       where: { organizationId, status: "CONNECTED" },
       select: { id: true, platform: true, displayName: true },
       orderBy: [{ platform: "asc" }, { displayName: "asc" }],
     }),
     prisma.agentRun.findMany({
-      where: {
-        organizationId,
-        OR: [{ status: { in: [...LIVE_STATUSES] } }, { createdAt: { gte: recentCutoff() } }],
-      },
-      select: threadSelect,
+      where: { organizationId, status: { in: [...WRITING_STATUSES] } },
+      select: { ...runProgressSelect, assurance: true, platforms: true },
       orderBy: { createdAt: "desc" },
-      take: MAX_THREADS,
     }),
     listSkillSummaries(organizationId).catch(() => []),
     pluginSummaries(organizationId).catch(() => []),
     selectableModels(organizationId).catch(() => []),
+    prisma.organizationSettings.findUnique({ where: { organizationId }, select: { timezone: true, agentMaxActiveRuns: true } }),
+    prisma.whatsAppAccount.count({ where: { organizationId } }),
+    providerStatuses(organizationId).catch(() => [] as ProviderStatus[]),
   ]);
+  const tz = settings?.timezone ?? "UTC";
 
-  const composerAccounts: ComposerBarAccount[] = accounts;
   const composerModels: ComposerBarModel[] = models.map((m) => ({
     provider: m.provider,
     model: m.model,
     displayName: m.displayName,
     capabilities: [...m.capabilities],
   }));
-  const customSkills = skills
-    .filter((s) => s.source === "custom")
-    .map((s) => ({ id: s.id, name: s.name, description: s.description }));
-  const skillName = (id: string) => customSkills.find((s) => s.id === id)?.name ?? id.replace(/^custom:/, "");
+  const customSkills = skills.filter((s) => s.source === "custom").map((s) => ({ id: s.id, name: s.name, description: s.description }));
 
-  const isAdmin = ctx.role === "OWNER" || ctx.role === "ADMIN" || ctx.actor.isSuperAdmin === true;
-  const canApprove = ctx.can("content:approve");
-  const currentRunId = runs[0]?.id;
-  const [images, results, stats, providers, alsoWaiting, modelsToday] = await Promise.all([
-    loadRecommendationImages(
-      organizationId,
-      runs.flatMap((run) => run.accounts.flatMap((a) => a.mediaAssetIds)),
-    ).catch(() => new Map<string, RecommendationImage>()),
-    loadResults(runs.flatMap((run) => run.accounts.flatMap((a) => (a.postId ? [a.postId] : [])))),
-    loadTodayStats(organizationId),
-    providerStatuses(organizationId).catch(() => [] as ProviderStatus[]),
-    loadAlsoWaiting(organizationId, currentRunId).catch(() => []),
-    loadModelsToday(organizationId).catch(() => []),
+  const [waiting, agenda, budget, typicalMs, recentSpend, activity, queues, spend] = await Promise.all([
+    loadAlsoWaiting(organizationId).catch(() => []),
+    loadTodayAgenda(organizationId, {
+      hasAiProvider: composerModels.some((m) => m.capabilities.includes("text")),
+      hasWhatsApp: whatsAppCount > 0 && ctx.can("whatsapp:view"),
+      timeZone: tz,
+      canEditMemory: canSettings,
+    }),
+    canSettings ? monthlyBudgetStatus(organizationId).catch(() => null) : null,
+    typicalRunMs(organizationId).catch(() => null),
+    averageRunCents(organizationId).catch(() => null),
+    loadActivity(organizationId).catch(() => []),
+    canSettings ? loadQueues(organizationId).catch(() => []) : [],
+    canSettings ? loadSpend(organizationId, tz).catch(() => null) : null,
   ]);
 
-  // Oldest at the top, newest just above the composer — like any conversation.
-  const threads: ThreadProps[] = [...runs].reverse().map((run) => ({
-    runId: run.id,
-    topic: run.topic,
-    initial: toRunInitial(run),
-    accounts: run.accounts.map((a) => toThreadAccount(a, images, results)),
-    skills: run.skillIds.map(skillName),
-    model: modelChip(run.preferredModel, composerModels),
-    assurance: run.assurance,
-    wantsImage: run.wantsImage,
-    blockedReason: run.blockedReason,
-    error: run.error,
-    canDecide: canApprove && (run.createdById !== ctx.user.id || isAdmin),
-    canManage: ctx.can("content:create"),
-  }));
+  const decidable = canApprove ? waiting.filter((w) => w.createdById !== ctx.user.id || isAdmin) : [];
+  const live = writing[0];
+  // Nothing is being written: keep the council on the page with the latest run.
+  const latest = live || !canViewRuns
+    ? null
+    : await prisma.agentRun.findFirst({
+        where: { organizationId },
+        select: { ...runProgressSelect, assurance: true, platforms: true },
+        orderBy: { createdAt: "desc" },
+      });
+  if (!canViewRuns) {
+    for (const d of agenda.week) for (const it of d.items) it.href = "/posts";
+    for (const a of agenda.attention) if (a.kind === "blocked_run") a.href = "/posts";
+  }
+  const sum = summary(agenda.awaitingCount, agenda);
+  const council = health(providers);
+  const now = new Date();
+  const firstName = ctx.user.name.split(" ")[0] ?? ctx.user.name;
+  const spentCents = budget ? budget.spentCents + budget.reservedCents : 0;
+  const activeRuns = writing.filter((r) => r.status !== "QUEUED" && r.status !== "PAUSED").length;
+  const queued = writing.filter((r) => r.status === "QUEUED").length;
+  const avgCents = recentSpend;
+
+  // ---- next steps, most urgent first, at most four
+  const steps: NextStep[] = [];
+  if (decidable.length)
+    steps.push({
+      icon: "check",
+      tone: "signal",
+      title: `Approve ${plural(decidable.length === waiting.length ? agenda.awaitingCount : decidable.length, "post", "posts")}`,
+      detail: decidable[0]?.goesOutAt
+        ? `The first one goes out ${new Date(decidable[0].goesOutAt).toLocaleDateString("en-US", { weekday: "long", timeZone: tz })}`
+        : "Nothing goes out until you say so",
+      href: decidable.length === 1 ? `/review/${decidable[0]!.runId}` : "#waiting",
+      cta: "Review",
+    });
+  const firstFix = agenda.attention[0];
+  if (firstFix)
+    steps.push({
+      icon: firstFix.kind === "account" ? "link" : "alert",
+      tone: firstFix.kind === "account" ? "warn" : "danger",
+      title: firstFix.kind === "account" ? firstFix.title.replace(" sign-in expired", "").replace(/^/, "Reconnect ") : firstFix.title,
+      detail: firstFix.detail,
+      href: firstFix.href,
+      cta: firstFix.action.label,
+    });
+  if (agenda.inbox.length)
+    steps.push({
+      icon: "inbox",
+      tone: "teal",
+      title: `Reply to ${plural(agenda.inbox.length, "WhatsApp chat", "WhatsApp chats")}`,
+      detail: `Oldest has waited ${ageText(agenda.inbox.at(-1)?.at ?? undefined)}`,
+      href: "/whatsapp/inbox",
+      cta: "Open inbox",
+    });
+  if (canCreate && (!agenda.plan || agenda.plan.daysLeft <= 7)) {
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en-US", { month: "long" });
+    steps.push({
+      icon: "calendar",
+      tone: "info",
+      title: agenda.plan ? `Plan ${next}` : "Plan a month of posts",
+      detail: agenda.plan ? `This plan ends in ${plural(agenda.plan.daysLeft, "day", "days")}` : "The council drafts the ideas; you start the ones you like",
+      href: "/plan",
+      cta: "Start plan",
+    });
+  } else if (canSettings) {
+    const setup = agenda.setup.find((s) => !s.done);
+    if (setup) steps.push({ icon: "sparkle", tone: "info", title: setup.label, detail: "Part of getting set up", href: setup.href, cta: "Start" });
+  }
+
+  // ---- numbers at a glance (Detailed)
+  const nextOut = agenda.upcoming[0];
+  const kpis: KpiTile[] = [
+    { label: "Waiting on you", value: String(agenda.awaitingCount), note: waiting[0] ? `oldest ${ageText(waiting[0].waitingSince)}` : "nothing waiting", signal: waiting.length > 0, href: "#waiting" },
+    {
+      label: "Published · 30 days",
+      value: String(agenda.results.published),
+      note: `across ${plural(agenda.results.accountsPublishing, "account", "accounts")}`,
+      href: "/posts?filter=published",
+    },
+    {
+      label: "Next going out",
+      value: nextOut
+        ? new Date(nextOut.scheduledAt).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit", timeZone: tz }).replace(",", "")
+        : "—",
+      note: nextOut ? nextOut.platforms.map(platformName).join(" · ") : "nothing scheduled",
+      href: "/posts?view=calendar",
+    },
+    {
+      label: "Reach · 30 days",
+      value: compactNumber(agenda.results.reach.value),
+      note:
+        agenda.results.reach.change === null
+          ? "no earlier period"
+          : `${agenda.results.reach.change >= 0 ? "+" : "−"}${Math.round(Math.abs(agenda.results.reach.change) * 100)}% vs previous 30`,
+      href: "/analytics",
+    },
+    ...(budget
+      ? [
+          {
+            label: `Spend · ${now.toLocaleDateString("en-US", { month: "long", timeZone: tz })}`,
+            value: `$${(spentCents / 100).toFixed(2)}`,
+            note: `of $${(budget.budgetCents / 100).toFixed(0)}${avgCents ? ` · avg $${(avgCents / 100).toFixed(2)} / post` : ""}`,
+            href: "/settings?tab=ai",
+          },
+        ]
+      : []),
+    {
+      label: "Posts in progress",
+      value: `${activeRuns} / ${settings?.agentMaxActiveRuns ?? DEFAULT_MAX_ACTIVE_RUNS}`,
+      note: `${queued} queued`,
+    },
+  ];
+
+  const ideas = [
+    ...(agenda.plan?.next ? [agenda.plan.next.title] : []),
+    ...FALLBACK_IDEAS,
+  ].slice(0, 3);
+  const typicalMin = typicalMs ? Math.max(1, Math.round(typicalMs / 60_000)) : null;
+  const estimate = avgCents ? `≈ $${(avgCents / 100).toFixed(2)}${typicalMin ? ` · ${typicalMin} min` : ""}` : null;
+  const expired = agenda.attention.find((a) => a.kind === "account");
+  const quietNote = expired ? `${expired.title.replace(" sign-in expired", "")} is quiet because its sign-in expired.` : null;
+  const eyebrow = `${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: tz })} · ${tz}`;
+  const liveAt = now.toLocaleTimeString("en-GB", { timeZone: tz });
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
-      <div className="mx-auto w-full max-w-3xl flex-1">
-      <div className="flex items-center justify-between gap-3 pb-4">
-        <h1 className="text-sm font-medium text-muted-foreground">Today</h1>
-        <Link href="/posts" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-          Earlier posts and history
-        </Link>
-      </div>
-      <TodayBar stats={stats} />
-      <ProviderStrip providers={providers} />
-      <ModelsToday models={modelsToday} />
+    <div className="flex flex-col gap-8">
+      <TodayTopBar attention={agenda.attention} inbox={agenda.inbox} />
+      <TodayHero eyebrow={eyebrow} greeting={`${greeting(tz)}, ${firstName}.`} lead={sum.lead} rest={sum.rest} health={council.state} healthText={council.text} />
 
       {forbidden && (
-        <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          That page is not available to your role. Ask someone who owns this workspace.
-        </p>
+        <p className="rounded-lg bg-warn-soft px-4 py-3 text-[14px] text-warn">That page is not available to your role. Ask someone who owns this workspace.</p>
       )}
 
-      {threads.length === 0 ? (
-        <div className="grid gap-4 py-6">
-          <TeamStandby />
-          <h2 className="text-xl font-semibold tracking-tight">Your council is standing by. Tell it what to post about.</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Scout researches it with sources, Compass picks the angle, three Quills on different models write it,
-            Lens checks it for the platform, Verdict judges blind, Polish fits it, and you approve. Want a whole month?
-            Start on{" "}
-            <Link href="/plan" className="underline underline-offset-4">
-              Plan
-            </Link>
-            .
-          </p>
-          {canCreate && <ExamplePrompts prompts={EXAMPLE_PROMPTS} />}
-        </div>
-      ) : (
-        <div className="grid gap-6 pb-6">
-          {threads.map((thread, index) => (
-            <Reveal key={thread.runId} index={index}>
-              <Thread {...thread} />
-            </Reveal>
-          ))}
-        </div>
-      )}
+      <ViewOnly mode="detailed">
+        <KpiStrip tiles={kpis} />
+      </ViewOnly>
 
-      <AlsoWaiting items={alsoWaiting} />
+      <div id="compose" className="scroll-mt-6">
+        {canCreate ? (
+          <ComposerBar
+            placement="top"
+            accounts={accounts as ComposerBarAccount[]}
+            skills={customSkills}
+            plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
+            models={composerModels}
+            ideas={ideas}
+            estimate={estimate}
+          />
+        ) : (
+          <p className="rounded-[14px] border border-border bg-card px-5 py-4 text-[14px] text-muted-foreground">Your role can read posts but not write them.</p>
+        )}
       </div>
 
-      {canCreate ? (
-        <ComposerBar
-          accounts={composerAccounts}
-          skills={customSkills}
-          plugins={plugins.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
-          models={composerModels}
-        />
-      ) : (
-        <p className="sticky bottom-0 -mx-4 bg-background px-4 py-3 text-sm text-muted-foreground md:-mx-6 md:px-6">
-          Your role can read posts but not write them.
-        </p>
-      )}
+      <NextSteps steps={steps.slice(0, 4)} />
+      <NextSevenDays week={agenda.week} timeZone={tz} canCreate={canCreate} />
+
+      <div className="flex flex-wrap items-start gap-6">
+        <div className="flex min-w-0 flex-[1_1_600px] flex-col gap-8">
+          {waiting.length > 0 && (
+            <section id="waiting" aria-labelledby="waiting-h" className="flex scroll-mt-6 flex-col gap-3">
+              <SectionHead
+                id="waiting-h"
+                title="Waiting on you"
+                href="/posts?filter=review"
+                linkLabel={agenda.awaitingCount > waiting.length ? `All ${agenda.awaitingCount} in review` : "All posts in review"}
+                action={decidable.length > 1 ? <ApproveAllButton items={decidable} /> : null}
+              />
+              <AlsoWaiting items={waiting} timeZone={tz} canDecide={decidable.map((d) => d.runId)} canReview={canViewRuns} />
+            </section>
+          )}
+
+          {live && canViewRuns && (
+            <WritingNowCard
+              runId={live.id}
+              topic={live.topic}
+              initial={toRunInitial(live)}
+              platformsText={joinAnd([...new Set(live.platforms.map(platformName))])}
+              assurance={live.assurance}
+              canManage={canManage}
+              typicalMs={typicalMs}
+              queued={writing.length - 1}
+            />
+          )}
+
+          {latest && (
+            <ViewOnly mode="detailed">
+              <WritingNowCard
+                recent
+                runId={latest.id}
+                topic={latest.topic}
+                initial={toRunInitial(latest)}
+                platformsText={joinAnd([...new Set(latest.platforms.map(platformName))])}
+                assurance={latest.assurance}
+                canManage={canManage}
+                typicalMs={typicalMs}
+                queued={0}
+              />
+            </ViewOnly>
+          )}
+
+          <HowItsGoing results={agenda.results} quietNote={quietNote} />
+          <Learned learnings={agenda.learnings} />
+
+          <ViewOnly mode="detailed">
+            <ActivityLog entries={activity} timeZone={tz} />
+          </ViewOnly>
+        </div>
+
+        <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-4 lg:max-w-[340px]" aria-label="At a glance">
+          <AttentionCard items={agenda.attention} canPublish={ctx.can("content:publish")} canManage={canManage} />
+          {canSettings && (
+            <ViewOnly mode="detailed">
+              <div className="flex flex-col gap-4">
+                <SystemStatusCard providers={providers} queues={queues} at={liveAt} />
+                {budget && spend && <SpendCard spentCents={spentCents} budgetCents={budget.budgetCents} breakdown={spend} />}
+              </div>
+            </ViewOnly>
+          )}
+          <WhatsAppCard items={agenda.inbox} />
+          <GoingOutSoon items={agenda.upcoming} awaiting={agenda.awaitingCount} timeZone={tz} />
+          <PlanCard plan={agenda.plan} canStart={canCreate} timeZone={tz} />
+          {canSettings && (
+            <ViewOnly mode="simple">
+              <SetupCard steps={agenda.setup} />
+            </ViewOnly>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

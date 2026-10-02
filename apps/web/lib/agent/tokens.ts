@@ -51,11 +51,17 @@ export interface TokenInspection {
   accountIds: string[];
   expired: boolean;
   consumed: boolean;
+  /** ISO; when the link stops working. */
+  expiresAt: string;
+  /** The organization's time zone, for showing the publish time. */
+  timeZone: string;
   run: {
     topic: string;
     goal: string;
     status: string;
     organizationName: string;
+    /** ISO publish time once approved, when the run has one. */
+    scheduledAt: string | null;
     accounts: {
       id: string;
       platform: string;
@@ -64,7 +70,18 @@ export interface TokenInspection {
       finalHashtags: string[];
       mediaConcept: string | null;
       decision: string;
+      /** Winning draft's blind score out of 10, when judged. */
+      verdict: number | null;
+      checksClear: boolean | null;
     }[];
+  };
+}
+
+function winnerFacts(draft: { judgeScore: number | null; checks: unknown } | undefined): { verdict: number | null; checksClear: boolean | null } {
+  const checks = draft?.checks as { ok?: unknown } | null | undefined;
+  return {
+    verdict: typeof draft?.judgeScore === "number" ? Math.round((draft.judgeScore / 6) * 10) / 10 : null,
+    checksClear: checks && typeof checks === "object" ? checks.ok === true : null,
   };
 }
 
@@ -79,7 +96,8 @@ export async function inspectToken(raw: string): Promise<TokenInspection | null>
           topic: true,
           goal: true,
           status: true,
-          organization: { select: { name: true } },
+          scheduledAt: true,
+          organization: { select: { name: true, settings: { select: { timezone: true } } } },
           accounts: {
             select: {
               id: true,
@@ -88,6 +106,8 @@ export async function inspectToken(raw: string): Promise<TokenInspection | null>
               finalHashtags: true,
               mediaConcept: true,
               decision: true,
+              winnerDraftId: true,
+              drafts: { select: { id: true, judgeScore: true, checks: true } },
               socialAccount: { select: { displayName: true } },
             },
           },
@@ -104,11 +124,14 @@ export async function inspectToken(raw: string): Promise<TokenInspection | null>
     accountIds: token.accountIds,
     expired: token.expiresAt.getTime() < Date.now(),
     consumed: token.consumedAt !== null,
+    expiresAt: token.expiresAt.toISOString(),
+    timeZone: token.run.organization.settings?.timezone ?? "UTC",
     run: {
       topic: token.run.topic,
       goal: token.run.goal,
       status: token.run.status,
       organizationName: token.run.organization.name,
+      scheduledAt: token.run.scheduledAt?.toISOString() ?? null,
       accounts: token.run.accounts
         .filter((a) => allowed.size === 0 || allowed.has(a.id))
         .map((a) => ({
@@ -119,6 +142,7 @@ export async function inspectToken(raw: string): Promise<TokenInspection | null>
           finalHashtags: a.finalHashtags,
           mediaConcept: a.mediaConcept,
           decision: a.decision,
+          ...winnerFacts(a.drafts.find((d) => d.id === a.winnerDraftId)),
         })),
     },
   };

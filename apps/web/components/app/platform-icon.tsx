@@ -1,35 +1,30 @@
 import { cn } from "@/lib/utils";
 
-const COLORS: Record<string, string> = {
-  LINKEDIN: "bg-[#0A66C2]",
-  FACEBOOK: "bg-[#1877F2]",
-  INSTAGRAM: "bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF]",
-  X: "bg-black",
-  TIKTOK: "bg-black",
-  YOUTUBE: "bg-[#FF0000]",
-  THREADS: "bg-black",
-  PINTEREST: "bg-[#E60023]",
+/** Flat brand marks: one solid colour, one or two letters. Gradients are gone app-wide. */
+const MARKS: Record<string, { bg: string; glyph: string }> = {
+  LINKEDIN: { bg: "bg-[#0A66C2]", glyph: "in" },
+  FACEBOOK: { bg: "bg-[#1877F2]", glyph: "f" },
+  INSTAGRAM: { bg: "bg-[#D62976]", glyph: "IG" },
+  X: { bg: "bg-[#14161A] dark:bg-[#2A2E35]", glyph: "X" },
+  TIKTOK: { bg: "bg-[#14161A] dark:bg-[#2A2E35]", glyph: "Tk" },
+  YOUTUBE: { bg: "bg-[#FF0000]", glyph: "▶" },
+  THREADS: { bg: "bg-[#14161A] dark:bg-[#2A2E35]", glyph: "@" },
+  PINTEREST: { bg: "bg-[#E60023]", glyph: "P" },
+  WHATSAPP: { bg: "bg-[#25D366]", glyph: "W" },
 };
 
 export function PlatformIcon({ platform, className }: { platform: string; className?: string }) {
+  const mark = MARKS[platform];
   return (
     <span
       className={cn(
-        "inline-flex size-6 items-center justify-center rounded-md text-[10px] font-bold text-white",
-        COLORS[platform] ?? "bg-muted-foreground",
+        "inline-flex size-6 shrink-0 items-center justify-center rounded-md font-sans text-[10px] leading-none font-bold text-white",
+        mark?.bg ?? "bg-muted-foreground",
         className,
       )}
-      title={platform}
+      title={platform.charAt(0) + platform.slice(1).toLowerCase()}
     >
-      {platform === "LINKEDIN"
-        ? "in"
-        : platform === "INSTAGRAM"
-          ? "IG"
-          : platform === "FACEBOOK"
-            ? "f"
-            : platform === "YOUTUBE"
-              ? "▶"
-              : platform.slice(0, 2)}
+      {mark?.glyph ?? platform.slice(0, 2)}
     </span>
   );
 }

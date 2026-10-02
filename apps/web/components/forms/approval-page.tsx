@@ -2,13 +2,10 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
+import { Check, ImageIcon, Loader2, X } from "lucide-react";
 import { PlatformIcon } from "@/components/app/platform-icon";
-import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export interface ApprovalAccount {
   id: string;
@@ -18,12 +15,18 @@ export interface ApprovalAccount {
   finalHashtags: string[];
   mediaConcept: string | null;
   decision: string;
+  verdict: number | null;
+  checksClear: boolean | null;
 }
 
 interface Props {
   token: string;
-  run: { topic: string; goal: string; status: string; organizationName: string };
+  runId: string;
+  run: { topic: string; goal: string; status: string; organizationName: string; scheduledAt: string | null };
+  /** Pre-formatted on the server so the text matches after hydration. */
+  goesOutLabel: string;
   accounts: ApprovalAccount[];
+  expiresAt: string;
 }
 
 interface ApproveResponse {
@@ -33,135 +36,119 @@ interface ApproveResponse {
 
 type Outcome = { kind: "APPROVED" | "REJECTED"; status: string } | { kind: "ERROR"; message: string };
 
-const MAX_ACCOUNTS = 10;
+function hoursLeft(iso: string): string {
+  const h = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 3_600_000));
+  return h >= 48 ? `${Math.round(h / 24)} days` : `${h} hour${h === 1 ? "" : "s"}`;
+}
 
-export function ApprovalPage({ token, run, accounts }: Props) {
+/**
+ * The page an emailed approval link opens: built for a phone. One card per
+ * post, one big Approve, and "Edit in app" for anything more.
+ */
+export function ApprovalPage({ token, runId, accounts, expiresAt, goesOutLabel, run }: Props) {
   const pending = accounts.filter((a) => a.decision === "PENDING");
-  const [selected, setSelected] = useState<string[]>(pending.slice(0, MAX_ACCOUNTS).map((a) => a.id));
-  const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-
-  function toggle(id: string) {
-    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  }
+  const goesOut = goesOutLabel;
 
   async function decide(decision: "APPROVED" | "REJECTED") {
-    if (selected.length === 0 || busy) return;
+    if (pending.length === 0 || busy) return;
     setBusy(true);
     const res = await fetch("/api/agent/approve", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        token,
-        decision,
-        accountIds: selected,
-        ...(comment.trim() ? { comment: comment.trim() } : {}),
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as ApproveResponse;
+      body: JSON.stringify({ token, decision, accountIds: pending.map((a) => a.id) }),
+    }).catch(() => null);
+    const data = ((await res?.json().catch(() => ({}))) ?? {}) as ApproveResponse;
     setBusy(false);
-    if (!res.ok || !data.run) {
+    if (!res?.ok || !data.run) {
       const message = data.message ?? "Could not record your decision";
       setOutcome({ kind: "ERROR", message });
       toast.error(message);
       return;
     }
     setOutcome({ kind: decision, status: data.run.status });
-    toast.success(decision === "APPROVED" ? "Approved" : "Rejected");
   }
 
   if (outcome && outcome.kind !== "ERROR") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{outcome.kind === "APPROVED" ? "Approved" : "Rejected"}</CardTitle>
-          <CardDescription>
-            Thanks — your decision was recorded. The campaign is now {outcome.status.replaceAll("_", " ").toLowerCase()}.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          This approval link has been used and cannot be used again.
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-3 px-5 py-10 text-center">
+        <span className={`mx-auto inline-flex size-14 items-center justify-center rounded-full ${outcome.kind === "APPROVED" ? "bg-success-soft text-success" : "bg-muted text-muted-foreground"}`}>
+          {outcome.kind === "APPROVED" ? <Check className="size-7" aria-hidden /> : <X className="size-7" aria-hidden />}
+        </span>
+        <h1 className="font-display text-[26px] font-bold">{outcome.kind === "APPROVED" ? "Approved." : "Rejected."}</h1>
+        <p className="text-[15px] text-muted-foreground">
+          {outcome.kind === "APPROVED" ? `It goes out ${goesOut}.` : "Nothing will be published. The council learns from it."} This link has now been used.
+        </p>
+        <Link href="/home" className="text-[14px] underline underline-offset-2">
+          Open the app
+        </Link>
+      </div>
     );
   }
 
+  const first = pending[0] ?? accounts[0];
+  const others = pending.slice(1);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{run.topic}</CardTitle>
-        <CardDescription>
-          {run.organizationName} · {run.goal} · <StatusBadge status={run.status} />
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        {outcome?.kind === "ERROR" && <p className="text-sm text-destructive">{outcome.message}</p>}
-        {pending.length === 0 && (
-          <p className="text-sm text-muted-foreground">Every account in this campaign has already been decided.</p>
-        )}
-        {accounts.map((a) => {
-          const decidable = a.decision === "PENDING";
-          return (
-            <div key={a.id} className="grid gap-2 rounded-md border p-3">
-              <label className="flex cursor-pointer items-center gap-3 text-sm">
-                <Checkbox
-                  checked={selected.includes(a.id)}
-                  onCheckedChange={() => toggle(a.id)}
-                  disabled={!decidable}
-                />
-                <PlatformIcon platform={a.platform} />
-                <span className="flex-1 truncate font-medium">{a.displayName}</span>
-                <StatusBadge status={a.decision} />
-              </label>
-              {a.finalText ? (
-                <p className="text-sm whitespace-pre-wrap">{a.finalText}</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">No recommendation text yet.</p>
-              )}
-              {a.finalHashtags.length > 0 && (
-                <p className="text-sm text-muted-foreground">{a.finalHashtags.map((h) => `#${h}`).join(" ")}</p>
-              )}
-              {a.mediaConcept && (
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-medium">Media concept: </span>
-                  {a.mediaConcept}
-                </p>
-              )}
-            </div>
-          );
-        })}
-        {pending.length > 0 && (
+    <div className="flex flex-1 flex-col">
+      <div className="flex flex-col gap-4 px-5 pt-5 pb-4">
+        <h1 className="font-display text-[26px] leading-[1.15] font-bold tracking-[-0.02em]">
+          {pending.length === 0 ? "Already decided." : pending.length === 1 ? "One post is ready for you." : `${pending.length} posts are ready for you.`}
+        </h1>
+        {outcome?.kind === "ERROR" && <p className="rounded-lg bg-danger-soft px-4 py-2.5 text-sm text-danger">{outcome.message}</p>}
+        {first && (
           <>
-            <div className="grid gap-1">
-              <Label htmlFor="approval-comment">Comment (optional)</Label>
-              <Input
-                id="approval-comment"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Anything the team should know"
-                maxLength={2000}
-              />
+            <div className="flex items-start gap-2 text-[13px] text-muted-foreground">
+              <PlatformIcon platform={first.platform} className="size-[22px] text-[9px]" />
+              <span className="flex-1">
+                {first.displayName} · goes out <strong className="font-semibold text-foreground">{goesOut}</strong>
+              </span>
             </div>
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={() => decide("APPROVED")} disabled={busy || selected.length === 0}>
-                Approve selected ({selected.length})
-              </Button>
-              <Button
-                className="flex-1"
-                variant="destructive"
-                onClick={() => decide("REJECTED")}
-                disabled={busy || selected.length === 0}
-              >
-                Reject selected
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This link is personal and can only be used once. Nothing is published until you approve.
+            <article className="flex flex-col gap-3 rounded-[14px] border border-border bg-card p-4">
+              {first.finalText ? (
+                <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{first.finalText}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No text yet.</p>
+              )}
+              {first.finalHashtags.length > 0 && <p className="text-[14px] text-info">{first.finalHashtags.map((h) => `#${h}`).join(" ")}</p>}
+              {first.mediaConcept && (
+                <div className="flex items-center justify-center gap-2 rounded-[10px] bg-[#1B1E23] px-4 py-8 text-center text-[13px] text-[#C3C8CF]">
+                  <ImageIcon className="size-4 shrink-0" aria-hidden /> {first.mediaConcept}
+                </div>
+              )}
+            </article>
+            <p className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+              <span className="inline-flex size-5 items-center justify-center rounded-full bg-agent-verdict text-[10px] font-bold text-white dark:text-[#111316]">V</span>
+              {[
+                first.verdict !== null ? `Verdict ${first.verdict.toFixed(1)}` : null,
+                first.checksClear === null ? null : first.checksClear ? "checks clear" : "some checks need a look",
+                others.length ? `also going to ${others.map((o) => o.displayName).join(", ")}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || run.topic}
             </p>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {pending.length > 0 && (
+        <div className="sticky bottom-0 mt-auto flex flex-col gap-2.5 border-t border-border bg-card px-5 pt-4 pb-5">
+          <Button variant="signal" size="lg" className="h-[52px] w-full text-[16px]" onClick={() => void decide("APPROVED")} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} {pending.length > 1 ? `Approve all ${pending.length}` : "Approve"}
+          </Button>
+          <div className="grid grid-cols-2 gap-2.5">
+            <Button variant="outline" size="lg" asChild>
+              <Link href={`/review/${runId}`}>Edit in app</Link>
+            </Button>
+            <Button variant="outline" size="lg" className="border-[#E8C4C4] text-danger hover:bg-danger-soft" onClick={() => void decide("REJECTED")} disabled={busy}>
+              Reject
+            </Button>
+          </div>
+          <p className="text-center text-[12.5px] text-muted-foreground" suppressHydrationWarning>
+            This link works once and expires in {hoursLeft(expiresAt)}.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

@@ -248,7 +248,7 @@ function Wire({ from, flowing, done, animate }: { from: ProgressStageKey; flowin
   return (
     <span
       className={cn("relative ml-[13px] block h-4 w-0.5 overflow-hidden rounded-full", !(done || flowing) && "bg-border/70 dark:bg-white/10")}
-      style={done || flowing ? { backgroundImage: `linear-gradient(to bottom, ${identity.to}, ${identity.to}55)` } : undefined}
+      style={done || flowing ? { backgroundImage: `linear-gradient(to bottom, ${identity.to}, color-mix(in oklab, ${identity.to} 33%, transparent))` } : undefined}
       aria-hidden
     >
       {flowing &&
@@ -393,17 +393,17 @@ function NodeCard({
         borderLeftColor: failed ? "#f43f5e" : pending ? undefined : identity.to,
         ...(active
           ? {
-              backgroundColor: `${identity.from}1a`,
-              borderTopColor: `${identity.to}66`,
-              borderRightColor: `${identity.to}66`,
-              borderBottomColor: `${identity.to}66`,
+              backgroundColor: `color-mix(in oklab, ${identity.from} 10%, transparent)`,
+              borderTopColor: `color-mix(in oklab, ${identity.to} 40%, transparent)`,
+              borderRightColor: `color-mix(in oklab, ${identity.to} 40%, transparent)`,
+              borderBottomColor: `color-mix(in oklab, ${identity.to} 40%, transparent)`,
               borderLeftColor: identity.to,
             }
           : {}),
       }}
       animate={
         active && animate
-          ? { boxShadow: [`0 0 0 0px ${identity.to}00`, `0 0 0 4px ${identity.to}33`, `0 0 0 0px ${identity.to}00`] }
+          ? { boxShadow: [`0 0 0 0px color-mix(in oklab, ${identity.to} 0%, transparent)`, `0 0 0 4px color-mix(in oklab, ${identity.to} 20%, transparent)`, `0 0 0 0px color-mix(in oklab, ${identity.to} 0%, transparent)`] }
           : upNext && pending && animate
             ? { opacity: [0.45, 0.8, 0.45], boxShadow: "0 0 0 0px transparent" }
             : { boxShadow: "0 0 0 0px transparent" }
@@ -415,7 +415,7 @@ function NodeCard({
         <span
           aria-hidden
           className="pointer-events-none absolute inset-y-0 w-1/2 animate-[mc-shimmer_2.2s_ease-in-out_infinite]"
-          style={{ backgroundImage: `linear-gradient(90deg, transparent, ${identity.to}22, transparent)` }}
+          style={{ backgroundImage: `linear-gradient(90deg, transparent, color-mix(in oklab, ${identity.to} 13%, transparent), transparent)` }}
         />
       )}
       <span className="relative inline-flex shrink-0">
@@ -467,8 +467,8 @@ function WriterTile({ seat, partial, animate }: { seat: AgentSeat; partial?: Liv
         seat.state === "pending" && "border-dashed opacity-45",
         seat.winner && "border-emerald-500",
       )}
-      style={active ? { backgroundColor: `${identity.from}1a`, borderColor: `${identity.to}66` } : undefined}
-      animate={active && animate ? { boxShadow: [`0 0 0 0px ${identity.to}00`, `0 0 0 4px ${identity.to}33`, `0 0 0 0px ${identity.to}00`] } : { boxShadow: "0 0 0 0px transparent" }}
+      style={active ? { backgroundColor: `color-mix(in oklab, ${identity.from} 10%, transparent)`, borderColor: `color-mix(in oklab, ${identity.to} 40%, transparent)` } : undefined}
+      animate={active && animate ? { boxShadow: [`0 0 0 0px color-mix(in oklab, ${identity.to} 0%, transparent)`, `0 0 0 4px color-mix(in oklab, ${identity.to} 20%, transparent)`, `0 0 0 0px color-mix(in oklab, ${identity.to} 0%, transparent)`] } : { boxShadow: "0 0 0 0px transparent" }}
       transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
       title={`${seat.name}${seat.modelLabel ? ` · ${seat.modelLabel}` : ""} · ${seat.detail}`}
     >
@@ -787,7 +787,7 @@ export function MissionControl({ stages, board, transcript, partials, working, s
                   {briefs.slice(0, 5).map((h) => (
                     <motion.li
                       key={`${h.from}-${h.to}`}
-                      initial={animate ? { opacity: 0, x: 12, backgroundColor: `${AGENTS[h.to].to}33` } : false}
+                      initial={animate ? { opacity: 0, x: 12, backgroundColor: `color-mix(in oklab, ${AGENTS[h.to].to} 20%, transparent)` } : false}
                       animate={{ opacity: 1, x: 0, backgroundColor: "rgba(0,0,0,0)" }}
                       transition={{ duration: 0.6 }}
                       className="flex min-w-0 items-start gap-2 rounded-lg px-1 py-0.5 text-[11px]"

@@ -112,9 +112,10 @@ export async function requireOrg(): Promise<OrgContext> {
   return ctx;
 }
 
-export async function requireCapability(capability: Capability): Promise<OrgContext> {
+export async function requireCapability(capability: Capability | Capability[]): Promise<OrgContext> {
   const ctx = await requireOrg();
-  if (!ctx.can(capability)) redirect("/home?forbidden=" + encodeURIComponent(capability));
+  const any = Array.isArray(capability) ? capability : [capability];
+  if (!any.some((c) => ctx.can(c))) redirect("/home?forbidden=" + encodeURIComponent(any[0]!));
   return ctx;
 }
 

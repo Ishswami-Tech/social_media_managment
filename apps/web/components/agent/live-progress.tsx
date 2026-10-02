@@ -579,3 +579,4 @@ export function LiveProgress({ runId, initial, variant = "full", onReady, classN
     </section>
   );
 }
+

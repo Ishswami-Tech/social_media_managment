@@ -69,7 +69,7 @@ async function readState(runId: string, organizationId: string): Promise<RunStat
 }
 
 export const GET = (req: Request, { params }: { params: Promise<{ id: string }> }) =>
-  withOrg(req, "ai:generate", async (ctx) => {
+  withOrg(req, ["ai:generate", "content:approve"], async (ctx) => {
     const { id } = await params;
     const organizationId = ctx.organization.id;
 

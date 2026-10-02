@@ -1,26 +1,24 @@
-import { Cpu } from "lucide-react";
 import type { ModelUse } from "@/lib/home/overview";
 
-/** One chip per model that wrote drafts in the last day, so a single-model day is visible at once. */
+/** One row per model that wrote drafts in the last day, so a single-model day is visible at once. */
 export function ModelsToday({ models }: { models: ModelUse[] }) {
-  if (models.length === 0) return null;
+  if (models.length === 0) return <p className="text-[13px] text-muted-foreground">No drafts written in the last day.</p>;
   const providers = new Set(models.map((m) => m.provider)).size;
+  const max = Math.max(...models.map((m) => m.drafts));
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-2 text-xs" aria-label="Models that wrote today">
-      <span className="flex items-center gap-1 text-muted-foreground">
-        <Cpu className="size-3.5" aria-hidden /> Wrote today
-        {providers === 1 && models.length > 0 ? " · one provider only" : ""}
-      </span>
+    <div className="grid gap-2" aria-label="Models that wrote today">
       {models.map((m) => (
-        <span
-          key={`${m.provider}:${m.model}`}
-          className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1"
-          title={`${m.providerLabel} · ${m.model}`}
-        >
-          <span className="font-medium">{m.label}</span>
-          <span className="text-muted-foreground">×{m.drafts}</span>
-        </span>
+        <div key={`${m.provider}:${m.model}`} className="grid gap-1" title={`${m.providerLabel} · ${m.model}`}>
+          <div className="flex items-baseline justify-between gap-2 text-[13px]">
+            <span className="truncate font-medium">{m.label}</span>
+            <span className="font-mono text-[12px] text-muted-foreground tabular">{m.drafts} drafts</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-agent-quill" style={{ width: `${(m.drafts / max) * 100}%` }} />
+          </div>
+        </div>
       ))}
+      {providers === 1 && <p className="text-[12px] text-warn">Every draft came from one provider today.</p>}
     </div>
   );
 }

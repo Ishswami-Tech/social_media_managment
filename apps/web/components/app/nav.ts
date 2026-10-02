@@ -17,7 +17,8 @@ export type NavIcon =
   | "brand"
   | "team"
   | "memory"
-  | "settings";
+  | "settings"
+  | "admin";
 
 export interface NavItem {
   href: string;
@@ -29,31 +30,36 @@ export interface NavItem {
    * this organization, e.g. the WhatsApp inbox with no WhatsApp number.
    */
   hidden?: boolean;
+  /** Computed by the layout: a count that needs the user (waiting runs, unread chats). */
+  badge?: number;
 }
 
 /**
  * The product is one loop: plan the month, let the agents write, approve, see
  * the results, and keep the AI's memory honest. Only that loop lives here.
+ * Settings sits at the foot of the rail, not in this list.
  */
 export const MAIN_NAV: NavItem[] = [
-  { href: "/home", label: "Home", icon: "home" },
+  { href: "/home", label: "Today", icon: "home" },
   { href: "/plan", label: "Plan", icon: "calendar", capability: "ai:generate" },
   { href: "/posts", label: "Posts", icon: "posts" },
+  { href: "/whatsapp/inbox", label: "Inbox", icon: "inbox", capability: "whatsapp:view" },
+  { href: "/analytics", label: "Results", icon: "analytics", capability: "analytics:view" },
   { href: "/memory", label: "Memory", icon: "memory", capability: "accounts:view" },
   { href: "/accounts", label: "Accounts", icon: "accounts", capability: "accounts:view" },
-  { href: "/settings", label: "Settings", icon: "settings", capability: "org:settings" },
 ];
+
+/** The rail's foot. */
+export const SETTINGS_NAV: NavItem = { href: "/settings", label: "Settings", icon: "settings", capability: "org:settings" };
 
 /**
  * Everything else, tucked behind a collapsed "More" group. The manual
- * composer, AI Studio and the WhatsApp module still exist at their URLs but
- * are not part of the product's front door: the agents write, you approve.
+ * composer, AI Studio and the rest of the WhatsApp module still exist at
+ * their URLs but are not part of the product's front door.
  */
-export const MORE_NAV: NavItem[] = [
-  { href: "/analytics", label: "Analytics", icon: "analytics", capability: "analytics:view" },
-];
+export const MORE_NAV: NavItem[] = [];
 
-/** WhatsApp is reachable by URL only until it earns a place in the loop. */
+/** WhatsApp's inbox is in the main loop; the rest is reachable by URL. */
 export const WHATSAPP_NAV: NavItem[] = [];
 
 /** Team and Brand are tabs inside Settings now, so nothing is left here. */

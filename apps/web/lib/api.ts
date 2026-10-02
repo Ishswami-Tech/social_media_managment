@@ -71,13 +71,17 @@ export async function withUser(req: Request, fn: Handler<Session>): Promise<Resp
 }
 
 /** Requires an active organization and, optionally, a capability within it. */
-export async function withOrg(req: Request, capability: Capability | null, fn: Handler<OrgContext>): Promise<Response> {
+/** `capability` may be a list: holding any one of them is enough (e.g. view a run if you can write or approve). */
+export async function withOrg(req: Request, capability: Capability | Capability[] | null, fn: Handler<OrgContext>): Promise<Response> {
   try {
     const session = await getSession();
     if (!session) throw new ApiError(401, "Authentication required", "unauthenticated");
     const ctx = await getOrgContext(session);
     if (!ctx) throw new ApiError(403, "No active organization", "no_organization");
-    if (capability) assertCapability(ctx, capability);
+    if (capability) {
+      const any = Array.isArray(capability) ? capability : [capability];
+      if (!any.some((c) => ctx.can(c))) assertCapability(ctx, any[0]!);
+    }
     return await fn(ctx, req);
   } catch (e) {
     return errorResponse(e);

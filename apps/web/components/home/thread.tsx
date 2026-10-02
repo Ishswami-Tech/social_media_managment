@@ -9,12 +9,13 @@
  * plain: no run, no pipeline, no council.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { buildBoard, buildTranscript } from "@platform/agent-council/progress";
+import { buildBoard, buildTranscript, shortReason, stageOfStep } from "@platform/agent-council/progress";
+import { AGENTS } from "@/components/agent/agents";
 import { CouncilRoom } from "@/components/agent/council-room";
 import { applyPartials } from "@platform/agent-council/live";
 import { CouncilBoard } from "@/components/agent/council-board";
@@ -29,7 +30,7 @@ import { MissionControl } from "@/components/agent/mission-control";
 import { EditTools, type EditedAccount } from "@/components/agent/edit-tools";
 import { Celebrate } from "@/components/agent/celebrate";
 import { PostPreview } from "@/components/preview/post-preview";
-import { CalendarClock, Eye, Pencil } from "lucide-react";
+import { CalendarClock, Check, Eye, Pause, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -408,7 +409,7 @@ export function Thread({
     }),
     [snapshot.claimCount, snapshot.spentCents, board.writers, transcript],
   );
-  const { mode, setMode } = useViewMode();
+  const { mode } = useViewMode();
   const detailed = mode === "detailed";
   const [showWork, setShowWork] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -494,48 +495,38 @@ export function Thread({
   return (
     <section className="grid gap-3" aria-label={topic}>
       {/* What you asked for. */}
-      <div className="flex justify-end">
-        <div className="grid max-w-[85%] gap-1.5 rounded-2xl rounded-br-sm bg-gradient-to-br from-brand to-brand-2 px-3.5 py-2.5 text-white shadow-[0_12px_30px_-14px_color-mix(in_oklch,var(--brand)_70%,transparent)]">
-          <p className="text-sm whitespace-pre-wrap">{topic}</p>
-          <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-white/80">
-            <span className="flex -space-x-1">
-              {chips.platforms.map((platform) => (
-                <PlatformIcon key={platform} platform={platform} className="size-4 text-[8px] ring-2 ring-background" />
-              ))}
-            </span>
-            <span className="truncate">{chips.names.join(", ")}</span>
-            {skills.map((skill) => (
-              <span key={skill} className="rounded-full border px-1.5">
-                {skill}
-              </span>
-            ))}
-            <span className="rounded-full border px-1.5">{model ?? "Auto"}</span>
-            <span className="rounded-full border px-1.5">{ASSURANCE_LABEL[assurance]}</span>
-            {wantsImage && <span className="rounded-full border px-1.5">With image</span>}
-          </p>
+      <div className="grid gap-2 rounded-xl border border-border bg-card px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <p className="font-display text-[17px] leading-snug font-semibold whitespace-pre-wrap">{topic}</p>
+          {working && (
+            <Link
+              href={`/agent/${runId}/live`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background hover:bg-foreground/85"
+            >
+              <span className="live-dot size-1.5 rounded-full bg-signal" aria-hidden /> Watch live
+            </Link>
+          )}
         </div>
+        <p className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
+          <span className="flex -space-x-1">
+            {chips.platforms.map((platform) => (
+              <PlatformIcon key={platform} platform={platform} className="size-5 text-[8px] ring-2 ring-card" />
+            ))}
+          </span>
+          <span className="truncate">{chips.names.join(", ")}</span>
+          {skills.map((skill) => (
+            <span key={skill} className="rounded-full bg-muted px-2 py-0.5">
+              {skill}
+            </span>
+          ))}
+          <span className="rounded-full bg-muted px-2 py-0.5">{model ?? "Auto model"}</span>
+          <span className="rounded-full bg-muted px-2 py-0.5">{ASSURANCE_LABEL[assurance]}</span>
+          {wantsImage && <span className="rounded-full bg-muted px-2 py-0.5">With image</span>}
+        </p>
       </div>
 
       {/* What the AI did about it: plainly by default, with the machinery a click away. */}
-      <div className="grid max-w-[95%] gap-2">
-        <div className="flex justify-end">
-          <div className="inline-flex rounded-full border p-0.5 text-[11px] dark:border-white/15" role="group" aria-label="How much detail to show">
-            {(["simple", "detailed"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setMode(option)}
-                aria-pressed={mode === option}
-                className={cn(
-                  "rounded-full px-2.5 py-1 capitalize transition",
-                  mode === option ? "bg-foreground text-background dark:bg-white dark:text-black" : "text-muted-foreground hover:text-foreground dark:text-white/55",
-                )}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="grid gap-3">
         {detailed ? (
           <MissionControl
             stages={progress.stages}
@@ -577,7 +568,7 @@ export function Thread({
         {detailed && showRoom && <CouncilRoom messages={transcript} stages={progress.stages} partials={snapshot.partials} working={working} />}
 
         {stopped && reason && (
-          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">{reason}</p>
+          <p className="rounded-lg bg-warn-soft px-4 py-2.5 text-[13px] text-warn">{reason}</p>
         )}
 
         <div className="flex flex-wrap items-center gap-4">
@@ -606,6 +597,9 @@ export function Thread({
               Try again
             </button>
           )}
+          <Link href={`/agent/${runId}/live`} className={QUIET_ACTION}>
+            {working ? "Watch the council" : "Replay the council"}
+          </Link>
           <Link href={`/review/${runId}`} className={QUIET_ACTION}>
             How this was made
           </Link>
@@ -626,6 +620,284 @@ export function Thread({
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page-level Simple / Detailed switch
+// ---------------------------------------------------------------------------
+
+/** The Simple / Detailed segmented switch. Shared by every page that offers both views. */
+export function ViewModeToggle({ className }: { className?: string }) {
+  const { mode, setMode } = useViewMode();
+  return (
+    <div className={cn("inline-flex rounded-lg border border-border bg-card p-0.5 text-[13px]", className)} role="group" aria-label="How much detail to show">
+      {(["simple", "detailed"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => setMode(option)}
+          aria-pressed={mode === option}
+          className={cn(
+            "rounded-md px-3 py-1 capitalize transition-colors",
+            mode === option ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Renders its children only in the given view, so server-rendered sections can be shown or hidden by the switch. */
+export function ViewOnly({ mode: only, children }: { mode: "simple" | "detailed"; children: React.ReactNode }) {
+  const { mode } = useViewMode();
+  return mode === only ? <>{children}</> : null;
+}
+
+// ---------------------------------------------------------------------------
+// "Being written now": the compact live card on Today
+// ---------------------------------------------------------------------------
+
+/** The four steps a person cares about, folded from the seven seats. */
+const SIMPLE_STEPS: { label: string; stages: string[] }[] = [
+  { label: "Researching", stages: ["research", "strategy"] },
+  { label: "Writing", stages: ["drafting"] },
+  { label: "Checking", stages: ["review", "judge", "adapt"] },
+  { label: "Ready for you", stages: ["ready"] },
+];
+
+const SEAT_ORDER = ["research", "strategy", "drafting", "review", "judge", "adapt", "ready"] as const;
+
+const RUN_PILL: Record<string, { label: string; cls: string }> = {
+  QUEUED: { label: "Starting", cls: "bg-muted text-muted-foreground" },
+  RESEARCHING: { label: "Researching", cls: "bg-signal-soft text-signal-ink" },
+  STRATEGIZING: { label: "Choosing angles", cls: "bg-signal-soft text-signal-ink" },
+  DRAFTING: { label: "Writing", cls: "bg-signal-soft text-signal-ink" },
+  REVIEWING: { label: "Checking", cls: "bg-signal-soft text-signal-ink" },
+  JUDGING: { label: "Judging", cls: "bg-signal-soft text-signal-ink" },
+  ADAPTING: { label: "Polishing", cls: "bg-signal-soft text-signal-ink" },
+  PAUSED: { label: "Paused", cls: "bg-warn-soft text-warn" },
+  BLOCKED: { label: "Needs you", cls: "bg-warn-soft text-warn" },
+  AWAITING_APPROVAL: { label: "Ready for you", cls: "bg-success-soft text-success" },
+};
+
+export interface WritingNowProps {
+  runId: string;
+  topic: string;
+  initial: RunInitial;
+  /** "LinkedIn and Facebook". */
+  platformsText: string;
+  assurance: string;
+  canManage: boolean;
+  /** Typical start-to-ready time from recent runs, for the "about N minutes left" line. */
+  typicalMs: number | null;
+  /** Other campaigns waiting their turn. */
+  queued: number;
+  /** Nothing is being written: show the most recent run so the council is always on the page. */
+  recent?: boolean;
+}
+
+function minutesLeft(typicalMs: number | null, startedAt: string | null, now: number): string {
+  if (!typicalMs || !startedAt || !now) return "Usually ready in a few minutes.";
+  const left = typicalMs - (now - Date.parse(startedAt));
+  if (left <= 60_000) return "Almost there.";
+  const mins = Math.round(left / 60_000);
+  return `About ${mins} minute${mins === 1 ? "" : "s"} left.`;
+}
+
+const subscribeMinute = (cb: () => void) => {
+  const id = window.setInterval(cb, 15_000);
+  return () => window.clearInterval(id);
+};
+const nowMinute = () => Math.floor(Date.now() / 15_000) * 15_000;
+const nowServer = () => 0;
+
+export function WritingNowCard({ runId, topic, initial, platformsText, assurance, canManage, typicalMs, queued, recent = false }: WritingNowProps) {
+  const router = useRouter();
+  const { snapshot, progress } = useRunProgress(runId, initial, () => router.refresh());
+  const { mode } = useViewMode();
+  const [busy, setBusy] = useState(false);
+  const now = useSyncExternalStore(subscribeMinute, nowMinute, nowServer);
+  const board = useMemo(() => buildBoard(snapshot.status, snapshot.events, snapshot.accounts), [snapshot]);
+  const status = snapshot.status;
+  const pill = RUN_PILL[status] ?? { label: status.toLowerCase(), cls: "bg-muted text-muted-foreground" };
+  const stageState = (key: string) => progress.stages.find((s) => s.key === key)?.state ?? "pending";
+  const startedText = initial.startedAt ? `started ${Math.max(1, Math.round(((now || Date.parse(initial.startedAt)) - Date.parse(initial.startedAt)) / 60_000))} min ago` : "starting";
+
+  async function act(action: "pause" | "cancel" | "resume") {
+    setBusy(true);
+    const r = await post(`/api/agent/runs/${runId}/${action}`);
+    setBusy(false);
+    if (!r.ok) return toast.error(r.message ?? "That did not work. Try again.");
+    toast.success(action === "pause" ? "Paused" : action === "cancel" ? "Cancelled" : "Back on it");
+    router.refresh();
+  }
+
+  const seats = SEAT_ORDER.map((key) => {
+    const identity = AGENTS[key];
+    const state = stageState(key);
+    let note: string = state === "done" ? "Done" : state === "active" ? "Working" : state === "failed" ? "Stopped" : "Waiting";
+    if (key === "research" && state === "done" && snapshot.claimCount > 0) note = `Done · ${snapshot.claimCount} facts`;
+    if (key === "drafting") {
+      const total = board.writers.length || 3;
+      const done = board.writers.filter((w) => w.state === "done").length;
+      note = state === "done" ? `Done · ${total} drafts` : state === "active" ? `Writing · ${done} of ${total}` : note;
+    }
+    if (key === "ready") note = "Approve";
+    return { key, name: key === "drafting" ? "Quill ×3" : identity.name, note, state };
+  });
+
+  const log = [...snapshot.events]
+    .filter((e) => e.status !== "STARTED")
+    .slice(-5)
+    .map((e) => {
+      const stage = stageOfStep(e.step);
+      const label = e.step.split(":")[2]?.split(".")[0];
+      const who = stage ? `${AGENTS[stage].name}${stage === "drafting" && label ? ` ${label}` : ""}` : e.step;
+      const what = [e.provider && e.model ? `${e.provider.toLowerCase()}::${e.model}` : null, e.latencyMs ? `${(e.latencyMs / 1000).toFixed(1)} s` : null, e.error ? shortReason(e.error) : null]
+        .filter(Boolean)
+        .join(" · ");
+      return { id: e.id, at: new Date(e.at).toLocaleTimeString("en-GB"), who, what: what || e.status.toLowerCase() };
+    });
+
+  return (
+    <section aria-labelledby="writing-h" className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="writing-h" className="font-display text-[20px] leading-tight font-bold tracking-[-0.01em]">
+          {recent ? "The council · latest run" : "Being written now"}
+        </h2>
+        {queued > 0 && <span className="text-[13px] text-muted-foreground">{queued} more queued</span>}
+      </div>
+      <article className="flex flex-col gap-[18px] rounded-[14px] border border-border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12.5px] font-semibold", pill.cls)}>
+                {!recent && <span className="live-dot size-1.5 rounded-full bg-current" aria-hidden />}
+                {pill.label}
+              </span>
+              <span className="text-[12.5px] text-muted-foreground" suppressHydrationWarning>
+                For {platformsText} · {recent ? "last run" : startedText} · {ASSURANCE_LABEL[assurance as keyof typeof ASSURANCE_LABEL] ?? assurance}
+              </span>
+            </div>
+            <h3 className="font-display text-[18px] font-bold">{topic}</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" asChild>
+              <Link href={`/agent/${runId}/live`}>
+                <Eye aria-hidden /> {recent ? "Open the council room" : "Watch the council live"}
+              </Link>
+            </Button>
+            {canManage && !recent && status !== "PAUSED" && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("pause")}>
+                <Pause aria-hidden /> Pause
+              </Button>
+            )}
+            {canManage && status === "PAUSED" && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("resume")}>
+                Carry on
+              </Button>
+            )}
+            {canManage && !recent && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act("cancel")}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {mode !== "detailed" ? (
+          <div className="flex flex-col gap-3.5">
+            <div className="flex flex-wrap gap-2.5">
+              {SIMPLE_STEPS.map((step, i) => {
+                const states = step.stages.map(stageState);
+                const done = states.every((s) => s === "done");
+                const live = !done && states.some((s) => s === "active");
+                return (
+                  <div key={step.label} className="flex min-w-[120px] flex-1 items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex size-[26px] shrink-0 items-center justify-center rounded-full font-mono text-[12px] text-white dark:text-[#14161a]",
+                        done ? "bg-foreground" : live ? "bg-signal" : "bg-[#C4C8C1] dark:bg-white/20",
+                      )}
+                    >
+                      {done ? <Check className="size-3.5" aria-hidden /> : i + 1}
+                    </span>
+                    <span className={cn("text-[13.5px]", done || live ? "font-semibold" : "text-muted-foreground")}>{step.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[#E6E8E3] dark:bg-white/10">
+              <div className="h-full rounded-full bg-signal transition-[width] duration-500" style={{ width: `${progress.overall.percent}%` }} />
+            </div>
+            <span className="text-[13px] text-[#454B53] dark:text-muted-foreground" suppressHydrationWarning>
+              {minutesLeft(typicalMs, initial.startedAt, now)} We’ll put it in “Waiting on you” when it’s ready — you can leave this page.
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start overflow-x-auto px-0.5 py-1">
+              {seats.map((seat, i) => (
+                <div key={seat.key} className="contents">
+                  <div className="flex min-w-[72px] flex-1 flex-col items-center gap-2 text-center">
+                    <span
+                      className={cn("inline-flex rounded-full", seat.state === "pending" && "opacity-40")}
+                      style={seat.state === "active" ? { boxShadow: "0 0 0 4px var(--signal-soft)" } : undefined}
+                    >
+                      <span
+                        className="inline-flex size-[34px] items-center justify-center rounded-full font-display text-[14px] font-bold text-white dark:text-[#111316]"
+                        style={{ background: AGENTS[seat.key].from }}
+                      >
+                        {AGENTS[seat.key].name.charAt(0)}
+                      </span>
+                    </span>
+                    <span className="text-[13px] font-semibold">{seat.name}</span>
+                    <span
+                      className={cn(
+                        "text-[12px]",
+                        seat.state === "active" ? "text-signal" : seat.state === "done" ? "text-success" : seat.state === "failed" ? "text-danger" : "text-[#6B717A]",
+                      )}
+                    >
+                      {seat.note}
+                    </span>
+                  </div>
+                  {i < seats.length - 1 && (
+                    <div aria-hidden className={cn("mt-4 h-0.5 flex-[0_1_24px]", seat.state === "done" ? "bg-foreground" : "bg-[#D5D8D2] dark:bg-white/15")} />
+                  )}
+                </div>
+              ))}
+            </div>
+            {log.length > 0 && (
+              <div className="flex flex-col gap-1.5 rounded-[10px] bg-[#F6F7F4] px-4 py-3.5 font-mono text-[12.5px] dark:bg-white/[0.04]">
+                {log.map((l) => (
+                  <div key={l.id} className="flex gap-3.5">
+                    <span className="text-[#6B717A]" suppressHydrationWarning>{l.at}</span>
+                    <span className="min-w-[64px] font-semibold">{l.who}</span>
+                    <span className="truncate text-[#3F454D] dark:text-muted-foreground">{l.what}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-3.5">
+              <span className="font-mono text-[12px] text-muted-foreground">
+                run {runId.slice(0, 7)}… · ${(snapshot.spentCents / 100).toFixed(2)} spent of ${(snapshot.maxCents / 100).toFixed(2)}
+              </span>
+              <div className="flex-[1_1_160px]">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E6E8E3] dark:bg-white/10">
+                  <div className="h-full rounded-full bg-foreground" style={{ width: `${snapshot.maxCents ? Math.min(100, (snapshot.spentCents / snapshot.maxCents) * 100) : 0}%` }} />
+                </div>
+              </div>
+              <Link href={`/agent/${runId}/live`} className="text-[13px] underline underline-offset-2">
+                Open replay
+              </Link>
+            </div>
+          </div>
+        )}
+      </article>
     </section>
   );
 }
