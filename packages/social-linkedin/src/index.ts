@@ -16,6 +16,8 @@ import {
   type ProviderConfig,
   type ProviderContext,
   type PublishResult,
+  type CommentResult,
+  type PostReaction,
   type PublishStatus,
   type RemoteMedia,
   type SocialProvider,
@@ -397,6 +399,75 @@ export class LinkedInProvider implements SocialProvider {
       expiresAt: expiresAtFromSeconds(token.expires_in),
       refreshExpiresAt: expiresAtFromSeconds(token.refresh_token_expires_in),
       scopes: token.scope ? token.scope.split(/[ ,]+/) : fallbackScopes,
+    };
+  }
+
+  /**
+   * Reacting, commenting and resharing are all writes, which is exactly what
+   * w_member_social grants ("create, modify and delete posts, comments and
+   * reactions"). Reading those same objects back is a separate permission
+   * this app does not hold, so these return nothing useful beyond success.
+   */
+  async reactToPost(externalPostId: string, reaction: PostReaction, ctx: ProviderContext): Promise<void> {
+    const actor = this.ownerUrn(ctx);
+    const res = await this.apiRaw(ctx.credential, `/rest/reactions?actor=${encodeURIComponent(actor)}`, {
+      method: "POST",
+      body: { root: externalPostId, reactionType: reaction },
+    });
+    if (res.status !== 201 && res.status !== 200 && res.status !== 204)
+      throw new ProviderError(`LinkedIn responded ${res.status} adding the reaction`, "UNKNOWN", false, res.status);
+  }
+
+  async unreactToPost(externalPostId: string, ctx: ProviderContext): Promise<void> {
+    const actor = this.ownerUrn(ctx);
+    // The reaction's id is the (actor, root) pair, so it needs no lookup.
+    const id = `(${actor},${externalPostId})`;
+    try {
+      await this.apiRaw(ctx.credential, `/rest/reactions/${encodeURIComponent(id)}?actor=${encodeURIComponent(actor)}`, {
+        method: "DELETE",
+      });
+    } catch (e) {
+      // Not reacted, or already undone: the end state the caller wanted.
+      if (e instanceof ProviderError && e.code === "NOT_FOUND") return;
+      throw e;
+    }
+  }
+
+  async commentOnPost(externalPostId: string, text: string, ctx: ProviderContext): Promise<CommentResult> {
+    const actor = this.ownerUrn(ctx);
+    const res = await this.apiRaw(ctx.credential, `/rest/socialActions/${encodeURIComponent(externalPostId)}/comments`, {
+      method: "POST",
+      body: { actor, object: externalPostId, message: { text } },
+    });
+    const id = res.headers.get("x-restli-id") ?? res.headers.get("x-linkedin-id");
+    if (!id) {
+      const body = (await res.json().catch(() => ({}))) as { id?: string };
+      if (!body.id) throw new ProviderError("LinkedIn did not return a comment id", "UNKNOWN", false, res.status);
+      return { externalCommentId: body.id, createdAt: new Date() };
+    }
+    return { externalCommentId: id, createdAt: new Date() };
+  }
+
+  /** A reshare is an ordinary post that carries the original in its reshareContext. */
+  async repost(externalPostId: string, commentary: string | undefined, ctx: ProviderContext): Promise<PublishResult> {
+    const res = await this.apiRaw(ctx.credential, "/rest/posts", {
+      method: "POST",
+      body: {
+        author: this.ownerUrn(ctx),
+        commentary: commentary ?? "",
+        visibility: "PUBLIC",
+        distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+        lifecycleState: "PUBLISHED",
+        isReshareDisabledByAuthor: false,
+        reshareContext: { parent: externalPostId },
+      },
+    });
+    const id = res.headers.get("x-restli-id") ?? res.headers.get("x-linkedin-id");
+    if (!id) throw new ProviderError("LinkedIn did not return a post id for the reshare", "UNKNOWN", false, res.status);
+    return {
+      externalPostId: id,
+      externalUrl: `https://www.linkedin.com/feed/update/${encodeURIComponent(id)}/`,
+      publishedAt: new Date(),
     };
   }
 

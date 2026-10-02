@@ -10,6 +10,8 @@ import { PlatformIcon } from "@/components/app/platform-icon";
 import { PostPreview, type PreviewEngagement } from "@/components/preview/post-preview";
 import { PostActions } from "@/components/forms/post-actions";
 import { EditPublishedText } from "@/components/forms/edit-published-text";
+import { PostEngagement } from "@/components/forms/post-engagement";
+import { PLATFORM_LABELS } from "@/lib/providers";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** A variant carrying its newest snapshot, which is all these helpers need. */
@@ -38,24 +40,78 @@ function engagementOf(variant: WithSnapshot): PreviewEngagement | undefined {
   };
 }
 
-/** Says where the numbers came from, and why some of them are dashes. */
-function EngagementNote({ variant }: { variant: WithSnapshot }) {
+/** Every figure the page can show for one post, in the order people look for them. */
+const METRIC_ORDER = ["impressions", "reach", "likes", "comments", "shares", "clicks"] as const;
+const METRIC_LABELS: Record<(typeof METRIC_ORDER)[number], string> = {
+  impressions: "Impressions",
+  reach: "Reach",
+  likes: "Reactions",
+  comments: "Comments",
+  shares: "Shares",
+  clicks: "Clicks",
+};
+const REACTION_NAMES: Record<string, string> = {
+  LIKE: "like",
+  PRAISE: "celebrate",
+  EMPATHY: "support",
+  INTEREST: "insightful",
+  APPRECIATION: "love",
+  ENTERTAINMENT: "funny",
+};
+
+/**
+ * Everything known about how one live post is doing.
+ *
+ * Shows every metric, including the ones this account's token never
+ * receives, so the absence is visible and explained rather than silently
+ * missing. A figure the platform did not report is an em dash.
+ */
+function VariantAnalytics({ variant }: { variant: WithSnapshot }) {
   const snapshot = variant.snapshots[0];
   if (!snapshot) {
     return (
-      <p className="text-[12px] text-muted-foreground">
-        No figures yet. The analytics worker reads engagement every 6 hours.
+      <p className="rounded-lg border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
+        No figures yet. The analytics worker reads engagement from the platform every 6 hours.
       </p>
     );
   }
   const metrics = (snapshot.metrics ?? {}) as Record<string, number | undefined>;
-  const missing = (["impressions", "comments", "shares"] as const).filter((k) => metrics[k] === undefined);
+  const byType = (snapshot.raw as { reactions?: { byType?: Record<string, number> } } | null)?.reactions?.byType ?? {};
+  const kinds = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+  const unreported = METRIC_ORDER.filter((k) => metrics[k] === undefined);
+
   return (
-    <p className="text-[12px] text-muted-foreground">
-      {metrics.impressions !== undefined && <>{metrics.impressions.toLocaleString()} impressions · </>}
-      Read {formatDate(snapshot.capturedAt)}
-      {missing.length > 0 && <> · {missing.join(", ")} not reported for this account</>}
-    </p>
+    <section aria-label="Post analytics" className="grid gap-3 rounded-lg border border-border p-3">
+      <dl className="grid grid-cols-3 gap-x-4 gap-y-3 sm:grid-cols-6">
+        {METRIC_ORDER.map((key) => (
+          <div key={key} className="grid gap-0.5">
+            <dt className="text-[11.5px] text-muted-foreground">{METRIC_LABELS[key]}</dt>
+            <dd className="font-display text-[20px] leading-none font-bold tabular-nums">
+              {metrics[key] === undefined ? (
+                <span className="text-muted-foreground/60">—</span>
+              ) : (
+                metrics[key].toLocaleString()
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {kinds.length > 0 && (
+        <p className="text-[12.5px] text-muted-foreground">
+          {kinds.map(([type, n]) => `${n} ${REACTION_NAMES[type] ?? type.toLowerCase()}`).join(" · ")}
+        </p>
+      )}
+      <p className="text-[12px] text-muted-foreground">
+        Read {formatDate(snapshot.capturedAt)}
+        {unreported.length > 0 && (
+          <>
+            {" · "}
+            {unreported.map((k) => METRIC_LABELS[k].toLowerCase()).join(", ")} are not available for a personal profile
+            on this platform
+          </>
+        )}
+      </p>
+    </section>
   );
 }
 
@@ -135,7 +191,14 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                   }))}
                   engagement={engagementOf(v)}
                 />
-                {v.status === "PUBLISHED" && <EngagementNote variant={v} />}
+                {v.status === "PUBLISHED" && <VariantAnalytics variant={v} />}
+                {v.status === "PUBLISHED" && v.externalPostId && ctx.can("content:publish") && (
+                  <PostEngagement
+                    postId={post.id}
+                    variantId={v.id}
+                    platformLabel={PLATFORM_LABELS[v.platform as keyof typeof PLATFORM_LABELS] ?? v.platform}
+                  />
+                )}
                 {v.status === "PUBLISHED" && v.externalPostId && v.platform === "LINKEDIN" && ctx.can("content:publish") && (
                   <EditPublishedText postId={post.id} variantId={v.id} text={v.text} maxLength={3000} />
                 )}

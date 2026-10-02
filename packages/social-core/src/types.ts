@@ -147,6 +147,28 @@ export interface SocialProvider {
   getPostMetrics?(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null>;
   /** Account-level metrics (followers etc.); null when unsupported. */
   getAccountMetrics?(ctx: ProviderContext): Promise<MetricsResult | null>;
+
+  /**
+   * Act on a published post as the connected account. Each is absent when the
+   * platform or the granted scopes do not allow it, so a caller must check
+   * before offering the button.
+   */
+  reactToPost?(externalPostId: string, reaction: PostReaction, ctx: ProviderContext): Promise<void>;
+  /** Remove this account's own reaction. */
+  unreactToPost?(externalPostId: string, ctx: ProviderContext): Promise<void>;
+  /** Add a top-level comment; resolves to the new comment's id on the platform. */
+  commentOnPost?(externalPostId: string, text: string, ctx: ProviderContext): Promise<CommentResult>;
+  /** Share the post again from this account; resolves to the new post. */
+  repost?(externalPostId: string, commentary: string | undefined, ctx: ProviderContext): Promise<PublishResult>;
+}
+
+/** The reactions a platform understands. Platforms that only have "like" accept LIKE alone. */
+export const POST_REACTIONS = ["LIKE", "PRAISE", "EMPATHY", "INTEREST", "APPRECIATION", "ENTERTAINMENT"] as const;
+export type PostReaction = (typeof POST_REACTIONS)[number];
+
+export interface CommentResult {
+  externalCommentId: string;
+  createdAt: Date;
 }
 
 export interface ProviderConfig {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assertTransition, PLATFORMS, type PostStatus } from "@platform/types";
 import { loadSocialCredential, type Prisma } from "@platform/database";
-import type { ProviderContext } from "@platform/social-core";
+import { POST_REACTIONS, type ProviderContext } from "@platform/social-core";
 import { ApiError, badRequest, conflict, notFound } from "../errors";
 import { audit } from "../audit";
 import { keyring, prisma } from "../db";
@@ -441,6 +441,94 @@ export async function editPublishedVariant(ctx: OrgContext, postId: string, vari
   const updated = await prisma.postVariant.update({ where: { id: variantId }, data: { text }, select: { id: true, text: true, platform: true } });
   await audit(ctx, "post.variant.edit_live", "Post", postId, { variantId, platform: variant.platform, externalPostId: variant.externalPostId });
   return updated;
+}
+
+export const engageInput = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("react"), reaction: z.enum(POST_REACTIONS).default("LIKE") }),
+  z.object({ action: z.literal("unreact") }),
+  z.object({ action: z.literal("comment"), text: z.string().trim().min(1).max(1250) }),
+  z.object({ action: z.literal("repost"), commentary: z.string().trim().max(3000).optional() }),
+]);
+export type EngageInput = z.infer<typeof engageInput>;
+
+export interface EngageResult {
+  action: EngageInput["action"];
+  /** Set by comment and repost; the thing that was created on the platform. */
+  externalId?: string;
+  externalUrl?: string;
+}
+
+/**
+ * Act on a live post as the account that published it: react, comment or
+ * reshare.
+ *
+ * Every one of these writes to the real platform, so the route behind it
+ * requires content:publish and the caller is an explicit click, never a
+ * background job. What the platform refuses to let us read afterwards is a
+ * separate matter: a comment posted here will not appear in a list, because
+ * listing comments needs a permission the app does not hold.
+ */
+export async function engageWithVariant(
+  ctx: OrgContext,
+  postId: string,
+  variantId: string,
+  input: EngageInput,
+): Promise<EngageResult> {
+  const post = await getPost(ctx, postId);
+  const variant = post.variants.find((v) => v.id === variantId);
+  if (!variant) throw notFound("Post variant");
+  if (variant.status !== "PUBLISHED" || !variant.externalPostId)
+    throw conflict("Only a live post can be reacted to, commented on or reshared");
+
+  const provider = providers().get(variant.platform);
+  const credential = await loadSocialCredential(prisma, keyring(), variant.socialAccountId);
+  if (!credential) throw conflict(`${variant.socialAccount.displayName}: no stored credential`);
+  const account = await prisma.socialAccount.findUniqueOrThrow({ where: { id: variant.socialAccountId } });
+  const providerCtx: ProviderContext = {
+    credential,
+    externalAccountId: account.externalAccountId,
+    accountType: account.accountType,
+    metadata: (account.metadata as Record<string, unknown>) ?? undefined,
+  };
+  const unsupported = (what: string): never => {
+    throw conflict(`${variant.platform} does not support ${what} through its API`);
+  };
+
+  let result: EngageResult = { action: input.action };
+  switch (input.action) {
+    case "react":
+      if (!provider.reactToPost) unsupported("reacting to a post");
+      else await provider.reactToPost(variant.externalPostId, input.reaction, providerCtx);
+      break;
+    case "unreact":
+      if (!provider.unreactToPost) unsupported("removing a reaction");
+      else await provider.unreactToPost(variant.externalPostId, providerCtx);
+      break;
+    case "comment": {
+      if (!provider.commentOnPost) unsupported("commenting");
+      else {
+        const comment = await provider.commentOnPost(variant.externalPostId, input.text, providerCtx);
+        result = { ...result, externalId: comment.externalCommentId };
+      }
+      break;
+    }
+    case "repost": {
+      if (!provider.repost) unsupported("resharing");
+      else {
+        const reshare = await provider.repost(variant.externalPostId, input.commentary, providerCtx);
+        result = { ...result, externalId: reshare.externalPostId, externalUrl: reshare.externalUrl };
+      }
+      break;
+    }
+  }
+
+  await audit(ctx, `post.variant.${input.action}`, "Post", postId, {
+    variantId,
+    platform: variant.platform,
+    externalPostId: variant.externalPostId,
+    ...(result.externalId ? { created: result.externalId } : {}),
+  });
+  return result;
 }
 
 export interface PostHistoryEvent {
