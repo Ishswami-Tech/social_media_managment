@@ -4,12 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, CheckCheck, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Check, CheckCheck, Loader2, MoreHorizontal, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import { PlatformIcon } from "@/components/app/platform-icon";
 import { ViewSwitch } from "@/components/home/today-bar";
 import { dayLabel, timeLabel } from "@/lib/utils";
 import type { WaitingItem } from "@/lib/home/overview";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogClose,
@@ -35,7 +42,15 @@ function goesOut(item: WaitingItem, timeZone: string): string {
   return `goes out ${dayLabel(item.goesOutAt, timeZone)}, ${timeLabel(item.goesOutAt, timeZone)}`;
 }
 
-/** One card per campaign waiting for a decision: what it is, how it was checked, and Approve / Review first. */
+/**
+ * One card per campaign waiting for a decision: what it is, how it was
+ * checked, and what can be done with it.
+ *
+ * Three outcomes, which are not the same thing. Approve sends it. Reject says
+ * no to this draft and, given a reason, teaches the accounts what to avoid
+ * next time. Discard throws the whole campaign away without teaching it
+ * anything, for the ones that were a bad idea rather than a bad draft.
+ */
 export function AlsoWaiting({
   items,
   timeZone,
@@ -70,6 +85,56 @@ export function AlsoWaiting({
       router.refresh();
     } catch {
       toast.error("Could not reach the server. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Says no to this draft. A reason is optional, and becomes a preference the accounts keep. */
+  async function reject(item: WaitingItem, reason: string): Promise<boolean> {
+    setBusy(item.runId);
+    try {
+      const res = await fetch(`/api/agent/runs/${item.runId}/decide`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          accountIds: item.pendingAccountIds,
+          decision: "REJECTED",
+          ...(reason.trim() ? { comment: reason.trim() } : {}),
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) {
+        toast.error(body.message ?? "Could not reject. Try again.");
+        return false;
+      }
+      toast.success(reason.trim() ? "Rejected. The council will remember why." : "Rejected. Nothing goes out.");
+      router.refresh();
+      return true;
+    } catch {
+      toast.error("Could not reach the server. Try again.");
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Throws the campaign away outright: no post, no learning signal, gone from the list. */
+  async function discard(item: WaitingItem): Promise<boolean> {
+    setBusy(item.runId);
+    try {
+      const res = await fetch(`/api/agent/runs/${item.runId}/cancel`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) {
+        toast.error(body.message ?? "Could not discard. Try again.");
+        return false;
+      }
+      toast.success("Discarded.");
+      router.refresh();
+      return true;
+    } catch {
+      toast.error("Could not reach the server. Try again.");
+      return false;
     } finally {
       setBusy(null);
     }
@@ -120,19 +185,155 @@ export function AlsoWaiting({
           </div>
           <div className="flex min-w-[150px] flex-col items-stretch gap-2">
             {canDecide.includes(item.runId) && (
-              <Button variant="signal" size="sm" disabled={busy === item.runId} onClick={() => void approve(item)}>
-                {busy === item.runId ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} Approve
-              </Button>
+              <>
+                <Button variant="signal" size="sm" disabled={busy === item.runId} onClick={() => void approve(item)}>
+                  {busy === item.runId ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} Approve
+                </Button>
+                <RejectDialog item={item} busy={busy === item.runId} onReject={reject} />
+              </>
             )}
             {canReview && (
               <Button variant="outline" size="sm" asChild>
-                <Link href={`/review/${item.runId}`}>Review first</Link>
+                {/* The review page is where the text is edited, so this is also the Edit route. */}
+                <Link href={`/review/${item.runId}`}>Read and edit</Link>
               </Button>
+            )}
+            {canDecide.includes(item.runId) && (
+              <DiscardMenu item={item} busy={busy === item.runId} onDiscard={discard} />
             )}
           </div>
         </article>
       ))}
     </div>
+  );
+}
+
+/**
+ * Rejecting asks why, because the answer is worth more than the rejection:
+ * it is stored against the accounts and shapes later drafts. The field is
+ * optional so a reason is never the price of saying no.
+ */
+function RejectDialog({
+  item,
+  busy,
+  onReject,
+}: {
+  item: WaitingItem;
+  busy: boolean;
+  onReject: (item: WaitingItem, reason: string) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  async function confirm() {
+    if (await onReject(item, reason)) {
+      setOpen(false);
+      setReason("");
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" disabled={busy}>
+          <X aria-hidden /> Reject
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="grid-cols-1 rounded-xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-[20px]">Reject this draft?</DialogTitle>
+          <DialogDescription>
+            Nothing goes out. {item.topic ? `“${item.topic}” stays` : "It stays"} in your history, and you can ask the council to
+            try again.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-1 gap-1.5">
+          <label htmlFor={`reject-${item.runId}`} className="text-[13px] font-medium">
+            What was wrong with it? <span className="font-normal text-muted-foreground">Optional</span>
+          </label>
+          <Textarea
+            id={`reject-${item.runId}`}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={2000}
+            rows={3}
+            placeholder="Too salesy. Open on a real moment instead."
+            disabled={busy}
+          />
+          <p className="text-[12.5px] text-muted-foreground">
+            Whatever you write here is remembered for these accounts, so the next draft avoids it.
+          </p>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={busy}>
+              Keep it
+            </Button>
+          </DialogClose>
+          <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <X aria-hidden />} Reject
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Discard is kept behind a menu and then a confirmation: it is the only action
+ * here that throws away the whole campaign, research and all.
+ */
+function DiscardMenu({
+  item,
+  busy,
+  onDiscard,
+}: {
+  item: WaitingItem;
+  busy: boolean;
+  onDiscard: (item: WaitingItem) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  async function confirm() {
+    if (await onDiscard(item)) setOpen(false);
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" disabled={busy} aria-label="More actions">
+            <MoreHorizontal aria-hidden /> More
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem variant="destructive" onSelect={() => setOpen(true)}>
+            <Trash2 aria-hidden /> Discard campaign
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
+        <DialogContent className="grid-cols-1 rounded-xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-[20px]">Discard this campaign?</DialogTitle>
+            <DialogDescription>
+              The drafts, the research and the council&apos;s work are thrown away, and nothing is learned from it. Reject
+              instead if the idea was right and only the writing was wrong.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={busy}>
+                Keep it
+              </Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />} Discard
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
