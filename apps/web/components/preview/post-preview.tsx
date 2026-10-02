@@ -13,6 +13,23 @@ export interface PreviewAccount {
   avatarUrl?: string | null;
   headline?: string | null;
 }
+/**
+ * Real figures for a post that is already live.
+ *
+ * Every field is optional on purpose: a platform that does not report a
+ * number leaves it undefined, which the preview renders as an em dash rather
+ * than a zero. Absent is not the same as none.
+ */
+export interface PreviewEngagement {
+  likes?: number | undefined;
+  comments?: number | undefined;
+  shares?: number | undefined;
+  /** Reaction mix, e.g. { LIKE: 8, PRAISE: 1 }. */
+  byType?: Record<string, number> | undefined;
+  /** When the numbers were last read from the platform. */
+  capturedAt?: Date | string | null | undefined;
+}
+
 export interface PostPreviewProps {
   platform: string;
   account: PreviewAccount;
@@ -20,7 +37,46 @@ export interface PostPreviewProps {
   media?: PreviewMedia[];
   /** Show the collapsed feed view with "…more" like the real feed does */
   collapsed?: boolean;
+  /** Present once the post is live: swaps the mock counters for what the platform reports. */
+  engagement?: PreviewEngagement | undefined;
   className?: string;
+}
+
+/** Emoji for the reactions a post actually drew, so the row is not a fixed trio. */
+const REACTION_EMOJI: Record<string, string> = {
+  LIKE: "👍",
+  PRAISE: "👏",
+  EMPATHY: "❤️",
+  INTEREST: "💡",
+  APPRECIATION: "🙌",
+  ENTERTAINMENT: "😄",
+};
+
+const count = (n: number | undefined) => (n === undefined ? "—" : n.toLocaleString());
+
+/** Hover text naming the mix, e.g. "8 like, 1 celebrate". Empty when there is nothing to name. */
+function reactionBreakdown(engagement: PreviewEngagement | undefined): string | undefined {
+  const kinds = Object.entries(engagement?.byType ?? {}).sort((a, b) => b[1] - a[1]);
+  if (kinds.length === 0) return undefined;
+  const names: Record<string, string> = {
+    LIKE: "like",
+    PRAISE: "celebrate",
+    EMPATHY: "support",
+    INTEREST: "insightful",
+    APPRECIATION: "love",
+    ENTERTAINMENT: "funny",
+  };
+  return kinds.map(([type, n]) => `${n} ${names[type] ?? type.toLowerCase()}`).join(", ");
+}
+
+/** The faces shown beside the like count: what this post drew, or the usual trio before it is live. */
+function reactionFaces(engagement: PreviewEngagement | undefined, fallback: string[]): string {
+  const kinds = Object.entries(engagement?.byType ?? {})
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([type]) => REACTION_EMOJI[type] ?? "👍");
+  return (kinds.length > 0 ? kinds : fallback).join(" ");
 }
 
 function RichText({ text, collapsed, accent }: { text: string; collapsed?: boolean; accent: string }) {
@@ -86,7 +142,7 @@ function Avatar({ account, className }: { account: PreviewAccount; className?: s
   );
 }
 
-function LinkedInPreview({ account, text, media = [], collapsed }: PostPreviewProps) {
+function LinkedInPreview({ account, text, media = [], collapsed, engagement }: PostPreviewProps) {
   return (
     <div className="rounded-lg border bg-white text-[rgba(0,0,0,0.9)] shadow-sm dark:bg-zinc-900 dark:text-zinc-100">
       <div className="flex items-start gap-2 px-4 pt-3 pb-2">
@@ -97,7 +153,8 @@ function LinkedInPreview({ account, text, media = [], collapsed }: PostPreviewPr
             {account.headline ?? (account.username ? `@${account.username}` : "Connected account")}
           </p>
           <p className="flex items-center gap-1 text-[12px] text-muted-foreground">
-            Just now · <Globe className="size-3" />
+            {/* "Just now" is right while composing and a lie once the post is live. */}
+            {engagement ? "Live" : "Just now"} · <Globe className="size-3" />
           </p>
         </div>
         <MoreHorizontal className="size-5 text-muted-foreground" />
@@ -107,8 +164,10 @@ function LinkedInPreview({ account, text, media = [], collapsed }: PostPreviewPr
       </div>
       <ImageGrid media={media} />
       <div className="flex items-center justify-between px-4 py-2 text-[12px] text-muted-foreground">
-        <span>👍 ❤️ 💡 · 0</span>
-        <span>0 comments</span>
+        <span title={reactionBreakdown(engagement)}>
+          {reactionFaces(engagement, ["👍", "❤️", "💡"])} · {count(engagement?.likes)}
+        </span>
+        <span>{count(engagement?.comments)} comments</span>
       </div>
       <div className="grid grid-cols-4 border-t px-2 py-1 text-[13px] font-semibold text-[rgba(0,0,0,0.6)] dark:text-zinc-300">
         {[
@@ -129,7 +188,7 @@ function LinkedInPreview({ account, text, media = [], collapsed }: PostPreviewPr
   );
 }
 
-function FacebookPreview({ account, text, media = [], collapsed }: PostPreviewProps) {
+function FacebookPreview({ account, text, media = [], collapsed, engagement }: PostPreviewProps) {
   return (
     <div className="rounded-lg border bg-white text-[#050505] shadow-sm dark:bg-zinc-900 dark:text-zinc-100">
       <div className="flex items-center gap-2 px-4 pt-3 pb-2">
@@ -137,7 +196,8 @@ function FacebookPreview({ account, text, media = [], collapsed }: PostPreviewPr
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold">{account.displayName}</p>
           <p className="flex items-center gap-1 text-[12px] text-muted-foreground">
-            Just now · <Globe className="size-3" />
+            {/* "Just now" is right while composing and a lie once the post is live. */}
+            {engagement ? "Live" : "Just now"} · <Globe className="size-3" />
           </p>
         </div>
         <MoreHorizontal className="size-5 text-muted-foreground" />
@@ -147,8 +207,12 @@ function FacebookPreview({ account, text, media = [], collapsed }: PostPreviewPr
       </div>
       <ImageGrid media={media} />
       <div className="flex items-center justify-between px-4 py-2 text-[13px] text-muted-foreground">
-        <span>👍 ❤️ 0</span>
-        <span>0 comments · 0 shares</span>
+        <span title={reactionBreakdown(engagement)}>
+          {reactionFaces(engagement, ["👍", "❤️"])} {count(engagement?.likes)}
+        </span>
+        <span>
+          {count(engagement?.comments)} comments · {count(engagement?.shares)} shares
+        </span>
       </div>
       <div className="grid grid-cols-3 border-t px-2 py-1 text-[14px] font-semibold text-[#65676b] dark:text-zinc-300">
         <span className="flex items-center justify-center gap-1 py-1">

@@ -67,6 +67,133 @@ export async function organizationSummary(organizationId: string) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Results over time, for the charts
+// ---------------------------------------------------------------------------
+
+/** One column of the chart: a stretch of days, and what went out in it. */
+export interface ResultsBucket {
+  /** Short axis label, e.g. "15 Sep". */
+  label: string;
+  /** Full description for a screen reader and the title attribute. */
+  full: string;
+  published: number;
+  reactions: number;
+}
+
+/** One account's share of the period, so accounts can be compared side by side. */
+export interface AccountTotals {
+  socialAccountId: string;
+  displayName: string;
+  platform: string;
+  published: number;
+  reactions: number;
+  /** Posts whose reactions the platform actually reported; the rest are unknown, not zero. */
+  measured: number;
+}
+
+export interface ResultsBreakdown {
+  buckets: ResultsBucket[];
+  accounts: AccountTotals[];
+  totals: { published: number; reactions: number; measured: number };
+}
+
+/** Daily columns read well for a fortnight; beyond that they turn into a comb, so group by week. */
+function bucketSize(days: number): { ms: number; weekly: boolean } {
+  return days <= 14 ? { ms: 86_400_000, weekly: false } : { ms: 7 * 86_400_000, weekly: true };
+}
+
+/**
+ * Publishing and engagement over a window, bucketed for a bar chart and
+ * totalled per account.
+ *
+ * Reactions are attributed to the day a post went out rather than the day
+ * they were captured: the question a chart answers is "how did what we
+ * published on Tuesday do", not "when did the worker last run".
+ */
+export async function resultsBreakdown(
+  organizationId: string,
+  opts: { days: number; socialAccountId?: string | undefined },
+): Promise<ResultsBreakdown> {
+  const { days } = opts;
+  const since = new Date(Date.now() - days * 86_400_000);
+  const variants = await prisma.postVariant.findMany({
+    where: {
+      post: { organizationId },
+      status: "PUBLISHED",
+      publishedAt: { gte: since },
+      ...(opts.socialAccountId ? { socialAccountId: opts.socialAccountId } : {}),
+    },
+    select: {
+      publishedAt: true,
+      socialAccountId: true,
+      platform: true,
+      socialAccount: { select: { displayName: true } },
+      snapshots: { orderBy: { capturedAt: "desc" }, take: 1, select: { metrics: true } },
+    },
+  });
+
+  const { ms, weekly } = bucketSize(days);
+  const now = Date.now();
+  const count = Math.max(1, Math.ceil((days * 86_400_000) / ms));
+  const start = now - count * ms;
+  const buckets: ResultsBucket[] = Array.from({ length: count }, (_, i) => {
+    const from = new Date(start + i * ms);
+    const to = new Date(start + (i + 1) * ms - 1);
+    return {
+      label: shortDate(from),
+      full: weekly ? `${shortDate(from)} – ${shortDate(to)}` : shortDate(from),
+      published: 0,
+      reactions: 0,
+    };
+  });
+
+  const byAccount = new Map<string, AccountTotals>();
+  const totals = { published: 0, reactions: 0, measured: 0 };
+
+  for (const v of variants) {
+    if (!v.publishedAt) continue;
+    const metrics = v.snapshots[0]?.metrics as { likes?: number } | undefined;
+    const reactions = metrics?.likes;
+
+    const index = Math.min(count - 1, Math.max(0, Math.floor((v.publishedAt.getTime() - start) / ms)));
+    const bucket = buckets[index];
+    if (bucket) {
+      bucket.published += 1;
+      bucket.reactions += reactions ?? 0;
+    }
+
+    const row = byAccount.get(v.socialAccountId) ?? {
+      socialAccountId: v.socialAccountId,
+      displayName: v.socialAccount.displayName,
+      platform: v.platform as string,
+      published: 0,
+      reactions: 0,
+      measured: 0,
+    };
+    row.published += 1;
+    if (reactions !== undefined) {
+      row.reactions += reactions;
+      row.measured += 1;
+    }
+    byAccount.set(v.socialAccountId, row);
+
+    totals.published += 1;
+    if (reactions !== undefined) {
+      totals.reactions += reactions;
+      totals.measured += 1;
+    }
+  }
+
+  return {
+    buckets,
+    accounts: [...byAccount.values()].sort((a, b) => b.reactions - a.reactions || b.published - a.published),
+    totals,
+  };
+}
+
+const shortDate = (d: Date) => `${d.getUTCDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()]}`;
+
 export async function platformSummary() {
   const since30d = new Date(Date.now() - 30 * 24 * 3600 * 1000);
   const [organizations, users, accounts, posts, published30d, failed, webhooksFailed, aiCost, aiByProvider] =

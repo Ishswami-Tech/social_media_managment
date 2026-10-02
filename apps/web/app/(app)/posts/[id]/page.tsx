@@ -7,10 +7,57 @@ import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
-import { PostPreview } from "@/components/preview/post-preview";
+import { PostPreview, type PreviewEngagement } from "@/components/preview/post-preview";
 import { PostActions } from "@/components/forms/post-actions";
 import { EditPublishedText } from "@/components/forms/edit-published-text";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+/** A variant carrying its newest snapshot, which is all these helpers need. */
+interface WithSnapshot {
+  status: string;
+  snapshots: { metrics: unknown; raw: unknown; capturedAt: Date }[];
+}
+
+/**
+ * The figures to draw on the preview, or undefined while the post is not yet
+ * live or has never been measured — in which case the preview keeps its
+ * composing look rather than claiming zero engagement.
+ */
+function engagementOf(variant: WithSnapshot): PreviewEngagement | undefined {
+  if (variant.status !== "PUBLISHED") return undefined;
+  const snapshot = variant.snapshots[0];
+  if (!snapshot) return {};
+  const metrics = (snapshot.metrics ?? {}) as Record<string, number | undefined>;
+  const byType = (snapshot.raw as { reactions?: { byType?: Record<string, number> } } | null)?.reactions?.byType;
+  return {
+    likes: metrics.likes,
+    comments: metrics.comments,
+    shares: metrics.shares,
+    byType,
+    capturedAt: snapshot.capturedAt,
+  };
+}
+
+/** Says where the numbers came from, and why some of them are dashes. */
+function EngagementNote({ variant }: { variant: WithSnapshot }) {
+  const snapshot = variant.snapshots[0];
+  if (!snapshot) {
+    return (
+      <p className="text-[12px] text-muted-foreground">
+        No figures yet. The analytics worker reads engagement every 6 hours.
+      </p>
+    );
+  }
+  const metrics = (snapshot.metrics ?? {}) as Record<string, number | undefined>;
+  const missing = (["impressions", "comments", "shares"] as const).filter((k) => metrics[k] === undefined);
+  return (
+    <p className="text-[12px] text-muted-foreground">
+      {metrics.impressions !== undefined && <>{metrics.impressions.toLocaleString()} impressions · </>}
+      Read {formatDate(snapshot.capturedAt)}
+      {missing.length > 0 && <> · {missing.join(", ")} not reported for this account</>}
+    </p>
+  );
+}
 
 export default async function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireOrg();
@@ -31,6 +78,8 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
             },
           },
           media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } },
+          // Latest reading of how the live post is doing; absent until the analytics worker runs.
+          snapshots: { orderBy: { capturedAt: "desc" }, take: 1 },
           publishJobs: {
             orderBy: { createdAt: "desc" },
             take: 1,
@@ -84,7 +133,9 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                     url: mediaUrls[m.mediaAsset.id]!,
                     alt: m.mediaAsset.altText,
                   }))}
+                  engagement={engagementOf(v)}
                 />
+                {v.status === "PUBLISHED" && <EngagementNote variant={v} />}
                 {v.status === "PUBLISHED" && v.externalPostId && v.platform === "LINKEDIN" && ctx.can("content:publish") && (
                   <EditPublishedText postId={post.id} variantId={v.id} text={v.text} maxLength={3000} />
                 )}

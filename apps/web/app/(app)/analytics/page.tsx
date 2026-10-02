@@ -1,12 +1,14 @@
+import Link from "next/link";
 import { requireCapability } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { organizationSummary } from "@/lib/services/analytics";
+import { organizationSummary, resultsBreakdown } from "@/lib/services/analytics";
 import { PLATFORM_LABELS } from "@/lib/providers";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { featureEnabled } from "@/lib/flags";
 import { ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { DeletePostButton } from "@/components/forms/delete-post-button";
+import { RankedBars, TimeBars } from "@/components/app/bar-chart";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/app/stat-card";
 import { StatusBadge } from "@/components/app/status-badge";
@@ -16,7 +18,41 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 export const metadata = { title: "Results" };
 
-const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+/** Windows the page offers. Anything else in the query string falls back to 30. */
+const DAY_RANGES = [7, 30, 90];
+
+/** Builds a filter URL, leaving defaults out so the plain page keeps a clean address. */
+function query({ days, account }: { days: number; account?: string | undefined }): string {
+  const q = new URLSearchParams();
+  if (account) q.set("account", account);
+  if (days !== 30) q.set("days", String(days));
+  const s = q.toString();
+  return s ? `/analytics?${s}` : "/analytics";
+}
+
+/** A filter chip that keeps the rest of the query string intact. */
+function FilterLink({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "rounded-full border px-3 py-1 text-[13px] whitespace-nowrap transition-colors",
+        active ? "border-transparent bg-primary text-primary-foreground" : "border-border hover:bg-accent",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
 
 type Summary = Awaited<ReturnType<typeof organizationSummary>>;
 
@@ -81,12 +117,30 @@ function describeEngagement(summary: Summary) {
   };
 }
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ account?: string; days?: string }>;
+}) {
   const ctx = await requireCapability("analytics:view");
-  const [summary, recent, usageByProvider] = await Promise.all([
+  const params = await searchParams;
+  const days = DAY_RANGES.includes(Number(params.days)) ? Number(params.days) : 30;
+  const accounts = await prisma.socialAccount.findMany({
+    where: { organizationId: ctx.organization.id },
+    select: { id: true, displayName: true, platform: true },
+    orderBy: { displayName: "asc" },
+  });
+  // An account id from the query string is only honoured if it is this org's.
+  const accountId = accounts.some((a) => a.id === params.account) ? params.account : undefined;
+
+  const [summary, recent, breakdown] = await Promise.all([
     organizationSummary(ctx.organization.id),
     prisma.postVariant.findMany({
-      where: { post: { organizationId: ctx.organization.id }, status: "PUBLISHED" },
+      where: {
+        post: { organizationId: ctx.organization.id },
+        status: "PUBLISHED",
+        ...(accountId ? { socialAccountId: accountId } : {}),
+      },
       orderBy: { publishedAt: "desc" },
       take: 20,
       include: {
@@ -95,12 +149,7 @@ export default async function AnalyticsPage() {
         snapshots: { orderBy: { capturedAt: "desc" }, take: 1 },
       },
     }),
-    prisma.aIUsage.groupBy({
-      by: ["provider", "model"],
-      where: { organizationId: ctx.organization.id, createdAt: { gte: daysAgo(30) } },
-      _sum: { inputTokens: true, outputTokens: true, estimatedCost: true, imageCount: true },
-      _count: { _all: true },
-    }),
+    resultsBreakdown(ctx.organization.id, { days, socialAccountId: accountId }),
   ]);
   const reported = describeEngagement(summary);
   const canDelete = ctx.can("content:delete");
@@ -118,6 +167,27 @@ export default async function AnalyticsPage() {
           </Button>
         )}
       </PageHeader>
+      <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <nav aria-label="Filter by account" className="flex flex-wrap items-center gap-1.5">
+          <FilterLink href={query({ days })} active={!accountId}>
+            All accounts
+          </FilterLink>
+          {accounts.map((a) => (
+            <FilterLink key={a.id} href={query({ days, account: a.id })} active={accountId === a.id}>
+              <span className="flex items-center gap-1.5">
+                <PlatformIcon platform={a.platform} className="size-3.5" /> {a.displayName}
+              </span>
+            </FilterLink>
+          ))}
+        </nav>
+        <nav aria-label="Time range" className="flex items-center gap-1.5">
+          {DAY_RANGES.map((d) => (
+            <FilterLink key={d} href={query({ days: d, account: accountId })} active={days === d}>
+              {d} days
+            </FilterLink>
+          ))}
+        </nav>
+      </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <StatCard title="Published" value={summary.published30d} />
         <StatCard title="Failed jobs" value={summary.posts.FAILED ?? 0} />
@@ -129,6 +199,50 @@ export default async function AnalyticsPage() {
           value={`$${summary.ai.cost.toFixed(2)}`}
           hint={`${summary.ai.inputTokens + summary.ai.outputTokens} tokens`}
         />
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Reactions over time</CardTitle>
+            <CardDescription>
+              {breakdown.totals.published} published in the last {days} days
+              {breakdown.totals.measured < breakdown.totals.published &&
+                ` · ${breakdown.totals.published - breakdown.totals.measured} with no figures from the platform yet`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TimeBars
+              bars={breakdown.buckets.map((b) => ({
+                label: b.label,
+                full: b.full,
+                value: b.reactions,
+                secondary: b.published,
+              }))}
+              valueLabel="reactions"
+              secondaryLabel="posts"
+              empty={`Nothing published in the last ${days} days.`}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>By account</CardTitle>
+            <CardDescription>Reactions earned over the same window</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RankedBars
+              valueLabel="reactions"
+              empty="No posts from these accounts yet."
+              bars={breakdown.accounts.map((a) => ({
+                key: a.socialAccountId,
+                label: a.displayName,
+                value: a.reactions,
+                note: `${a.published} ${a.published === 1 ? "post" : "posts"}`,
+                icon: <PlatformIcon platform={a.platform} className="size-4 shrink-0" />,
+              }))}
+            />
+          </CardContent>
+        </Card>
       </div>
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>
@@ -219,25 +333,6 @@ export default async function AnalyticsPage() {
                 </div>
               ))}
               {summary.accounts.length === 0 && <p className="text-muted-foreground">No accounts connected.</p>}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>AI usage by model</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 text-sm">
-              {usageByProvider.map((u) => (
-                <div key={`${u.provider}-${u.model}`} className="flex items-center justify-between">
-                  <span>
-                    <span className="block font-medium">{u.model}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {u.provider} · {u._count._all} calls
-                    </span>
-                  </span>
-                  <span className="tabular-nums">${(u._sum.estimatedCost ?? 0).toFixed(3)}</span>
-                </div>
-              ))}
-              {usageByProvider.length === 0 && <p className="text-muted-foreground">No AI usage yet.</p>}
             </CardContent>
           </Card>
         </div>
