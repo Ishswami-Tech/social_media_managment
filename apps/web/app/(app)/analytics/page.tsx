@@ -54,7 +54,6 @@ function FilterLink({
   );
 }
 
-type Summary = Awaited<ReturnType<typeof organizationSummary>>;
 
 /** LinkedIn's reaction vocabulary, shortened to something a column can hold. */
 const REACTION_LABELS: Record<string, string> = {
@@ -91,11 +90,11 @@ function ReactionCell({ count, raw }: { count: number; raw: unknown }) {
  * platform never made, so an unreported metric shows as an em dash and says
  * why.
  */
-function describeEngagement(summary: Summary) {
-  const e = summary.engagement30d;
-  const seen = summary.engagementMeasured;
-  const posts = summary.engagementPosts;
-  const unavailable = posts === 0 ? "no snapshots yet" : "not reported for these accounts";
+function describeEngagement(breakdown: Awaited<ReturnType<typeof resultsBreakdown>>) {
+  const e = breakdown.metrics;
+  const seen = breakdown.measured;
+  const posts = breakdown.totals.published;
+  const unavailable = posts === 0 ? "nothing published yet" : "not reported for these accounts";
   const show = (value: number, measured: number) => (measured === 0 ? "—" : value.toLocaleString());
   const hint = (measured: number, whenKnown: string) =>
     measured === 0 ? unavailable : `${whenKnown} · ${measured} of ${posts} posts`;
@@ -151,7 +150,7 @@ export default async function AnalyticsPage({
     }),
     resultsBreakdown(ctx.organization.id, { days, socialAccountId: accountId }),
   ]);
-  const reported = describeEngagement(summary);
+  const reported = describeEngagement(breakdown);
   const canDelete = ctx.can("content:delete");
   const canPublish = ctx.can("content:publish");
   const canExport = await featureEnabled("analytics_export", ctx.organization.id);
@@ -159,7 +158,7 @@ export default async function AnalyticsPage({
     <>
       <PageHeader
         title="Results"
-        description="Publishing outcomes, normalised engagement and AI spend for the last 30 days. Provider metrics are refreshed every 6 hours."
+        description={`Publishing and engagement for the last ${days} days${accountId ? ", for one account" : ""}. Provider metrics are refreshed every 6 hours.`}
       >
         {canExport && (
           <Button asChild variant="outline">
@@ -189,15 +188,16 @@ export default async function AnalyticsPage({
         </nav>
       </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard title="Published" value={summary.published30d} />
-        <StatCard title="Failed jobs" value={summary.posts.FAILED ?? 0} />
+        <StatCard title="Published" value={breakdown.totals.published} hint={`last ${days} days`} />
+        <StatCard title="Failed jobs" value={summary.posts.FAILED ?? 0} hint="all accounts" />
         <StatCard title="Impressions" value={reported.impressions} hint={reported.impressionsHint} />
         <StatCard title="Reach" value={reported.reach} hint={reported.reachHint} />
         <StatCard title="Engagements" value={reported.engagements} hint={reported.engagementsHint} />
+        {/* Spend is per organization, not per account: the council draws on a shared budget. */}
         <StatCard
           title="AI spend"
           value={`$${summary.ai.cost.toFixed(2)}`}
-          hint={`${summary.ai.inputTokens + summary.ai.outputTokens} tokens`}
+          hint={`30 days · all accounts · ${(summary.ai.inputTokens + summary.ai.outputTokens).toLocaleString()} tokens`}
         />
       </div>
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

@@ -92,10 +92,18 @@ export interface AccountTotals {
   measured: number;
 }
 
+/** The metrics the page totals. Mirrors NormalizedMetrics, minus the ones no platform here reports. */
+export const RESULT_METRICS = ["impressions", "reach", "likes", "comments", "shares", "clicks"] as const;
+export type ResultMetric = (typeof RESULT_METRICS)[number];
+
 export interface ResultsBreakdown {
   buckets: ResultsBucket[];
   accounts: AccountTotals[];
   totals: { published: number; reactions: number; measured: number };
+  /** Summed over the selected accounts and window, so the cards agree with the charts. */
+  metrics: Record<ResultMetric, number>;
+  /** How many posts reported each metric; zero means the platform never said. */
+  measured: Record<ResultMetric, number>;
 }
 
 /** Daily columns read well for a fortnight; beyond that they turn into a comb, so group by week. */
@@ -150,11 +158,20 @@ export async function resultsBreakdown(
 
   const byAccount = new Map<string, AccountTotals>();
   const totals = { published: 0, reactions: 0, measured: 0 };
+  const zero = () => Object.fromEntries(RESULT_METRICS.map((k) => [k, 0])) as Record<ResultMetric, number>;
+  const metricTotals = zero();
+  const metricMeasured = zero();
 
   for (const v of variants) {
     if (!v.publishedAt) continue;
-    const metrics = v.snapshots[0]?.metrics as { likes?: number } | undefined;
+    const metrics = v.snapshots[0]?.metrics as Record<string, number | undefined> | undefined;
     const reactions = metrics?.likes;
+    for (const key of RESULT_METRICS) {
+      const value = metrics?.[key];
+      if (value === undefined || value === null) continue;
+      metricTotals[key] += Number(value);
+      metricMeasured[key] += 1;
+    }
 
     const index = Math.min(count - 1, Math.max(0, Math.floor((v.publishedAt.getTime() - start) / ms)));
     const bucket = buckets[index];
@@ -189,6 +206,8 @@ export async function resultsBreakdown(
     buckets,
     accounts: [...byAccount.values()].sort((a, b) => b.reactions - a.reactions || b.published - a.published),
     totals,
+    metrics: metricTotals,
+    measured: metricMeasured,
   };
 }
 
