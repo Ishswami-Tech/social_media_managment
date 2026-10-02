@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ProviderContext } from "@platform/social-core";
 import { DEFAULT_LINKEDIN_API_VERSION, LinkedInProvider } from "../src/index";
 
 const provider = new LinkedInProvider({ clientId: "cid", clientSecret: "sec" });
@@ -152,14 +153,57 @@ describe("LinkedInProvider", () => {
 });
 
 describe("metrics", () => {
-  it("returns null for member profiles (LinkedIn exposes no member stats)", async () => {
-    expect(
-      await provider.getPostMetrics("urn:li:share:1", {
-        credential: { accessToken: "t", scopes: [] },
-        externalAccountId: "abc",
-        accountType: "PROFILE",
-      }),
-    ).toBeNull();
+  const member: ProviderContext = {
+    credential: { accessToken: "t", scopes: [] },
+    externalAccountId: "abc",
+    accountType: "PROFILE",
+  };
+
+  /**
+   * A member token may read the reactions on its own post, and nothing else:
+   * socialActions answers 403. So likes are real and comments are unknown,
+   * which is not the same as zero.
+   */
+  it("reads likes for a member profile from the reactions collection", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/reactions": () =>
+        new Response(
+          JSON.stringify({
+            paging: { total: 3 },
+            elements: [{ reactionType: "LIKE" }, { reactionType: "LIKE" }, { reactionType: "PRAISE" }],
+          }),
+        ),
+    });
+    const m = await provider.getPostMetrics("urn:li:share:1", member);
+    expect(m?.metrics).toEqual({ likes: 3 });
+    expect(m?.raw).toEqual({ reactions: { total: 3, byType: { LIKE: 2, PRAISE: 1 }, sampled: 3 } });
+  });
+
+  it("leaves comments undefined rather than zero, because the member token cannot see them", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/reactions": () => new Response(JSON.stringify({ paging: { total: 0 }, elements: [] })),
+    });
+    const m = await provider.getPostMetrics("urn:li:share:1", member);
+    expect(m?.metrics.likes).toBe(0);
+    expect(m?.metrics.comments).toBeUndefined();
+    expect(m?.metrics.impressions).toBeUndefined();
+  });
+
+  it("trusts the paging total over the page it was given", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/reactions": () =>
+        new Response(JSON.stringify({ paging: { total: 240 }, elements: [{ reactionType: "LIKE" }] })),
+    });
+    const m = await provider.getPostMetrics("urn:li:share:1", member);
+    expect(m?.metrics.likes).toBe(240);
+    expect((m?.raw as { reactions: { sampled: number } }).reactions.sampled).toBe(1);
+  });
+
+  it("reports nothing at all when the post is gone from LinkedIn", async () => {
+    mockFetch({
+      "https://api.linkedin.com/rest/reactions": () => new Response(JSON.stringify({ message: "not found" }), { status: 404 }),
+    });
+    expect(await provider.getPostMetrics("urn:li:share:1", member)).toBeNull();
   });
   it("normalises organization share statistics", async () => {
     mockFetch({

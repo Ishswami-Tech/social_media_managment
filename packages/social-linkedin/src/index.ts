@@ -32,6 +32,9 @@ const API = "https://api.linkedin.com";
  */
 export const DEFAULT_LINKEDIN_API_VERSION = "202609";
 
+/** One page of reactions. LinkedIn caps the page; the total comes from paging, not the rows. */
+const REACTION_PAGE_SIZE = 100;
+
 /** Member scopes (OpenID + posting) and organization scopes (Community Management API). */
 export const LINKEDIN_SCOPES = ["openid", "profile", "email", "w_member_social"];
 export const LINKEDIN_ORG_SCOPES = ["r_organization_social", "w_organization_social", "rw_organization_admin"];
@@ -297,11 +300,45 @@ export class LinkedInProvider implements SocialProvider {
   }
 
   /**
-   * Share statistics are only available for organization pages via the
-   * Community Management API; member profiles expose nothing, so null.
+   * What a member token can actually see of its own post's engagement.
+   *
+   * Reactions are readable: the collection answers with a total and one row
+   * per reaction, so likes and the breakdown by type are real numbers. The
+   * rest is not. Comments, impressions and clicks all live behind
+   * socialActions or the Community Management API, which answer a member
+   * token with 403, so they are left undefined rather than reported as zero
+   * — a zero would read as "nobody commented" instead of "we cannot know".
+   */
+  private async memberPostMetrics(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null> {
+    const entity = encodeURIComponent(externalPostId);
+    const res = await this.api<{
+      paging?: { total?: number };
+      elements?: { reactionType?: string }[];
+    }>(ctx.credential, `/rest/reactions/(entity:${entity})?q=entity&count=${REACTION_PAGE_SIZE}`).catch(() => null);
+    if (!res) return null;
+
+    const elements = res.elements ?? [];
+    const byType: Record<string, number> = {};
+    for (const el of elements) {
+      const type = el.reactionType ?? "LIKE";
+      byType[type] = (byType[type] ?? 0) + 1;
+    }
+    // The page may be shorter than the true total; trust paging for the count.
+    const likes = res.paging?.total ?? elements.length;
+    return {
+      metrics: { likes },
+      raw: { reactions: { total: likes, byType, sampled: elements.length } },
+      capturedAt: new Date(),
+    };
+  }
+
+  /**
+   * Organization pages get full share statistics from the Community
+   * Management API. Member profiles get what their own token allows, which is
+   * reactions and nothing else.
    */
   async getPostMetrics(externalPostId: string, ctx: ProviderContext): Promise<MetricsResult | null> {
-    if (ctx.accountType !== "ORGANIZATION") return null;
+    if (ctx.accountType !== "ORGANIZATION") return this.memberPostMetrics(externalPostId, ctx);
     const org = `urn:li:organization:${ctx.externalAccountId}`;
     const res = await this.api<{ elements?: { totalShareStatistics?: Record<string, number> }[] }>(
       ctx.credential,

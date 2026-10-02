@@ -29,12 +29,23 @@ export async function organizationSummary(organizationId: string) {
       }),
     ]);
   const totals = { impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, clicks: 0 };
+  /**
+   * How many posts actually reported each metric. A platform that does not
+   * expose impressions to this kind of account leaves the field out, and
+   * summing it to 0 would read as "nobody saw it" rather than "we cannot
+   * know". Keeping the count lets the page tell those two apart.
+   */
+  const measured = { impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, clicks: 0 };
   const seen = new Set<string>();
   for (const s of recentSnapshots) {
     if (!s.postVariantId || seen.has(s.postVariantId)) continue; // latest per variant
     seen.add(s.postVariantId);
-    const m = s.metrics as Record<string, number>;
-    for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] += Number(m[k] ?? 0);
+    const m = s.metrics as Record<string, number | undefined>;
+    for (const k of Object.keys(totals) as (keyof typeof totals)[]) {
+      if (m[k] === undefined || m[k] === null) continue;
+      totals[k] += Number(m[k]);
+      measured[k] += 1;
+    }
   }
   return {
     accounts: accounts.map((a) => ({ platform: a.platform, status: a.status, count: a._count._all })),
@@ -50,6 +61,9 @@ export async function organizationSummary(organizationId: string) {
     },
     whatsapp: { openConversations: conversationsOpen, unread: unread._sum.unreadCount ?? 0 },
     engagement30d: totals,
+    /** Posts that reported each metric, out of `engagementPosts`. Zero means the platform never told us. */
+    engagementMeasured: measured,
+    engagementPosts: seen.size,
   };
 }
 
