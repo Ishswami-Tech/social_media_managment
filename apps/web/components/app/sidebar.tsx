@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+/** Mount detection without an effect: the server snapshot is false, the client's is true. */
+const subscribeNever = (): (() => void) => () => {};
 import {
   BarChart3,
   Building2,
@@ -276,12 +280,36 @@ export function MobileNav(props: Props) {
     setLastPath(pathname);
     setOpen(false);
   }
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // The page behind a drawer should not scroll with it.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
   }, [open]);
+
+  const drawer = (
+    <div className="fixed inset-0 z-50 flex md:hidden">
+      <button type="button" aria-label="Close navigation" className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+      <aside className="relative h-full w-[280px] max-w-[85vw] overflow-y-auto bg-sidebar text-sidebar-foreground shadow-2xl">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close navigation"
+          className="absolute top-4 right-3 z-10 inline-flex size-8 items-center justify-center rounded-lg text-sidebar-muted hover:text-white"
+        >
+          <X className="size-4" />
+        </button>
+        <RailContent {...props} pathname={pathname} />
+      </aside>
+    </div>
+  );
 
   return (
     <div className="md:hidden">
@@ -293,22 +321,16 @@ export function MobileNav(props: Props) {
       >
         <Menu className="size-4" />
       </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex">
-          <button type="button" aria-label="Close navigation" className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <aside className="relative h-full w-[280px] max-w-[85vw] bg-sidebar text-sidebar-foreground shadow-2xl">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close navigation"
-              className="absolute top-4 right-3 z-10 inline-flex size-8 items-center justify-center rounded-lg text-sidebar-muted hover:text-white"
-            >
-              <X className="size-4" />
-            </button>
-            <RailContent {...props} pathname={pathname} />
-          </aside>
-        </div>
-      )}
+      {/*
+       * Portalled to the body on purpose. The mobile header carries
+       * backdrop-blur, and backdrop-filter makes an element the containing
+       * block for its fixed descendants: rendered in place, this drawer's
+       * inset-0 resolved to the 56px header, so the nav collapsed to nothing
+       * and the backdrop covered only the header strip. The body has no such
+       * ancestor. Mounted is checked because there is no document on the
+       * server.
+       */}
+      {open && mounted && createPortal(drawer, document.body)}
     </div>
   );
 }
