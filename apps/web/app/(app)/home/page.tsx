@@ -11,6 +11,7 @@ import { platformName, providerName } from "@platform/agent-council/progress";
 import {
   loadActivity,
   loadAlsoWaiting,
+  loadModelsToday,
   loadQueues,
   loadSpend,
   loadTodayAgenda,
@@ -21,6 +22,8 @@ import {
 import { ComposerBar, type ComposerBarAccount, type ComposerBarModel } from "@/components/home/composer-bar";
 import { ViewOnly, WritingNowCard } from "@/components/home/thread";
 import { AlsoWaiting, ApproveAllButton } from "@/components/home/also-waiting";
+import { ModelsToday } from "@/components/home/models-today";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ProviderStatus } from "@/components/home/provider-strip";
 import {
   ActivityLog,
@@ -163,7 +166,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   }));
   const customSkills = skills.filter((s) => s.source === "custom").map((s) => ({ id: s.id, name: s.name, description: s.description }));
 
-  const [waiting, agenda, budget, typicalMs, recentSpend, activity, queues, spend] = await Promise.all([
+  const [waiting, agenda, budget, typicalMs, recentSpend, activity, queues, spend, modelsToday] = await Promise.all([
     loadAlsoWaiting(organizationId).catch(() => []),
     loadTodayAgenda(organizationId, {
       hasAiProvider: composerModels.some((m) => m.capabilities.includes("text")),
@@ -177,6 +180,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     loadActivity(organizationId).catch(() => []),
     canSettings ? loadQueues(organizationId).catch(() => []) : [],
     canSettings ? loadSpend(organizationId, tz).catch(() => null) : null,
+    canViewRuns ? loadModelsToday(organizationId).catch(() => []) : [],
   ]);
 
   const decidable = canApprove ? waiting.filter((w) => w.createdById !== ctx.user.id || isAdmin) : [];
@@ -390,6 +394,19 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
         <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-4 lg:max-w-[340px]" aria-label="At a glance">
           <AttentionCard items={agenda.attention} canPublish={ctx.can("content:publish")} canManage={canManage} />
+          {canViewRuns && (
+            <ViewOnly mode="detailed">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-[15px]">Models today</CardTitle>
+                  <CardDescription>Which models wrote the drafts in the last day</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ModelsToday models={modelsToday} />
+                </CardContent>
+              </Card>
+            </ViewOnly>
+          )}
           {canSettings && (
             <ViewOnly mode="detailed">
               <div className="flex flex-col gap-4">

@@ -11,7 +11,9 @@ export function ModelsToday({ models }: { models: ModelUse[] }) {
         <div key={`${m.provider}:${m.model}`} className="grid gap-1" title={`${m.providerLabel} · ${m.model}`}>
           <div className="flex items-baseline justify-between gap-2 text-[13px]">
             <span className="truncate font-medium">{m.label}</span>
-            <span className="font-mono text-[12px] text-muted-foreground tabular">{m.drafts} drafts</span>
+            <span className="font-mono text-[12px] text-muted-foreground tabular">
+              {m.drafts} {m.drafts === 1 ? "draft" : "drafts"}
+            </span>
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-agent-quill" style={{ width: `${(m.drafts / max) * 100}%` }} />
