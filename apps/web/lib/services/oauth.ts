@@ -11,7 +11,7 @@ import type { OrgContext } from "../session";
 const STATE_TTL_MS = 10 * 60_000;
 
 export function callbackUrl(family: ProviderFamily): string {
-  return `${getEnv().APP_URL}/api/oauth/${family.toLowerCase()}/callback`;
+  return `${getEnv().APP_URL.replace(/\/+$/, "")}/api/oauth/${family.toLowerCase()}/callback`;
 }
 
 /** Step 1: create a CSRF state bound to org + user and redirect to the provider. */

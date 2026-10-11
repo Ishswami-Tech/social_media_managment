@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { assertTransition, PLATFORMS, type PostStatus } from "@platform/types";
 import { loadSocialCredential, type Prisma } from "@platform/database";
 import { POST_REACTIONS, type ProviderContext } from "@platform/social-core";
@@ -230,31 +231,47 @@ export async function reviewPost(ctx: OrgContext, postId: string, decision: "APP
 /** Schedule (or reschedule) a post: creates one idempotent PublishJob per variant and enqueues it. */
 export async function schedulePost(ctx: OrgContext, postId: string, scheduledAtIso: string, timezone?: string) {
   const post = await getPost(ctx, postId);
+  assertCanEdit(ctx, post);
   const scheduledAt = new Date(scheduledAtIso);
   if (Number.isNaN(scheduledAt.getTime())) throw badRequest("Invalid scheduledAt");
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: timezone });
+    } catch {
+      throw badRequest("Invalid timezone");
+    }
+  }
   if (approvalRequired(ctx, post) && post.approvalStatus !== "APPROVED")
     throw conflict("Post must be approved before scheduling");
-  if (!approvalRequired(ctx, post) && post.status === "DRAFT") {
-    // no approval workflow for these accounts: DRAFT -> APPROVED implicitly
-    await setStatus(postId, "APPROVED", { approvalStatus: "NOT_REQUIRED" });
-    post.status = "APPROVED";
-  }
-  assertTransition(post.status, "SCHEDULED");
+  // Scheduling without an approval flow can take a draft directly to SCHEDULED.
+  if (post.status !== "SCHEDULED") assertTransition(post.status, "SCHEDULED");
+  if (post.variants.some((v) => v.externalPostId || v.status === "PUBLISHED"))
+    throw conflict("This post has already published to an account. Create a new draft for another publication.");
   const disconnected = post.variants.filter((v) => v.socialAccount.status !== "CONNECTED");
   if (disconnected.length)
     throw conflict(`Reconnect ${disconnected.map((v) => v.socialAccount.displayName).join(", ")} before scheduling`);
 
   await prisma.$transaction(async (tx) => {
+    // Lock the current revision before replacing jobs. A concurrent reschedule
+    // or worker status change must not overwrite this decision.
+    const claimed = await tx.post.updateMany({
+      where: { id: postId, status: post.status, scheduledAt: post.scheduledAt },
+      data: { status: "SCHEDULED", scheduledAt, timezone: timezone ?? post.timezone },
+    });
+    if (!claimed.count) throw conflict("This post changed. Refresh before rescheduling.");
     // Cancel any existing pending jobs for a reschedule.
     await tx.publishJob.updateMany({
       where: { postVariant: { postId }, status: { in: ["PENDING", "QUEUED"] } },
       data: { status: "CANCELLED" },
     });
+    if (await tx.publishJob.count({ where: { postVariant: { postId }, status: "RUNNING" } }))
+      throw conflict("Publishing has already started. This post can no longer be rescheduled.");
+    const revision = randomUUID();
     for (const v of post.variants) {
       await tx.publishJob.create({
         data: {
           postVariantId: v.id,
-          idempotencyKey: `${v.id}:${scheduledAt.toISOString()}`,
+          idempotencyKey: `${v.id}:${scheduledAt.toISOString()}:${revision}`,
           scheduledAt,
           status: "PENDING",
         },
@@ -315,7 +332,11 @@ export async function scheduleApprovedPostSystem(
     }
     await tx.post.update({
       where: { id: postId },
-      data: { status: "SCHEDULED", scheduledAt, variants: { updateMany: { where: {}, data: { status: "SCHEDULED" } } } },
+      data: {
+        status: "SCHEDULED",
+        scheduledAt,
+        variants: { updateMany: { where: {}, data: { status: "SCHEDULED" } } },
+      },
     });
   });
   await enqueuePostJobs(organizationId, postId);
@@ -325,24 +346,43 @@ export async function scheduleApprovedPostSystem(
 async function enqueuePostJobs(organizationId: string, postId: string) {
   const jobs = await prisma.publishJob.findMany({ where: { postVariant: { postId }, status: "PENDING" } });
   for (const job of jobs) {
+    // A reschedule may have cancelled this revision while we were loading it.
+    const claimed = await prisma.publishJob.updateMany({
+      where: { id: job.id, status: "PENDING" },
+      data: { status: "QUEUED" },
+    });
+    if (!claimed.count) continue;
     const delayMs = Math.max(0, job.scheduledAt.getTime() - Date.now());
-    const queued = await queues().enqueue(
-      "publish",
-      job.idempotencyKey,
-      { publishJobId: job.id, postVariantId: job.postVariantId, organizationId },
-      { delayMs },
-    );
-    await prisma.publishJob.update({
-      where: { id: job.id },
-      data: { status: "QUEUED", queueJobId: queued.id ?? job.idempotencyKey },
+    let queued;
+    try {
+      queued = await queues().enqueue(
+        "publish",
+        job.idempotencyKey,
+        { publishJobId: job.id, postVariantId: job.postVariantId, organizationId },
+        { delayMs },
+      );
+    } catch (error) {
+      await prisma.publishJob.updateMany({
+        where: { id: job.id, status: "QUEUED" },
+        data: { status: "PENDING" },
+      });
+      throw error;
+    }
+    await prisma.publishJob.updateMany({
+      where: { id: job.id, status: "QUEUED" },
+      data: { queueJobId: queued.id ?? job.idempotencyKey },
     });
   }
-  await prisma.post.update({
-    where: { id: postId },
+  if (!jobs.length) return;
+  await prisma.post.updateMany({
+    where: { id: postId, status: "SCHEDULED", scheduledAt: jobs[0]!.scheduledAt },
     data: {
       status: "QUEUED",
-      variants: { updateMany: { where: { status: "SCHEDULED" }, data: { status: "QUEUED" } } },
     },
+  });
+  await prisma.postVariant.updateMany({
+    where: { postId, status: "SCHEDULED", post: { status: "QUEUED", scheduledAt: jobs[0]!.scheduledAt } },
+    data: { status: "QUEUED" },
   });
 }
 
@@ -350,14 +390,31 @@ export async function cancelPost(ctx: OrgContext, postId: string) {
   const post = await getPost(ctx, postId);
   assertCanEdit(ctx, post);
   assertTransition(post.status, "CANCELLED");
-  const jobs = await prisma.publishJob.findMany({
-    where: { postVariant: { postId }, status: { in: ["PENDING", "QUEUED"] } },
+  const jobs = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.post.updateMany({
+      where: { id: postId, status: post.status, scheduledAt: post.scheduledAt },
+      data: { status: "CANCELLED" },
+    });
+    if (!claimed.count) throw conflict("This post changed. Refresh before cancelling.");
+    const pending = await tx.publishJob.findMany({
+      where: { postVariant: { postId }, status: { in: ["PENDING", "QUEUED"] } },
+    });
+    await tx.publishJob.updateMany({
+      where: { id: { in: pending.map((job) => job.id) }, status: { in: ["PENDING", "QUEUED"] } },
+      data: { status: "CANCELLED" },
+    });
+    if (await tx.publishJob.count({ where: { postVariant: { postId }, status: "RUNNING" } }))
+      throw conflict("Publishing has already started. This post can no longer be cancelled.");
+    await tx.postVariant.updateMany({
+      where: { postId, status: { notIn: ["PUBLISHED", "DELETED"] } },
+      data: { status: "CANCELLED" },
+    });
+    return pending;
   });
-  for (const job of jobs) await queues().remove("publish", job.idempotencyKey);
-  await prisma.publishJob.updateMany({ where: { id: { in: jobs.map((j) => j.id) } }, data: { status: "CANCELLED" } });
-  const updated = await setStatus(postId, "CANCELLED");
+  // The database cancellation is authoritative even if Redis is unavailable.
+  await Promise.allSettled(jobs.map((job) => queues().remove("publish", job.idempotencyKey)));
   await audit(ctx, "post.cancel", "Post", postId);
-  return updated;
+  return getPost(ctx, postId);
 }
 
 /**
@@ -398,7 +455,11 @@ export async function unpublishPost(ctx: OrgContext, postId: string) {
     }
   }
   if (removed.length === 0 && failures.length > 0) throw conflict(failures.join("; "));
-  const updated = await prisma.post.update({ where: { id: postId }, data: { status: "DELETED" }, include: postInclude });
+  const updated = await prisma.post.update({
+    where: { id: postId },
+    data: { status: "DELETED" },
+    include: postInclude,
+  });
   await audit(ctx, "post.unpublish", "Post", postId, { removed, failures });
   return { post: updated, removed, failures };
 }
@@ -412,7 +473,8 @@ export async function editPublishedVariant(ctx: OrgContext, postId: string, vari
   const post = await getPost(ctx, postId);
   const variant = post.variants.find((v) => v.id === variantId);
   if (!variant) throw notFound("Post variant");
-  if (variant.status !== "PUBLISHED" || !variant.externalPostId) throw conflict("Only a live post can be edited in place");
+  if (variant.status !== "PUBLISHED" || !variant.externalPostId)
+    throw conflict("Only a live post can be edited in place");
   const provider = providers().get(variant.platform);
   if (!provider.updatePost) throw conflict(`${variant.platform} does not support editing a live post through its API`);
   const validation = await provider.validatePost({
@@ -438,8 +500,16 @@ export async function editPublishedVariant(ctx: OrgContext, postId: string, vari
     metadata: (account.metadata as Record<string, unknown>) ?? undefined,
   };
   await provider.updatePost(variant.externalPostId, text, providerCtx);
-  const updated = await prisma.postVariant.update({ where: { id: variantId }, data: { text }, select: { id: true, text: true, platform: true } });
-  await audit(ctx, "post.variant.edit_live", "Post", postId, { variantId, platform: variant.platform, externalPostId: variant.externalPostId });
+  const updated = await prisma.postVariant.update({
+    where: { id: variantId },
+    data: { text },
+    select: { id: true, text: true, platform: true },
+  });
+  await audit(ctx, "post.variant.edit_live", "Post", postId, {
+    variantId,
+    platform: variant.platform,
+    externalPostId: variant.externalPostId,
+  });
   return updated;
 }
 
@@ -560,7 +630,9 @@ function describe(action: string, metadata: unknown): string | null {
   if (action === "post.unpublish") {
     const removed = Array.isArray(m.removed) ? (m.removed as { platform: string }[]).map((r) => r.platform) : [];
     const failures = Array.isArray(m.failures) ? (m.failures as string[]) : [];
-    return [removed.length ? `removed from ${removed.join(", ")}` : null, ...failures].filter(Boolean).join("; ") || null;
+    return (
+      [removed.length ? `removed from ${removed.join(", ")}` : null, ...failures].filter(Boolean).join("; ") || null
+    );
   }
   return null;
 }

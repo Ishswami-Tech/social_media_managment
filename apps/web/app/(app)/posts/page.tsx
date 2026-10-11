@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DeletePostButton } from "@/components/forms/delete-post-button";
+import { calendarMonth } from "@/lib/calendar";
 
 export const metadata = { title: "Posts" };
 
@@ -28,14 +29,6 @@ type FilterKey = (typeof FILTERS)[number]["key"];
 
 function resolveFilter(raw: string | undefined): (typeof FILTERS)[number] {
   return FILTERS.find((f) => f.key === raw) ?? FILTERS[0];
-}
-
-function monthFromParam(m: string | undefined): { year: number; month: number } {
-  const now = new Date();
-  const parts = m ? m.split("-").map(Number) : [];
-  const year = Number.isFinite(parts[0]) ? Number(parts[0]) : now.getUTCFullYear();
-  const month = Number.isFinite(parts[1]) ? Number(parts[1]) - 1 : now.getUTCMonth();
-  return { year, month: Math.min(11, Math.max(0, month)) };
 }
 
 export default async function PostsPage({
@@ -71,27 +64,31 @@ export default async function PostsPage({
           </Link>
         </div>
         {ctx.can("content:create") && (
+          <Button asChild variant="outline">
+            <Link href="/posts/import">Import CSV</Link>
+          </Button>
+        )}
+        {ctx.can("content:create") && (
           <Button asChild>
             <Link href="/create">New post</Link>
           </Button>
         )}
       </PageHeader>
-      {isCalendar ? (
-        <CalendarMonth ctx={ctx} month={sp.m} />
-      ) : (
-        <PostList ctx={ctx} filter={sp.filter} page={sp.page} />
-      )}
+      {isCalendar ? <CalendarMonth ctx={ctx} month={sp.m} /> : <PostList ctx={ctx} filter={sp.filter} page={sp.page} />}
     </>
   );
 }
 
 async function CalendarMonth({ ctx, month: monthParam }: { ctx: OrgContext; month: string | undefined }) {
-  const { year, month } = monthFromParam(monthParam);
-  const start = new Date(Date.UTC(year, month, 1));
-  const end = new Date(Date.UTC(year, month + 1, 1));
+  const { year, month } = calendarMonth(monthParam, ctx.settings.timezone);
+  const start = new Date(Date.UTC(year, month, -7));
+  const end = new Date(Date.UTC(year, month + 1, 9));
+  const canSeeAll = ctx.can("content:edit_any") || ctx.can("content:approve");
   const posts = await prisma.post.findMany({
     where: {
       organizationId: ctx.organization.id,
+      ...(!canSeeAll ? { createdById: ctx.user.id } : {}),
+      status: { notIn: ["CANCELLED", "DELETED"] },
       OR: [{ scheduledAt: { gte: start, lt: end } }, { publishedAt: { gte: start, lt: end } }],
     },
     select: {
@@ -101,11 +98,31 @@ async function CalendarMonth({ ctx, month: monthParam }: { ctx: OrgContext; mont
       scheduledAt: true,
       publishedAt: true,
       createdAt: true,
+      status: true,
+      createdById: true,
       variants: { select: { platform: true } },
     },
     orderBy: { scheduledAt: "asc" },
   });
-  return <CalendarView posts={posts} year={year} month={month} timezone={ctx.settings.timezone} />;
+  return (
+    <CalendarView
+      key={`${year}-${month}`}
+      posts={posts.map((post) => ({
+        ...post,
+        scheduledAt: post.scheduledAt?.toISOString() ?? null,
+        publishedAt: post.publishedAt?.toISOString() ?? null,
+        createdAt: post.createdAt.toISOString(),
+        canReschedule:
+          ctx.can("content:publish") &&
+          (post.createdById === ctx.user.id || ctx.can("content:edit_any")) &&
+          ["SCHEDULED", "QUEUED"].includes(post.status),
+      }))}
+      year={year}
+      month={month}
+      timezone={ctx.settings.timezone}
+      canCreate={ctx.can("content:create")}
+    />
+  );
 }
 
 async function PostList({

@@ -64,6 +64,7 @@ export interface ComposerPlugin {
   kind: string;
 }
 interface Props {
+  initialScheduledAt?: string | null;
   accounts: ComposerAccount[];
   media: ComposerMedia[];
   brands: { id: string; name: string; isDefault: boolean }[];
@@ -120,6 +121,7 @@ export function Composer({
   skills = [],
   plugins = [],
   existing,
+  initialScheduledAt = null,
 }: Props) {
   const router = useRouter();
   const [title, setTitle] = useState(existing?.title ?? "");
@@ -147,7 +149,7 @@ export function Composer({
   const [aiBusy, setAiBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
-  const [schedule, setSchedule] = useState(toLocal(existing?.scheduledAt ?? null));
+  const [schedule, setSchedule] = useState(toLocal(existing?.scheduledAt ?? initialScheduledAt));
   const [afterApproval, setAfterApproval] = useState<AfterApproval>(
     existing?.autoPublishOnApproval ? (existing.scheduledAt ? "scheduled" : "immediately") : "hold",
   );
@@ -502,8 +504,15 @@ export function Composer({
     }
     if ((action === "schedule" || afterApproval === "scheduled") && !schedule)
       return toast.error("Choose a date and time");
+    const scheduleDate = schedule ? new Date(schedule) : null;
+    if (
+      (action === "schedule" || afterApproval === "scheduled") &&
+      (!scheduleDate || !Number.isFinite(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now())
+    )
+      return toast.error("Choose a date and time in the future");
     setBusy(true);
-    const scheduledAt = schedule ? new Date(schedule).toISOString() : undefined;
+    const scheduledAt =
+      scheduleDate && Number.isFinite(scheduleDate.getTime()) ? scheduleDate.toISOString() : undefined;
     const payload = {
       title: title || undefined,
       masterText,
@@ -708,7 +717,9 @@ export function Composer({
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Run a skill with tools</DropdownMenuLabel>
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          Run a skill with tools
+                        </DropdownMenuLabel>
                         {[...customSkills, ...researchSkills].map((sk) => (
                           <DropdownMenuItem key={`run-${sk.id}`} onSelect={() => openSkill(sk.id)}>
                             <Search />

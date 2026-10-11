@@ -62,7 +62,8 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
   const canReview = permissions.canApprove && s === "IN_REVIEW" && (!permissions.isOwnPost || permissions.isAdmin);
   const canSchedule =
     permissions.canPublish &&
-    ["DRAFT", "APPROVED", "SCHEDULED", "FAILED", "DISCONNECTED_ACCOUNT"].includes(s) &&
+    permissions.canEdit &&
+    ["DRAFT", "APPROVED", "SCHEDULED", "QUEUED", "FAILED", "DISCONNECTED_ACCOUNT"].includes(s) &&
     (!needsApproval || post.approvalStatus === "APPROVED");
   const canCancel = permissions.canEdit && ["SCHEDULED", "QUEUED", "IN_REVIEW", "APPROVED", "RETRYING"].includes(s);
   const canUnpublish = permissions.canPublish && s === "PUBLISHED";
@@ -141,7 +142,7 @@ export function PostActions({ post, needsApproval, permissions }: Props) {
                 }
                 disabled={busy}
               >
-                {s === "SCHEDULED" ? "Reschedule" : "Schedule"}
+                {s === "SCHEDULED" || s === "QUEUED" ? "Reschedule" : "Schedule"}
               </Button>
               <Button className="flex-1" variant="secondary" onClick={() => call("publish")} disabled={busy}>
                 Publish now

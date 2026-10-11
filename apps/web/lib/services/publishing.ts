@@ -40,10 +40,20 @@ export async function runPublishJob(publishJobId: string): Promise<void> {
     },
   });
   if (!job) return log.warn("publish job missing");
-  if (job.status === "SUCCEEDED" || job.status === "CANCELLED")
+  if (job.status === "SUCCEEDED" || job.status === "CANCELLED" || job.status === "FAILED")
     return log.info("publish job already terminal", { status: job.status });
   const variant = job.postVariant;
   const account = variant.socialAccount;
+
+  // Claim before any provider call. A cancelled calendar revision can remain
+  // in Redis, but must never publish after a concurrent reschedule.
+  if (job.status === "PENDING" || job.status === "QUEUED") {
+    const claimed = await prisma.publishJob.updateMany({
+      where: { id: job.id, status: job.status },
+      data: { status: "RUNNING" },
+    });
+    if (!claimed.count) return log.info("publish revision was cancelled or claimed");
+  }
 
   // Reconcile a previous attempt that may have published before crashing.
   const dangling = await prisma.publishAttempt.findFirst({

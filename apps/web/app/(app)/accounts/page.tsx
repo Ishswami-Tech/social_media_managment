@@ -5,7 +5,10 @@ import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/app/status-badge";
 import { PlatformIcon } from "@/components/app/platform-icon";
-import { AccountActions, AgentAutoPublishSwitch, ConnectButtons } from "@/components/forms/account-actions";
+import { AccountActions, AgentAutoPublishSwitch } from "@/components/forms/account-actions";
+import { ConnectionSetup } from "@/components/forms/connection-setup";
+import { callbackUrl } from "@/lib/services/oauth";
+import { getEnv } from "@/lib/env";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,10 +31,40 @@ export default async function AccountsPage({
     <>
       <PageHeader
         title="Connected accounts"
-        description="Each account authorizes independently and stores its own encrypted tokens."
-      >
-        {canConnect && <ConnectButtons linkedin={isFamilyConfigured("LINKEDIN")} meta={isFamilyConfigured("META")} />}
-      </PageHeader>
+        description="Connect your social channels, check connection status, and choose how posts are approved."
+      />
+      {canConnect && (
+        <ConnectionSetup
+          families={[
+            {
+              name: "Facebook / Instagram",
+              family: "meta",
+              configured: isFamilyConfigured("META"),
+              callback: callbackUrl("META"),
+              description: "Publish to Facebook Pages and linked Instagram professional accounts.",
+              dashboard: getEnv().META_APP_ID
+                ? `https://developers.facebook.com/apps/${getEnv().META_APP_ID}/fb-login/settings/`
+                : "https://developers.facebook.com/apps/",
+              connected: accounts.filter(
+                (a) => ["FACEBOOK", "INSTAGRAM"].includes(a.platform) && a.status === "CONNECTED",
+              ).length,
+              attention: accounts.filter(
+                (a) => ["FACEBOOK", "INSTAGRAM"].includes(a.platform) && a.status === "EXPIRED",
+              ).length,
+            },
+            {
+              name: "LinkedIn",
+              family: "linkedin",
+              configured: isFamilyConfigured("LINKEDIN"),
+              callback: callbackUrl("LINKEDIN"),
+              description: "Publish posts and media to your LinkedIn profile.",
+              dashboard: "https://www.linkedin.com/developers/apps",
+              connected: accounts.filter((a) => a.platform === "LINKEDIN" && a.status === "CONNECTED").length,
+              attention: accounts.filter((a) => a.platform === "LINKEDIN" && a.status === "EXPIRED").length,
+            },
+          ]}
+        />
+      )}
       {connected && (
         <Alert className="mb-4">
           <AlertTitle>Connected {connected} account(s)</AlertTitle>

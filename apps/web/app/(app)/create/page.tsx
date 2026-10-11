@@ -6,12 +6,26 @@ import { listSkills } from "@/lib/skills";
 import { pluginSummaries } from "@/lib/plugins";
 import { PageHeader } from "@/components/app/page-header";
 import { Composer } from "@/components/forms/composer";
+import { calendarInstant } from "@/lib/calendar";
 
 export const metadata = { title: "Create post" };
 
-export default async function CreatePage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+export default async function CreatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string; date?: string }>;
+}) {
   const ctx = await requireCapability("content:create");
-  const { edit } = await searchParams;
+  const { edit, date } = await searchParams;
+  let initialScheduledAt: string | null = null;
+  if (date) {
+    try {
+      const at = calendarInstant(date, "09:00", ctx.settings.timezone);
+      initialScheduledAt = at.toISOString();
+    } catch {
+      /* Invalid calendar links open a regular draft. */
+    }
+  }
   const aiEnabled = ctx.can("ai:generate");
   const [accounts, media, brands, existing, models, skills, plugins] = await Promise.all([
     prisma.socialAccount.findMany({
@@ -53,6 +67,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         description="Write once, see it exactly as it will appear, adapt per platform, then submit. Approved posts publish automatically."
       />
       <Composer
+        initialScheduledAt={initialScheduledAt}
         accounts={accounts.map((a) => ({
           id: a.id,
           platform: a.platform,

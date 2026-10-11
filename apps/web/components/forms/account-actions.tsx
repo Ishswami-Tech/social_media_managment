@@ -48,6 +48,21 @@ export function AccountActions({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
+  async function checkConnection() {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/accounts/${id}/check`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "Could not verify this connection");
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not verify this connection");
+    } finally {
+      setBusy(false);
+      router.refresh();
+    }
+  }
+
   async function patch(value: boolean | null) {
     setBusy(true);
     const res = await fetch(`/api/accounts/${id}`, {
@@ -81,6 +96,11 @@ export function AccountActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {status !== "DISCONNECTED" && (
+          <DropdownMenuItem onClick={checkConnection} disabled={busy}>
+            Check connection
+          </DropdownMenuItem>
+        )}
         {status !== "CONNECTED" && (
           <DropdownMenuItem asChild>
             <a href={reconnectHref}>Reconnect</a>
