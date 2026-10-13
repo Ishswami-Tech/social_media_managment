@@ -212,6 +212,8 @@ model OrganizationSettings {
   /// Agent Council (autonomous campaigns)
   agentPublishMode            AgentPublishMode @default(APPROVAL_REQUIRED)
   agentAssurance              AgentAssurance   @default(JUDGE_ONLY)
+  /// Independent models asked for each council decision. More opinions, better writing, proportionally more spend; seats run together so it costs little time.
+  agentCouncilSize            Int          @default(3)
   agentRunMaxCents            Int          @default(200)
   agentMonthlyBudgetCents     Int          @default(5000)
   agentMaxActiveRuns          Int          @default(5)

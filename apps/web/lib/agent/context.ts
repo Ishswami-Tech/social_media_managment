@@ -38,6 +38,25 @@ async function preferredModelOf(organizationId: string, runId?: string): Promise
   return run?.preferredModel ?? null;
 }
 
+/** Seats the council may hold. One is a single model per decision; beyond a handful nothing is gained. */
+export const COUNCIL_SIZE_MIN = 1;
+export const COUNCIL_SIZE_MAX = 5;
+const COUNCIL_SIZE_DEFAULT = 3;
+
+/**
+ * How many independent models answer each council decision.
+ *
+ * Seats run together, so width costs money rather than time: three seats is
+ * three opinions for roughly one seat's wait. An organization that would
+ * rather spend less can narrow it, at the cost of the diversity the judge
+ * chooses between.
+ */
+export function councilSizeOf(configured: number | null | undefined): number {
+  if (configured === null || configured === undefined) return COUNCIL_SIZE_DEFAULT;
+  if (!Number.isFinite(configured)) return COUNCIL_SIZE_DEFAULT;
+  return Math.min(COUNCIL_SIZE_MAX, Math.max(COUNCIL_SIZE_MIN, Math.trunc(configured)));
+}
+
 /** Every enabled playbook of the organization, as the catalogue the skills step picks from. */
 async function skillCatalogue(organizationId: string): Promise<SkillCard[]> {
   const rows = await prisma.organizationSkill.findMany({
@@ -60,7 +79,10 @@ async function skillCatalogue(organizationId: string): Promise<SkillCard[]> {
 export async function buildPipelineContext(organizationId: string, runId?: string): Promise<PipelineContext> {
   const [ai, settings, researchTools, plugins, recentTexts, preferredModel, skills] = await Promise.all([
     aiRuntime(organizationId),
-    prisma.organizationSettings.findUnique({ where: { organizationId }, select: { agentAllowedModels: true } }),
+    prisma.organizationSettings.findUnique({
+      where: { organizationId },
+      select: { agentAllowedModels: true, agentCouncilSize: true },
+    }),
     buildOrgResearchTools(organizationId),
     pluginTools(organizationId),
     recentPublishedTexts(organizationId),
@@ -94,7 +116,7 @@ export async function buildPipelineContext(organizationId: string, runId?: strin
       if (count > 0) logger.warn("model retired from the catalogue", { provider, model, reason: reason.slice(0, 160) });
     },
     modelsInUse: new Set<string>(),
-    councilSize: 3,
+    councilSize: councilSizeOf(settings?.agentCouncilSize),
     researchTools: [...researchTools, ...plugins],
     store: createPrismaRunStore(),
     budget: createPrismaBudget(),

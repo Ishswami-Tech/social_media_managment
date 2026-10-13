@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CAPABILITIES } from "@platform/rbac";
 import { AGENT_ASSURANCE_LEVELS, AGENT_PUBLISH_MODES, AI_PROVIDERS, ORG_ROLES } from "@platform/types";
+import { COUNCIL_SIZE_MAX, COUNCIL_SIZE_MIN } from "@/lib/agent/context";
 import { json, parseBody, withOrg } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
@@ -18,6 +19,8 @@ const settingsInput = z.object({
   // Agent Council (campaign automation)
   agentPublishMode: z.enum(AGENT_PUBLISH_MODES).optional(),
   agentAssurance: z.enum(AGENT_ASSURANCE_LEVELS).optional(),
+  /** Independent models per council decision; seats run together, so this is a spend dial more than a speed one. */
+  agentCouncilSize: z.number().int().min(COUNCIL_SIZE_MIN).max(COUNCIL_SIZE_MAX).optional(),
   agentRunMaxCents: z.number().int().min(1).max(100_000).optional(),
   agentMonthlyBudgetCents: z.number().int().min(1).max(10_000_000).optional(),
   agentMaxActiveRuns: z.number().int().min(1).max(100).optional(),
