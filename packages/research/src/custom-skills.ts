@@ -142,6 +142,30 @@ function rawUrl(src: GitHubSkillSource, ref: string, path: string): string {
   return `https://raw.githubusercontent.com/${src.owner}/${src.repo}/${ref}/${path}`;
 }
 
+/** Data formats a skill may keep beside itself. Code is deliberately absent: it cannot be read as context. */
+const DATA_FILE = /\.(json|ya?ml|csv|tsv|txt)$/i;
+
+/**
+ * Files in the skill's own folder that its text names, e.g. "read
+ * `hooks.json` in this folder" or a [link](rubric.json).
+ *
+ * Scoped to the folder and to names the body mentions: a skill that says
+ * nothing about its neighbours gets none of them.
+ */
+export function companionData(markdown: string, dir: string, files: Set<string>): string[] {
+  const prefix = dir ? `${dir}/` : "";
+  const named = new Set<string>();
+  for (const match of markdown.matchAll(/[`("'\s]([\w./-]+\.(?:json|ya?ml|csv|tsv|txt))[`)"'\s,.]/gi)) {
+    const raw = (match[1] ?? "").replace(/^(\.\.\/)+/, "").replace(/^\.\//, "");
+    if (!raw || !DATA_FILE.test(raw)) continue;
+    // Either written relative to the skill folder, or as a bare filename in it.
+    for (const candidate of [`${prefix}${raw}`, raw]) {
+      if (files.has(candidate) && candidate.startsWith(prefix)) named.add(candidate);
+    }
+  }
+  return [...named];
+}
+
 function dirname(path: string): string {
   const i = path.lastIndexOf("/");
   return i < 0 ? "" : path.slice(0, i);
@@ -179,9 +203,14 @@ export async function fetchGitHubSkills(input: string): Promise<CustomSkillDefin
     const linked = [...markdown.matchAll(/\(([^)\s]*references\/[\w./-]+\.md)\)|`([^`]*references\/[\w./-]+\.md)`/g)]
       .map((m) => (m[1] ?? m[2] ?? "").replace(/^(\.\.\/)+/, "").replace(/^\.\//, ""))
       .filter((p) => files.has(p) && !own.includes(p));
+    // Data the skill keeps beside itself and names in its own text, e.g. "read
+    // hooks.json in this folder". Without it the skill arrives as an
+    // instruction to open a file the model will never be given. Only files the
+    // body actually names are taken, so a repo's unrelated data stays out.
+    const siblings = companionData(markdown, dir, files).filter((p) => !own.includes(p) && !linked.includes(p));
     const references: string[] = [];
     let budget = SKILL_MAX_CHARS - parsed.body.length;
-    for (const refPath of [...own, ...linked]) {
+    for (const refPath of [...own, ...linked, ...siblings]) {
       if (budget <= 0) break;
       const text = (await fetchText(rawUrl(src, ref, refPath))).slice(0, REFERENCE_MAX_CHARS);
       references.push(`### ${refPath}\n\n${text}`);

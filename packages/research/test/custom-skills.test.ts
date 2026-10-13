@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { customSkill, parseGitHubUrl, parseSkillMarkdown, slugifySkillName } from "../src/custom-skills";
+import { companionData, customSkill, parseGitHubUrl, parseSkillMarkdown, slugifySkillName } from "../src/custom-skills";
+
+/**
+ * A skill that says "read hooks.json in this folder" is useless if the import
+ * leaves hooks.json behind: the model is handed an instruction to open a file
+ * it will never see. These cover which neighbours come with it.
+ */
+describe("data a skill keeps beside itself", () => {
+  const files = new Set([
+    "skills/li-post/SKILL.md",
+    "skills/li-post/hooks.json",
+    "skills/li-post/notes.json",
+    "skills/li-human/slop.json",
+    "top-level.json",
+  ]);
+
+  it("takes a file the skill names in backticks", () => {
+    expect(companionData("Read `hooks.json` in this folder.", "skills/li-post", files)).toEqual(["skills/li-post/hooks.json"]);
+  });
+
+  it("takes one named as a link or a relative path", () => {
+    expect(companionData("See [the hooks](./hooks.json).", "skills/li-post", files)).toEqual(["skills/li-post/hooks.json"]);
+    expect(companionData("Load skills/li-post/hooks.json first.", "skills/li-post", files)).toEqual(["skills/li-post/hooks.json"]);
+  });
+
+  it("leaves neighbours the skill never mentions", () => {
+    expect(companionData("Just write the post.", "skills/li-post", files)).toEqual([]);
+    // notes.json sits in the folder but is not named, so it stays behind.
+    expect(companionData("Read `hooks.json`.", "skills/li-post", files)).not.toContain("skills/li-post/notes.json");
+  });
+
+  it("does not reach outside the skill's own folder", () => {
+    expect(companionData("Read `slop.json` and `top-level.json`.", "skills/li-post", files)).toEqual([]);
+  });
+
+  it("ignores names that are not data, and names that do not exist", () => {
+    expect(companionData("Run `humanize.py` on it.", "skills/li-human", files)).toEqual([]);
+    expect(companionData("Read `missing.json`.", "skills/li-post", files)).toEqual([]);
+  });
+
+  it("asks for each file once however often it is named", () => {
+    expect(companionData("`hooks.json` and again hooks.json and ./hooks.json", "skills/li-post", files)).toEqual([
+      "skills/li-post/hooks.json",
+    ]);
+  });
+});
 
 describe("parseSkillMarkdown", () => {
   it("reads name and description from frontmatter and returns the body", () => {
