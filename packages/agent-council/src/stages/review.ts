@@ -252,45 +252,63 @@ async function reviewOne(
   }
 }
 
+/**
+ * Checks one draft and, when it fails, gives it its single revision pass.
+ * Resolves to the draft that should go forward, or nothing when it is beyond
+ * saving.
+ */
+async function checkAndRevise(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  account: RunAccountSnapshot,
+  draft: DraftCandidate,
+): Promise<DraftCandidate | undefined> {
+  const result = checkDraft(ctx, run, account, draft);
+  await ctx.store.addEvent(run.id, {
+    step: stepName("checks", account, draft.label),
+    status: result.ok ? "SUCCEEDED" : "FAILED",
+    validation: result.issues,
+  });
+  if (result.ok) return draft;
+
+  const revised = await reviseDraft(ctx, run, account, draft, issueLines(result), "revision").catch(
+    async (error: unknown) => {
+      if (isPipelineBlocked(error)) throw error;
+      await ctx.store.addEvent(run.id, {
+        step: stepName("revision", account, draft.label),
+        status: "SKIPPED",
+        error: errorMessage(error),
+      });
+      return undefined;
+    },
+  );
+  if (revised) return revised;
+  await ctx.store.addEvent(run.id, {
+    step: stepName("draft-dropped", account, draft.label),
+    status: "SKIPPED",
+    error: checkErrors(result)
+      .map((i) => i.message)
+      .join("; "),
+  });
+  return undefined;
+}
+
+/**
+ * The drafts of one account are independent, so they are checked and revised
+ * together rather than in turn. Revising is a model call: done one after
+ * another it cost as long as every other stage combined, for no reason beyond
+ * the shape of the loop. Order is kept because the results come back in the
+ * order the drafts were given.
+ */
 async function reviewAccount(
   ctx: PipelineContext,
   run: RunSnapshot,
   account: RunAccountSnapshot,
 ): Promise<DraftCandidate[]> {
-  const survivors: DraftCandidate[] = [];
-  for (const draft of latestDraftsByLabel(account)) {
-    const result = checkDraft(ctx, run, account, draft);
-    await ctx.store.addEvent(run.id, {
-      step: stepName("checks", account, draft.label),
-      status: result.ok ? "SUCCEEDED" : "FAILED",
-      validation: result.issues,
-    });
-    if (result.ok) {
-      survivors.push(draft);
-      continue;
-    }
-    const revised = await reviseDraft(ctx, run, account, draft, issueLines(result), "revision").catch(
-      async (error: unknown) => {
-        if (isPipelineBlocked(error)) throw error;
-        await ctx.store.addEvent(run.id, {
-          step: stepName("revision", account, draft.label),
-          status: "SKIPPED",
-          error: errorMessage(error),
-        });
-        return undefined;
-      },
-    );
-    if (revised) survivors.push(revised);
-    else
-      await ctx.store.addEvent(run.id, {
-        step: stepName("draft-dropped", account, draft.label),
-        status: "SKIPPED",
-        error: checkErrors(result)
-          .map((i) => i.message)
-          .join("; "),
-      });
-  }
-  return survivors;
+  const settled = await Promise.all(
+    latestDraftsByLabel(account).map((draft) => checkAndRevise(ctx, run, account, draft)),
+  );
+  return settled.filter((d): d is DraftCandidate => d !== undefined);
 }
 
 /** REVIEWING: checks, one revision pass, platform review with a fix pass; drops what still fails. */
