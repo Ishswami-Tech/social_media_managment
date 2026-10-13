@@ -27,9 +27,29 @@ export type RunAccountSnapshot = RunSnapshot["accounts"][number];
  * using the same framing as every other AI call so one skill reads the same way
  * wherever it is applied. Returns the prompt unchanged when nothing is attached.
  */
-/** Keeps the playbooks from crowding out the stage prompt itself. */
-const SKILL_CHARS_PER_SKILL = 10_000;
+/**
+ * Keeps the playbooks from crowding out the stage prompt itself.
+ *
+ * Per-skill is the looser of the two on purpose: a playbook that carries its
+ * own data (a table of hook formulas, a lexicon) is one coherent document and
+ * is worth little in halves. The total is the real guard, so two large
+ * playbooks still cannot bury the stage prompt.
+ */
+const SKILL_CHARS_PER_SKILL = 16_000;
 const SKILL_CHARS_TOTAL = 24_000;
+
+/**
+ * Cuts to a length without leaving the model half a sentence, or worse half a
+ * JSON object presented as if whole. Falls back to a hard cut only when there
+ * is no line break to fall back to.
+ */
+function clipAtBoundary(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const lastBreak = head.lastIndexOf("\n");
+  const body = lastBreak > limit * 0.5 ? head.slice(0, lastBreak) : head;
+  return `${body}\n\n[truncated: this playbook is longer than the prompt allows]`;
+}
 
 /**
  * The playbooks a stage must follow for one platform: the run's chosen skills
@@ -47,7 +67,7 @@ export function skillInstructionsFor(ctx: PipelineContext, run: RunSnapshot, pla
   let budget = SKILL_CHARS_TOTAL;
   for (const card of ordered) {
     if (budget <= 0) break;
-    const text = card.instructions.trim().slice(0, Math.min(SKILL_CHARS_PER_SKILL, budget));
+    const text = clipAtBoundary(card.instructions.trim(), Math.min(SKILL_CHARS_PER_SKILL, budget));
     if (!text) continue;
     blocks.push(`## Skill: ${card.name}\n${text}`);
     budget -= text.length;

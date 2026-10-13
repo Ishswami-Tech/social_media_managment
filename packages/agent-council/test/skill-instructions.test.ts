@@ -41,3 +41,38 @@ describe("skill instructions", () => {
     expect(script.calls.some((c) => c.system.includes("SKILL INSTRUCTIONS"))).toBe(false);
   });
 });
+
+/**
+ * A playbook that carries its own data is one document. Cut in the middle it
+ * hands the model half a JSON object as though it were whole, which is worse
+ * than leaving it out.
+ */
+describe("a playbook longer than the prompt allows", () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `  { "id": ${i}, "template": "line ${i}" },`).join("\n");
+
+  it("is cut at a line, never mid-structure, and says it was cut", async () => {
+    const { ctx, memory, script } = createTestContext(baseRun(), {
+      allowedModels: ["OPENAI::gpt-test", "ANTHROPIC::claude-test"],
+      skills: [
+        {
+          id: "custom:big",
+          name: "Hooks",
+          description: "many formulas",
+          instructions: `# Hooks\n\n${lines(2000)}`,
+          platforms: [],
+          always: true,
+        },
+      ],
+    });
+    await runPipelineToCompletion(ctx, "run_1").catch(() => undefined);
+
+    const writer = script.calls.find((c) => c.stage === "WRITER");
+    expect(writer, "a writer call should have happened").toBeTruthy();
+    const system = writer!.system;
+    expect(system).toContain("[truncated: this playbook is longer than the prompt allows]");
+    // The cut lands on a line break, so the last thing the model sees is whole.
+    const beforeMarker = system.slice(0, system.indexOf("[truncated")).trimEnd();
+    expect(beforeMarker.endsWith(",")).toBe(true);
+    void memory;
+  });
+});
