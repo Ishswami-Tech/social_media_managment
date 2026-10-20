@@ -10,7 +10,7 @@ import type { ClaimRecord, PipelineContext, RunSnapshot } from "../contracts";
 import { errorMessage } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, callModel, type ProviderPreference } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, stageCouncilSize, uniqueStrings, withPerspective } from "./council";
 import { encodeContext } from "./shared";
 
 const RESEARCH_MAX_STEPS = 6;
@@ -139,7 +139,7 @@ export function mergeBriefs(input: readonly Brief[]): Brief {
 }
 
 async function produceBrief(ctx: PipelineContext, run: RunSnapshot): Promise<Brief> {
-  const prefs = await councilPrefs(ctx);
+  const prefs = await councilPrefs(ctx, undefined, stageCouncilSize(ctx, "research"));
   const briefs = await council(
     prefs,
     (pref, index, others) => produceOneBrief(ctx, run, pref, seatStep("research", index, prefs.length), others, seatPerspective("research", index, prefs.length)),

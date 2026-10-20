@@ -35,8 +35,15 @@ export type RunAccountSnapshot = RunSnapshot["accounts"][number];
  * is worth little in halves. The total is the real guard, so two large
  * playbooks still cannot bury the stage prompt.
  */
-const SKILL_CHARS_PER_SKILL = 16_000;
-const SKILL_CHARS_TOTAL = 24_000;
+/** How much playbook text a stage may carry. Writers need the most; reviewers less. */
+export type SkillBudgetRole = "writer" | "review" | "adapt" | "full";
+
+const SKILL_BUDGETS: Record<SkillBudgetRole, { perSkill: number; total: number }> = {
+  full: { perSkill: 16_000, total: 24_000 },
+  writer: { perSkill: 12_000, total: 18_000 },
+  review: { perSkill: 6_000, total: 10_000 },
+  adapt: { perSkill: 8_000, total: 12_000 },
+};
 
 /**
  * Cuts to a length without leaving the model half a sentence, or worse half a
@@ -55,8 +62,15 @@ function clipAtBoundary(text: string, limit: number): string {
  * The playbooks a stage must follow for one platform: the run's chosen skills
  * plus every "always" skill, filtered to the platform, in the order they were
  * chosen. Legacy `ctx.skillInstructions` (already rendered) comes first.
+ * `role` tightens the char budget so review/adapt do not re-pay writer-sized packs.
  */
-export function skillInstructionsFor(ctx: PipelineContext, run: RunSnapshot, platform: string): string | undefined {
+export function skillInstructionsFor(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  platform: string,
+  role: SkillBudgetRole = "full",
+): string | undefined {
+  const budgetLimits = SKILL_BUDGETS[role];
   const cards = ctx.skills ?? [];
   const chosen = run.skillIds ?? [];
   const ordered = [
@@ -64,10 +78,10 @@ export function skillInstructionsFor(ctx: PipelineContext, run: RunSnapshot, pla
     ...cards.filter((c) => c.always && !chosen.includes(c.id)),
   ].filter((c) => c.platforms.length === 0 || c.platforms.includes(platform));
   const blocks: string[] = ctx.skillInstructions?.trim() ? [ctx.skillInstructions.trim()] : [];
-  let budget = SKILL_CHARS_TOTAL;
+  let budget = budgetLimits.total;
   for (const card of ordered) {
     if (budget <= 0) break;
-    const text = clipAtBoundary(card.instructions.trim(), Math.min(SKILL_CHARS_PER_SKILL, budget));
+    const text = clipAtBoundary(card.instructions.trim(), Math.min(budgetLimits.perSkill, budget));
     if (!text) continue;
     blocks.push(`## Skill: ${card.name}\n${text}`);
     budget -= text.length;
@@ -75,12 +89,64 @@ export function skillInstructionsFor(ctx: PipelineContext, run: RunSnapshot, pla
   return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
+const SKILL_SUMMARY_INSTRUCTION_CHARS = 400;
+
+/**
+ * Short catalogue of the playbooks attached to this run for one platform:
+ * name, description, and a ~400-char clip of instructions. Used by the
+ * strategist so it can lean on playbooks without loading full SKILL.md bodies.
+ * Returns a placeholder when nothing applies.
+ */
+export function skillSummariesFor(
+  ctx: PipelineContext,
+  run: RunSnapshot,
+  platform: string,
+  maxChars = 3_000,
+): string {
+  const cards = ctx.skills ?? [];
+  const chosen = run.skillIds ?? [];
+  const ordered = [
+    ...chosen.flatMap((id) => cards.filter((c) => c.id === id)),
+    ...cards.filter((c) => c.always && !chosen.includes(c.id)),
+  ].filter((c) => c.platforms.length === 0 || c.platforms.includes(platform));
+  // Match skillInstructionsFor: legacy pre-rendered instructions still reach the strategist.
+  const blocks: string[] = [];
+  let budget = maxChars;
+  if (ctx.skillInstructions?.trim()) {
+    const legacy = clipAtBoundary(ctx.skillInstructions.trim(), Math.min(SKILL_SUMMARY_INSTRUCTION_CHARS * 2, budget));
+    blocks.push(`- (campaign playbooks)\n  ${legacy.replace(/\n/g, "\n  ")}`);
+    budget -= blocks[0]!.length + 2;
+  }
+  if (ordered.length === 0 && blocks.length === 0) return "(none)";
+  for (const card of ordered) {
+    if (budget <= 0) break;
+    const clip = clipAtBoundary(card.instructions.trim(), SKILL_SUMMARY_INSTRUCTION_CHARS);
+    const block = [`- ${card.name}: ${card.description.trim() || "(no description)"}`, clip ? `  ${clip.replace(/\n/g, "\n  ")}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    if (block.length > budget) {
+      blocks.push(block.slice(0, budget).trimEnd() + "…");
+      break;
+    }
+    blocks.push(block);
+    budget -= block.length + 2;
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : "(none)";
+}
+
 /**
  * Appends the playbooks for the account's platform to a stage prompt. Without a
- * run the legacy pre-rendered instructions alone apply.
+ * run the legacy pre-rendered instructions alone apply. Pass `role` to use a
+ * tighter excerpt budget (review/adapt) while writers keep the fuller pack.
  */
-export function withSkills(ctx: PipelineContext, system: string, run?: RunSnapshot, platform?: string): string {
-  const instructions = run && platform ? skillInstructionsFor(ctx, run, platform) : ctx.skillInstructions;
+export function withSkills(
+  ctx: PipelineContext,
+  system: string,
+  run?: RunSnapshot,
+  platform?: string,
+  role: SkillBudgetRole = "full",
+): string {
+  const instructions = run && platform ? skillInstructionsFor(ctx, run, platform, role) : ctx.skillInstructions;
   return withSkillInstructions(system, instructions);
 }
 
@@ -121,6 +187,66 @@ export function claimsText(claims: readonly ClaimRecord[]): string {
         })`,
     )
     .join("\n");
+}
+
+/**
+ * Compact claims for seats that only need to check citations (review / judge),
+ * not re-read evidence. Writers and strategy still use `claimsText`.
+ */
+export function claimsIdsText(claims: readonly ClaimRecord[]): string {
+  if (claims.length === 0) return "(none)";
+  return claims.map((c) => `- [${c.id}] ${c.statement}`).join("\n");
+}
+
+/**
+ * Shared run context pack: topic, goal, audience, strategy stub, claim ids.
+ * Keeps later seats aligned without re-pasting the full research brief.
+ */
+export function runContextPack(run: RunSnapshot, account?: RunAccountSnapshot): string {
+  const claims = supportedClaims(run.claims);
+  const strategy = account?.strategy;
+  const lines = [
+    `Topic: ${run.brief.topic}`,
+    `Goal: ${run.brief.goal}`,
+    run.brief.audience ? `Audience: ${run.brief.audience}` : null,
+    strategy
+      ? `Strategy: ${strategy.angle} · hook ${strategy.hookType} · format ${strategy.format}${strategy.cta ? ` · CTA ${strategy.cta}` : ""}`
+      : null,
+    "Claims:",
+    claimsIdsText(claims),
+  ];
+  return lines.filter((l): l is string => Boolean(l)).join("\n");
+}
+
+/** How many drafts get a full platform Lens pass when assurance is Standard. */
+export const PLATFORM_REVIEW_TOP_N = 2;
+
+/**
+ * Rank drafts for Lens: prefer more cited claims and a sensible length; penalise
+ * hashtag spam. Pure — no model call.
+ */
+export function rankDraftsForReview(drafts: readonly DraftCandidate[]): DraftCandidate[] {
+  const score = (d: DraftCandidate) =>
+    (d.claimIds?.length ?? 0) * 10 + Math.min(d.text.length, 2_000) / 100 - (d.hashtags.length > 8 ? 5 : 0);
+  return [...drafts].sort((a, b) => score(b) - score(a) || a.label.localeCompare(b.label));
+}
+
+/**
+ * Which survivors get a deep platform review. Thorough assurance reviews all;
+ * Standard keeps the top N and lets the rest skip to the judge (still checked).
+ */
+export function draftsForPlatformReview(
+  drafts: readonly DraftCandidate[],
+  assurance: string | undefined,
+): { deep: DraftCandidate[]; passThrough: DraftCandidate[] } {
+  if (assurance === "HIGH_ASSURANCE" || drafts.length <= PLATFORM_REVIEW_TOP_N) {
+    return { deep: [...drafts], passThrough: [] };
+  }
+  const ranked = rankDraftsForReview(drafts);
+  return {
+    deep: ranked.slice(0, PLATFORM_REVIEW_TOP_N),
+    passThrough: ranked.slice(PLATFORM_REVIEW_TOP_N),
+  };
 }
 
 export function supportedClaims(claims: readonly ClaimRecord[]): ClaimRecord[] {

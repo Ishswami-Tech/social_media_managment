@@ -7,8 +7,17 @@ import { z } from "zod";
 import type { AccountStrategy, PipelineContext, RunSnapshot } from "../contracts";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, withPerspective } from "./council";
-import { accountVars, claimsText, encodeContext, filterClaimIds, perAccount, stepName, supportedClaims } from "./shared";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, stageCouncilSize, withPerspective } from "./council";
+import {
+  accountVars,
+  claimsText,
+  encodeContext,
+  filterClaimIds,
+  perAccount,
+  skillSummariesFor,
+  stepName,
+  supportedClaims,
+} from "./shared";
 import { selectSkills } from "./skills";
 
 const STRATEGY_OUTPUT_TOKENS = 900;
@@ -27,17 +36,21 @@ export const StrategyOutputSchema = z.object({
 
 /** STRATEGIZING: the playbooks for the campaign, then a strategy per run account, persisted through the store. */
 export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Promise<void> {
-  await selectSkills(ctx, run);
-  const claims = supportedClaims(run.claims);
-  const brief = run.research ? encodeContext(run.research).slice(0, BRIEF_CHARS) : "(no research brief available)";
-  await perAccount(run.accounts, async (account) => {
-    const prefs = await councilPrefs(ctx);
+  const skillIds = await selectSkills(ctx, run);
+  const runWithSkills: RunSnapshot = { ...run, skillIds };
+  const claims = supportedClaims(runWithSkills.claims);
+  const brief = runWithSkills.research
+    ? encodeContext(runWithSkills.research).slice(0, BRIEF_CHARS)
+    : "(no research brief available)";
+  await perAccount(runWithSkills.accounts, async (account) => {
+    const skillSummaries = skillSummariesFor(ctx, runWithSkills, account.platform);
+    const prefs = await councilPrefs(ctx, undefined, stageCouncilSize(ctx, "strategy"));
     const proposals = await council(prefs, (pref, index, others) =>
       callJson(
       ctx,
       {
-        runId: run.id,
-        organizationId: run.organizationId,
+        runId: runWithSkills.id,
+        organizationId: runWithSkills.organizationId,
         step: seatStep(stepName("strategy", account), index, prefs.length),
         pref,
         avoidModels: others,
@@ -47,20 +60,21 @@ export async function strategyStage(ctx: PipelineContext, run: RunSnapshot): Pro
         expectedOutputTokens: STRATEGY_OUTPUT_TOKENS,
         system: renderPrompt("strategy", {
           ...accountVars(account),
-          topic: run.brief.topic,
-          goal: run.brief.goal,
-          audience: run.brief.audience ?? "(not specified)",
-          notes: run.brief.notes ?? "(none)",
+          topic: runWithSkills.brief.topic,
+          goal: runWithSkills.brief.goal,
+          audience: runWithSkills.brief.audience ?? "(not specified)",
+          notes: runWithSkills.brief.notes ?? "(none)",
           brief,
           claims: claimsText(claims),
+          skillSummaries,
         }),
         user: withPerspective("Design the strategy for this account now. Return only the JSON object.", seatPerspective("strategy", index, prefs.length)),
       },
       StrategyOutputSchema,
       ),
-      recordSeatFailure(ctx, run.id, stepName("strategy", account), prefs.length),
+      recordSeatFailure(ctx, runWithSkills.id, stepName("strategy", account), prefs.length),
     );
-    const scored = proposals.map((p) => ({ ...p, claimIds: filterClaimIds(p.value.claimIds, run.claims) }));
+    const scored = proposals.map((p) => ({ ...p, claimIds: filterClaimIds(p.value.claimIds, runWithSkills.claims) }));
     const best = pickStrategy(scored);
     const others = scored.filter((p) => p !== best);
     const strategy: AccountStrategy = {

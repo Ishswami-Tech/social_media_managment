@@ -137,6 +137,7 @@ async function writeDraft(
         }),
         run,
         account.platform,
+        "writer",
       ),
       user: "Write the post now. Return only the JSON object.",
     },

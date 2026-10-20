@@ -27,6 +27,8 @@ export interface OrganizationSettingsValues {
   agentMaxActiveRuns: number;
   /** Allow-list of "PROVIDER::model" strings; empty = any model the organization can reach. */
   agentAllowedModels: string[];
+  /** Independent models per council decision (1–5). Default 3. */
+  agentCouncilSize: number;
 }
 
 export interface AIModelOption {

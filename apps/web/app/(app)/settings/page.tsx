@@ -171,6 +171,7 @@ async function loadSettings(ctx: OrgContext): Promise<OrganizationSettingsValues
     agentMonthlyBudgetCents: settings?.agentMonthlyBudgetCents ?? 5000,
     agentMaxActiveRuns: settings?.agentMaxActiveRuns ?? 5,
     agentAllowedModels: readAllowedModels(settings?.agentAllowedModels),
+    agentCouncilSize: settings?.agentCouncilSize ?? 3,
   };
 }
 

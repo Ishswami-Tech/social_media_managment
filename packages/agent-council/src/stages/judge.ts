@@ -9,7 +9,7 @@ import type { DraftCandidate, JudgeVerdict, PipelineContext, ReviewNote, RunSnap
 import { PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson, type ProviderPreference } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, stageCouncilSize, uniqueStrings, withPerspective } from "./council";
 import { selectCandidates } from "./review";
 import { accountVars, perAccount, stepName, strategyText, type RunAccountSnapshot } from "./shared";
 
@@ -91,7 +91,7 @@ async function judgeAccount(
   const user = "Judge the candidates now. Return only the JSON object.";
   assertBlind(`${system}\n${user}`, drafts);
   const writersModels = new Set(drafts.map((d) => `${d.provider}::${d.model}`));
-  const prefs = await councilPrefs(ctx, writersModels);
+  const prefs = await councilPrefs(ctx, writersModels, stageCouncilSize(ctx, "judge"));
   const votes = await council(prefs, (pref, index, others) =>
     callJson(
       ctx,

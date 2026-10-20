@@ -4,6 +4,9 @@
  * strongest, the reviewer pools three readings, the judge is three judges
  * voting. `councilSize` on the context says how many; 1 (the default, and
  * what the tests use) is a single call as before.
+ *
+ * Stage width is selective: research caps at 3, review stays 1 unless
+ * HIGH_ASSURANCE, while strategy and judge use the full configured width.
  */
 import type { AIProviderName } from "@platform/types";
 import type { PipelineContext } from "../contracts";
@@ -11,15 +14,46 @@ import { COUNCIL_PERSPECTIVES, type ProgressStageKey } from "../progress";
 import { errorMessage, isPipelineBlocked } from "../errors";
 import type { ProviderPreference } from "./call";
 
+/** Stages that seat a multi-model council (writers stay fixed at three). */
+export type CouncilStage = "research" | "strategy" | "review" | "judge";
+
 /**
- * Up to `councilSize` distinct models for one seat, spread across providers
+ * How many models to seat for one stage given the org width `W` and optional
+ * assurance. Writers are not covered here — they always run three.
+ */
+export function stageCouncilSize(
+  ctx: PipelineContext,
+  stage: CouncilStage,
+  opts?: { assurance?: string },
+): number {
+  const W = Math.max(1, ctx.councilSize ?? 1);
+  switch (stage) {
+    case "research":
+      return Math.min(W, 3);
+    case "strategy":
+    case "judge":
+      return W;
+    case "review":
+      return opts?.assurance === "HIGH_ASSURANCE" ? W : 1;
+  }
+}
+
+/**
+ * Up to `size` distinct models for one seat, spread across providers
  * (each provider's best model first, then their next ones), skipping models
  * the caller rules out, models known to be dead, providers that are cooling
  * down, and models earlier agents used while enough others remain. A lone
  * `{}` when the council is one seat, so routing and failover apply untouched.
+ *
+ * `sizeOverride` (from `stageCouncilSize`) wins over `ctx.councilSize` when set.
  */
-export async function councilPrefs(ctx: PipelineContext, avoid: ReadonlySet<string> = new Set()): Promise<ProviderPreference[]> {
-  const size = Math.max(1, ctx.councilSize ?? 1);
+export async function councilPrefs(
+  ctx: PipelineContext,
+  avoid?: ReadonlySet<string>,
+  sizeOverride?: number,
+): Promise<ProviderPreference[]> {
+  const blocked = avoid ?? new Set<string>();
+  const size = Math.max(1, sizeOverride ?? ctx.councilSize ?? 1);
   if (size === 1) return [{}];
   const dead = ctx.deadModels ?? new Set<string>();
   const inUse = ctx.modelsInUse ?? new Set<string>();
@@ -27,7 +61,7 @@ export async function councilPrefs(ctx: PipelineContext, avoid: ReadonlySet<stri
   const usable: { provider: AIProviderName; model: string }[] = [];
   for (const c of ctx.router.candidates("json", ctx.availableProviders)) {
     const key = `${c.provider}::${c.model}`;
-    if (avoid.has(key) || dead.has(key) || cooling.has(c.provider)) continue;
+    if (blocked.has(key) || dead.has(key) || cooling.has(c.provider)) continue;
     usable.push({ provider: c.provider, model: c.model });
   }
   // Rotation stays within each provider's best few: a seat is never handed a model nobody would pick on purpose.

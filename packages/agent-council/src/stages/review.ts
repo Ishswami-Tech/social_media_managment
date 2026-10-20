@@ -3,12 +3,10 @@
  * fail go through the revision editor, once. Drafts that still fail are dropped
  * — the judge must never see a draft that breaks a rule.
  *
- * Every survivor then gets a platform review: a reader for that platform,
- * armed with the platform conventions and the playbooks attached to the
- * campaign, lists what a person would notice and says whether the draft must
- * be revised. A REVISE verdict triggers one fix pass; the notes travel to the
- * blind judge either way. HIGH_ASSURANCE asks a provider that did not write
- * the draft to do the review.
+ * Survivors then get a platform review. On Standard assurance only the top N
+ * drafts (by claims / length) get a deep Lens pass; the rest skip to the judge
+ * already checked. HIGH_ASSURANCE reviews every survivor and prefers a provider
+ * that did not write the draft. A REVISE verdict triggers one fix pass.
  */
 import { z } from "zod";
 import { checkErrors, runChecks } from "../checks";
@@ -16,8 +14,24 @@ import type { CheckResult, DraftCandidate, PipelineContext, ReviewNote, RunSnaps
 import { errorMessage, isPipelineBlocked, PipelineBlocked } from "../errors";
 import { renderPrompt } from "../prompts";
 import { callJson } from "./call";
-import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, uniqueStrings, withPerspective } from "./council";
-import { accountVars, checkInputFor, claimsText, DraftOutputSchema, filterClaimIds, perAccount, plannedMedia, stepName, strategyText, stripInlineClaimIds, supportedClaims, type RunAccountSnapshot, withSkills } from "./shared";
+import { council, councilPrefs, recordSeatFailure, seatPerspective, seatStep, stageCouncilSize, uniqueStrings, withPerspective } from "./council";
+import {
+  accountVars,
+  checkInputFor,
+  claimsIdsText,
+  claimsText,
+  DraftOutputSchema,
+  draftsForPlatformReview,
+  filterClaimIds,
+  perAccount,
+  plannedMedia,
+  stepName,
+  strategyText,
+  stripInlineClaimIds,
+  supportedClaims,
+  type RunAccountSnapshot,
+  withSkills,
+} from "./shared";
 
 const REVISION_OUTPUT_TOKENS = 1_200;
 const REVIEW_OUTPUT_TOKENS = 600;
@@ -102,6 +116,7 @@ async function reviseDraft(
         }),
         run,
         account.platform,
+        "writer",
       ),
       user: "Revise the draft now. Return only the JSON object.",
     },
@@ -154,7 +169,11 @@ async function reviewDraft(
   const other =
     run.assurance === "HIGH_ASSURANCE" ? ctx.availableProviders.find((p) => p !== draft.provider) : undefined;
   try {
-    const prefs = await councilPrefs(ctx, new Set([`${draft.provider}::${draft.model}`]));
+    const prefs = await councilPrefs(
+      ctx,
+      new Set([`${draft.provider}::${draft.model}`]),
+      stageCouncilSize(ctx, "review", { assurance: run.assurance }),
+    );
     const readings = await council(prefs, (pref, index, others) =>
       callJson(
       ctx,
@@ -173,12 +192,13 @@ async function reviewDraft(
           renderPrompt("review", {
             ...accountVars(account),
             strategy: strategyText(account.strategy),
-            claims: claimsText(supportedClaims(run.claims)),
+            claims: claimsIdsText(supportedClaims(run.claims)),
             text: draft.text,
             hashtags: draft.hashtags.join(" "),
           }),
           run,
           account.platform,
+          "review",
         ),
         user: withPerspective(`Review this draft as a ${account.platform} reader now. Return only the JSON object.`, seatPerspective("review", index, prefs.length)),
       },
@@ -202,9 +222,9 @@ async function reviewDraft(
 }
 
 /**
- * Platform review for every survivor. A REVISE verdict gets one fix pass; when
- * the fix passes the deterministic checks it replaces the draft, otherwise the
- * original stays (it already passed) and the judge sees the notes.
+ * Platform review for survivors. On Standard assurance only the top N drafts
+ * get a deep Lens pass (token saver); the rest stay checked and go to the judge.
+ * Thorough assurance still reviews every survivor.
  */
 async function platformReview(
   ctx: PipelineContext,
@@ -212,11 +232,22 @@ async function platformReview(
   account: RunAccountSnapshot,
   survivors: readonly DraftCandidate[],
 ): Promise<{ drafts: DraftCandidate[]; notes: ReviewNote[] }> {
-  // Each draft is reviewed and fixed independently, so they go together: three
-  // drafts in a row were three times the wait for no gain.
-  const reviewed = await Promise.all(survivors.map((draft) => reviewOne(ctx, run, account, draft)));
+  const { deep, passThrough } = draftsForPlatformReview(survivors, run.assurance);
+  // Pass-through drafts already passed deterministic checks; missing ReviewNotes
+  // is not a quality signal for the judge — only that Lens was deferred to save tokens.
+  for (const draft of passThrough) {
+    await ctx.store.addEvent(run.id, {
+      step: stepName("review", account, draft.label),
+      status: "SKIPPED",
+      validation: "deferred — top-N platform review (Standard assurance)",
+    });
+  }
+  // Deep reviews run together: three serial Lens passes were only waiting.
+  const reviewed = await Promise.all(deep.map((draft) => reviewOne(ctx, run, account, draft)));
+  const byLabel = new Map(reviewed.map((r) => [r.draft.label, r] as const));
+  for (const draft of passThrough) byLabel.set(draft.label, { draft });
   return {
-    drafts: reviewed.map((r) => r.draft),
+    drafts: survivors.map((s) => byLabel.get(s.label)?.draft ?? s),
     notes: reviewed.flatMap((r) => (r.note ? [r.note] : [])),
   };
 }

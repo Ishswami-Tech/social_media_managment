@@ -3,7 +3,17 @@ import { mergeBriefs } from "../src/stages/research";
 import { pickStrategy } from "../src/stages/strategy";
 import { tally } from "../src/stages/judge";
 import { PipelineBlocked } from "../src/errors";
-import { council, coolingProviders, councilPrefs, otherSeats, seatPerspective, topPerProvider, uniqueStrings, withPerspective } from "../src/stages/council";
+import {
+  council,
+  coolingProviders,
+  councilPrefs,
+  otherSeats,
+  seatPerspective,
+  stageCouncilSize,
+  topPerProvider,
+  uniqueStrings,
+  withPerspective,
+} from "../src/stages/council";
 import { firstLine, lesson, mergeCouncilMemory } from "../src/council-memory";
 import { ModelRouter, type ModelInfo } from "@platform/ai-core";
 import { createCircuitBreaker } from "../src/circuit-breaker";
@@ -221,5 +231,34 @@ describe("a council behind one seat", () => {
 
   it("dedupes strings without caring about case", () => {
     expect(uniqueStrings([" a", "A", "b", ""])).toEqual(["a", "b"]);
+  });
+
+  it("sizes each stage selectively from the org width", () => {
+    const { ctx } = createTestContext(baseRun());
+    ctx.councilSize = 5;
+    expect(stageCouncilSize(ctx, "research")).toBe(3);
+    expect(stageCouncilSize(ctx, "strategy")).toBe(5);
+    expect(stageCouncilSize(ctx, "judge")).toBe(5);
+    expect(stageCouncilSize(ctx, "review")).toBe(1);
+    expect(stageCouncilSize(ctx, "review", { assurance: "JUDGE_ONLY" })).toBe(1);
+    expect(stageCouncilSize(ctx, "review", { assurance: "HIGH_ASSURANCE" })).toBe(5);
+
+    ctx.councilSize = 2;
+    expect(stageCouncilSize(ctx, "research")).toBe(2);
+    expect(stageCouncilSize(ctx, "strategy")).toBe(2);
+    expect(stageCouncilSize(ctx, "review", { assurance: "HIGH_ASSURANCE" })).toBe(2);
+
+    ctx.councilSize = undefined;
+    expect(stageCouncilSize(ctx, "strategy")).toBe(1);
+    expect(stageCouncilSize(ctx, "research")).toBe(1);
+  });
+
+  it("honours a size override when seating prefs", async () => {
+    const { ctx } = createTestContext(baseRun());
+    ctx.councilSize = 5;
+    const narrow = await councilPrefs(ctx, new Set(), 1);
+    expect(narrow).toEqual([{}]);
+    const capped = await councilPrefs(ctx, new Set(), stageCouncilSize(ctx, "research"));
+    expect(capped).toHaveLength(3);
   });
 });

@@ -146,6 +146,27 @@ export function AutomationSettings({ organization, settings, models, configurabl
             </Select>
           </div>
           <div className="grid gap-1">
+            <Label>Council width</Label>
+            <Select
+              value={String(s.agentCouncilSize)}
+              onValueChange={(v) => setS({ ...s, agentCouncilSize: Number.parseInt(v, 10) })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 — single model per seat</SelectItem>
+                <SelectItem value="2">2</SelectItem>
+                <SelectItem value="3">3 — default</SelectItem>
+                <SelectItem value="4">4</SelectItem>
+                <SelectItem value="5">5 — maximum</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground">
+              How many models vote on research, strategy, and judging. Review uses this width only in thorough mode.
+            </span>
+          </div>
+          <div className="grid gap-1">
             <Label htmlFor="agentRunMaxCents">Spend limit per campaign (cents)</Label>
             <Input
               id="agentRunMaxCents"

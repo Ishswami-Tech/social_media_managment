@@ -53,6 +53,7 @@ export async function synthesizeDraft(
         }),
         run,
         account.platform,
+        "adapt",
       ),
       user: "Produce the merged post now. Return only the JSON object.",
     },

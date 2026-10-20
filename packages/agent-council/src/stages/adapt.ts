@@ -51,6 +51,7 @@ async function adaptDraft(
         }),
         run,
         account.platform,
+        "adapt",
       ),
       user: "Adapt the post to the platform now. Return only the JSON object.",
     },

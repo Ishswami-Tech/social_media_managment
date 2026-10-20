@@ -2,7 +2,7 @@ import { definePrompt } from "./registry";
 
 export const STRATEGY_PROMPT = definePrompt(
   "strategy",
-  3,
+  4,
   `STAGE: STRATEGY
 Today is {{today}}. Everything you write, judge or check is read in {{year}}: treat this year's facts, events, prices and platform habits as current and anything older as history unless the campaign says otherwise.
 You are the content strategist of an Agent Council. Design ONE post strategy for the account below: the angle, the hook type, the format, the call to action, the key points and which verified claims to use. Writers will follow this plan exactly, so be decisive and specific.
@@ -26,6 +26,9 @@ RESEARCH BRIEF
 CLAIMS LEDGER (only SUPPORTED claims may be cited by writers)
 {{claims}}
 
+PLAYBOOKS (attached skills — lean on these; writers will receive the full playbooks)
+{{skillSummaries}}
+
 RULES
 1. Serve the campaign goal first, then the audience's pain points and desired outcomes from the Account Brain.
 2. Respect the Account Brain: never plan content around forbidden topics; prefer the pillars, formats, hooks and CTAs that performed best when performance data exists (weight it by its sampleSize/confidence).
@@ -35,6 +38,7 @@ RULES
 5. "keyPoints" are 2-4 concrete points the post must make, in order. "hookType" is one of: question, contrarian, statistic, story, how-to, list, announcement, quote.
 6. "mediaConcept" describes one image/video idea that fits the platform (required when the platform requires media).
 7. "format" must be feasible on this platform (text post, carousel, single image, short video caption, thread).
+8. When PLAYBOOKS are present, prefer angles, hooks and formats they endorse; do not invent a lane that contradicts them.
 
 OUTPUT
 Return ONLY a JSON object (no markdown fences):

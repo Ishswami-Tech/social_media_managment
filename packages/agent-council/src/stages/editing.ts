@@ -84,6 +84,7 @@ export async function reviseRecommendation(
         }),
         run,
         account.platform,
+        "writer",
       ),
       user: "Apply the request now. Return only the JSON object.",
     },
