@@ -23,6 +23,24 @@ image; `SERVICE` decides which half of it runs.
 The worker's start command applies migrations and runs the idempotent seed
 before it opens the queues, so no separate release job is needed.
 
+## The image comes from CI
+
+The cluster has an amd64 node and an arm64 node, and Temps only places a copy
+on a node the image has a platform for. The `image` job in
+`.github/workflows/ci.yml` therefore builds the root `Dockerfile` for both
+platforms and pushes it to `ghcr.io/ishswami-tech/social_media_managment`,
+tagged `<commit, 12 characters>-<run number>`. It runs after `verify` passes on
+a push to `main` (which also tags `:main`), or by hand for any commit:
+
+```sh
+gh workflow run ci.yml --ref main -f ref=<full commit SHA>
+```
+
+Both projects deploy that one image (`temps deploy:image`). Pull its arm64
+variant on the control plane first (`docker pull --platform linux/arm64 <image>`):
+Temps decides which nodes may run an image from the platforms in the control
+plane's own image store, and its own pull fetches only the control plane's.
+
 ## Environment
 
 Set these on **both** projects, in the production environment:
